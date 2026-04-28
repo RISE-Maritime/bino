@@ -1,0 +1,7 @@
+{
+  "candidate": "webgpu",
+  "ok": false,
+  "reason": "failed to load 'webgpu' module: /usr/lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.32' not found (required by /workspaces/bino/spikes/headless-render/node_modules/webgpu/dist/linux-x64.dawn.node)",
+  "errorCode": "ERR_DLOPEN_FAILED",
+  "note": "Likely missing GLIBCXX_3.4.32 — Dawn prebuilt expects Ubuntu 24.04+ libstdc++."
+}

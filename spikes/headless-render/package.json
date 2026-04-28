@@ -1,0 +1,23 @@
+{
+  "name": "bino-headless-render-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Spike: prove or disprove headless Three.js rendering in Node/Docker with framebuffer+depth readback at >=10Hz @ 1920x1080.",
+  "scripts": {
+    "bench:headless-gl": "node candidates/headless-gl/bench.mjs",
+    "bench:kmamal-gl": "node candidates/kmamal-gl/bench.mjs",
+    "bench:chromium": "node candidates/chromium/bench.mjs",
+    "bench:webgpu": "node candidates/webgpu/bench.mjs",
+    "bench:all": "node run-all.mjs"
+  },
+  "dependencies": {
+    "three": "0.160.1"
+  },
+  "optionalDependencies": {
+    "@kmamal/gl": "^9.1.0",
+    "gl": "^8.1.6",
+    "playwright": "1.49.1",
+    "webgpu": "0.2.0"
+  }
+}

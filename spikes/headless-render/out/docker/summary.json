@@ -1,0 +1,40 @@
+[
+  {
+    "name": "headless-gl",
+    "ok": true,
+    "fps": 41.37174318186316,
+    "perFrameMs": 24.17108690838019,
+    "renderMs": 19.075031839807828,
+    "readColorMs": 4.205322194099426,
+    "readDepthMs": 0.8505811442931493,
+    "glRenderer": "ANGLE"
+  },
+  {
+    "name": "kmamal-gl",
+    "ok": true,
+    "fps": 42.896968372869246,
+    "perFrameMs": 23.311670682827632,
+    "renderMs": 18.307603137691817,
+    "readColorMs": 4.173594416181246,
+    "readDepthMs": 0.7894506057103475,
+    "glRenderer": "ANGLE"
+  },
+  {
+    "name": "chromium",
+    "ok": true,
+    "fps": 17.9449985792903,
+    "perFrameMs": 55.725833333532016,
+    "renderMs": 0.2708333363135656,
+    "readColorMs": 50.727499996622406,
+    "readDepthMs": 4.698333334922791,
+    "glRenderer": "ANGLE (Mesa, Vulkan 1.4.318 (llvmpipe (LLVM 20.1.2 256 bits) (0x00000000)), llvmpipe)"
+  },
+  {
+    "name": "webgpu",
+    "ok": true,
+    "fps": 49.17741039777462,
+    "perFrameMs": 20.334539617101353,
+    "renderMs": 1.4120886733134588,
+    "readColorMs": 18.86199980477492
+  }
+]

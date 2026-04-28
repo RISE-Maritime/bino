@@ -1,0 +1,5 @@
+{
+  "candidate": "headless-gl",
+  "ok": false,
+  "reason": "require('gl') threw: The module '/workspaces/bino/spikes/headless-render/node_modules/gl/build/Release/webgl.node'\nwas compiled against a different Node.js version using\nNODE_MODULE_VERSION 127. This version of Node.js requires\nNODE_MODULE_VERSION 137. Please try re-compiling or re-installing\nthe module (for instance, using `npm rebuild` or `npm install`)."
+}
