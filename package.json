@@ -1,0 +1,16 @@
+{
+  "name": "bino",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Maritime perception sensor emulator for V&V",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
