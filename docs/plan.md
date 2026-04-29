@@ -153,123 +153,182 @@ are independent of each other once core lands.
 Goal: camera frames and lidar point clouds published on Keelson topics
 that mirror real sensor topics, so a downstream consumer can swap real
 for synthetic without code changes. Plus closing the live Zenoh
-round-trip carried forward from v0.1.
+round-trip carried forward from v0.1, and migrating the existing
+pose path off ad-hoc JSON onto the same Keelson stack.
 
-### Spikes that should land before committing the v0.2 schedule
+### Spike outcomes (resolved 2026-04-29)
 
-Each is its own time-boxed investigation under `spikes/`, ending in a
-verdict file. These are the unknowns whose outcomes shape the task
-graph.
+The three pre-v0.2 spikes resolved together via a focused upstream
+investigation; verdicts inline rather than as separate spike folders.
 
-- **S4 — Keelson schema audit.** Does a Keelson topic schema for
-  synthetic-camera frames already exist? For lidar point clouds? If
-  yes, we match it exactly and encode-side is straightforward. If no,
-  we propose one — which is a multi-week negotiation, not v0.2 scope.
-  This is the longest pole. **Time box: ~0.5 day investigation; the
-  negotiation outcome may force re-planning.**
-- **S5 — Camera frame codec.** Raw RGBA at 1080p10 is ~62 MB/s per
-  camera — fine on localhost Zenoh, painful over any real link. JPEG,
-  WebP, and H.264 each trade CPU/latency for bandwidth. Bench all
-  three against realistic frame content, on the same software-rendered
-  Node baseline as the headless-render spike. The verdict feeds the
-  encoder API in #2 and the DSL fields in #12. **Time box: ~1 day.**
-- **S6 — `zenohd` + remote-api plugin in CI.** The live round-trip
-  (#11) needs `zenohd` running with the `remote-api` plugin enabled
-  and reachable on a `ws://` locator. Wire it up as a docker-compose
-  side service for vitest/Playwright. **Time box: ~half a day.**
+- **S4 — Keelson schema audit. ✅ Resolved, no proposal needed.**
+  Keelson defines well-known subjects backed by Foxglove protobuf
+  schemas, all wrapped in a Keelson Envelope (protobuf carrying
+  enclosed/received timestamps + payload bytes):
+  - **Camera (raw):** subject `image_raw` → `foxglove.RawImage`
+    (bytes, width, height, encoding, step, timestamp, frame_id).
+  - **Camera (compressed):** subject `image_compressed` →
+    `foxglove.CompressedImage` (JPEG/PNG/WebP bytes, format,
+    timestamp, frame_id). v0.3+ option.
+  - **Lidar:** subject `point_cloud` → `foxglove.PointCloud` (packed
+    `bytes data` + a `repeated PackedElementField fields` describing
+    the per-point byte layout, plus origin pose, point_stride,
+    timestamp, frame_id).
+  - **Pose:** subject `frame_transform` → `foxglove.FrameTransform`
+    (parent_frame_id, child_frame_id, translation, rotation,
+    timestamp). This is the canonical pose subject — replaces v0.1's
+    ad-hoc JSON wire format.
+  - Topic key shape: `{base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}`.
+  - **TS SDK ships:** `@rise-maritime/keelson-js` (npm,
+    `0.5.0`/`0.5.1-rc.x`). High-level API:
+    `construct_pubSub_key()`, `enclose()` / `uncover()`,
+    `encodePayloadFromTypeName()` / `decodePayloadFromTypeName()`,
+    `getSubjectSchema()`. Foxglove protos generated via `ts-proto`
+    are bundled.
+- **S5 — Camera frame codec. ✅ Collapsed.** Deployment is
+  same-node (Bino's `@bino/node` Docker container co-located with the
+  consuming system), so bandwidth is not the binding constraint;
+  Keelson's `image_raw` schema accepts raw RGBA natively. v0.2
+  publishes raw `RawImage` only. `image_compressed` (JPEG/WebP)
+  becomes a v0.3+ option if a remote-consumer use case appears.
+- **S6 — `zenohd` + remote-api plugin in CI. Pending — ~half day.**
+  Required for #11. Pattern is established: a docker-compose side
+  service running `eclipse/zenoh:latest` with the remote-api plugin
+  enabled, reachable at a `ws://` locator the test config points at.
+
+### Conventions adopted from upstream patterns
+
+Investigation of `nodered-contrib-zenoh` (Node) and `crowsnest-dev`
+(browser) settled the open API choices:
+
+- **Publishers use `session.put(keyExpr, buffer, options)` directly.**
+  Don't `declarePublisher()` ahead of time; just `put()` per frame.
+  Both upstream projects do it this way.
+- **Subscribers use `declareSubscriber()` + the async-iterator
+  receiver** (`for await (const sample of receiver())`). Already what
+  v0.1 does; no change.
+- **Browser session = singleton via Svelte store** (mirroring
+  `crowsnest-dev`'s React Context pattern) populated from a
+  `VITE_ZENOH_WS_URL` env var. No automatic reconnect — fail visibly,
+  let the user retry.
+- **Stale detection in viewer:** mark a subscription "stale" after
+  ~5s of silence. Cheap and useful; landing as part of #9 below.
+- **Encode/decode goes through `keelson-js`,** not hand-rolled.
+  `enclose(bytes)` before publish; `uncover(bytes)` before decode;
+  `encodePayloadFromTypeName(schema, obj)` /
+  `decodePayloadFromTypeName(schema, bytes)` for the foxglove protos.
 
 ### Tasks, in dependency order
 
-The graph: `core` encoder + scheduler work blocks `node` publisher
-work; viewer overlays are independent of node; the live e2e (#11)
-caps the milestone.
+`core` work blocks both `node` and `viewer`; viewer overlays are
+independent of node publishing; the live e2e (#10) caps the milestone.
 
-#### 1. `@bino/core` — encoders + per-sensor scheduling
+#### 1. `@bino/core` — keelson wiring + per-sensor scheduling
 
-1. **Per-sensor scheduling.** Today's `BinoRunner` ticks at the highest
-   sensor rate and fires every kernel each tick. Refactor to give each
-   kernel its own `nextFireTime` derived from the sensor's `rate_hz`;
-   the loop ticks faster than any single sensor and fires only the
-   sensors whose phase is up. Pure scheduler change — same kernel
-   interface. Move from `@bino/node`'s runner into `@bino/core` once it
-   stops being node-specific (the viewer's standalone mode can use it
-   too at v0.3+).
-2. **Camera frame encoder.** `encodeCameraFrame(frame, opts)`
-   producing the wire bytes per S5's verdict. Decode helper for tests.
-   Pure function; no Zenoh, no I/O.
-3. **Lidar point-cloud encoder.** Same shape, per S4's PCL/Foxglove
-   choice.
-4. **Sensor-publish types.** `SensorPublisher` interface analogous to
-   `ZenohSessionLike`/`ZenohSubscriberLike` already in core — minimal
-   shape so node can wire `zenoh-ts` Publisher behind it and tests can
-   stub.
+1. **`@rise-maritime/keelson-js` integration.** Add as dep. Build
+   thin wrappers around the SDK that match Bino's existing types:
+   `encodePoseUpdate(update) → { keyExpr, bytes }`,
+   `encodeCameraFrame(frame, sensorMeta) → { keyExpr, bytes }`,
+   `encodePointCloud(frame, sensorMeta) → { keyExpr, bytes }`, plus
+   matching decoders. Each wrapper handles: protobuf-encode the
+   foxglove payload, `enclose()` the result into a Keelson Envelope,
+   construct the topic key. Decoders run in reverse for tests.
+   Replaces v0.1's `decodePoseMessage` / JSON path.
+2. **Pose subscriber migration.** `createZenohPoseStream` switches
+   from JSON-decode to `decodePoseMessage` (now a Keelson-aware
+   wrapper around `frame_transform`). Keep the `MemoryPoseStream`
+   path identical — no wire format involved.
+3. **Per-sensor scheduling.** Refactor the runner so each kernel has
+   its own `nextFireTime` derived from `rate_hz`; the loop ticks
+   faster than any single sensor and fires only those whose phase is
+   up. Move the runner from `@bino/node` to `@bino/core` so the
+   viewer's standalone mode can adopt it at v0.3+.
 
 #### 2. `@bino/node` — publishers
 
-5. **Camera publisher.** Given a Zenoh session, a sensor config, an
-   encoder, and a topic, publishes encoded frames at the configured
-   rate. Wires per-sensor scheduling output → encoder → publisher.
-6. **Lidar publisher.** Same shape, point-cloud encoder.
-7. **Service wiring.** `createNodeService` grows a `publish: boolean`
-   (or implicit when a Zenoh session is provided) so the runner emits
-   publish calls rather than only logging. CLI `--zenoh` activates
-   both pose subscription *and* sensor publishing.
+4. **Camera publisher.** Per-camera-sensor: subscribes to the
+   runner's per-sensor frame events, encodes via
+   `encodeCameraFrame()`, publishes via `session.put()`. Topic key
+   from `construct_pubSub_key(...)`.
+5. **Lidar publisher.** Same shape with `encodePointCloud()`.
+6. **Service wiring.** `createNodeService` accepts an optional
+   Zenoh session; when provided, the runner's per-sensor outputs
+   flow into publishers. CLI `--zenoh ws://...` activates both pose
+   subscription *and* sensor publishing — full duplex.
+7. **Node WebSocket polyfill check.** Node 22 has built-in
+   `WebSocket` (since 21.0.0). Verify zenoh-ts uses it correctly in
+   our Docker image; if not, add the `ws` polyfill the way
+   `nodered-contrib-zenoh` does. (Likely a no-op verification step,
+   but call it out so we don't get bitten in #10.)
 
-#### 3. `@bino/viewer` — sensor footprints
+#### 3. `@bino/viewer` — sensor footprints + robustness
 
 8. **Camera frustum overlay.** Per-camera-sensor frustum lines (a
    thin pyramid showing FOV) drawn into the third-person view. Helps
    operators see what each bow camera "sees" without rendering the
    full frame.
-9. **Lidar fan overlay.** Per-lidar-sensor fan of rays (or a
-   semi-transparent cone) at the configured `range_m`.
-10. **(Stretch) Sensor preview pane.** Picture-in-picture showing one
+9. **Lidar fan + stale detection.** Per-lidar-sensor fan of rays at
+   the configured `range_m`. Plus the stale-detection pattern from
+   `crowsnest-dev`: per-source last-message timestamp, mark stale at
+   5s, surface in the header next to the source label.
+10. **(Stretch) Sensor preview pane.** Picture-in-picture of one
     sensor's actual rendered output (the camera kernel's pixels).
-    Drops to v0.3 if v0.2 runs long; the kernels already produce these
-    in the browser, only the wiring is missing.
+    Opt-in via UI toggle — viewer should never auto-subscribe to
+    camera topics, only its own local kernel output. Drops to v0.3
+    if v0.2 runs long.
 
 #### 4. Glue
 
-11. **Live Zenoh round-trip e2e.** Closes the v0.1 carry-forward.
-    Using S6's `zenohd` side service: a synthetic publisher emits
-    poses on `keelson/ego/nav/pose` and `keelson/ferry/nav/pose`; the
-    `bino-node` Docker service subscribes, ticks the runner, publishes
-    camera + lidar topics; a test consumer subscribes to those and
-    asserts (a) frame rate matches `rate_hz`, (b) frame contents
-    advance, (c) the Playwright-driven viewer at the same `ws://`
-    URL renders the same vessels in lock-step. This is the v0.2
-    acceptance.
-12. **DSL grows codec + topic fields.** Likely the camera/lidar DSL
-    needs `encoding: ...` and `quality: 0..100` (camera), explicit
-    `publish_topic: ...` (defaults derivable from vessel.id +
-    sensor.id but real deployments will want override). Driven by S4
-    + S5 verdicts.
+11. **Live Zenoh round-trip e2e.** Using S6's `zenohd` side service:
+    a synthetic publisher emits `frame_transform` updates on
+    `keelson/@v0/ego/pubsub/frame_transform/sim` and same for
+    `ferry`; the `bino-node` Docker service subscribes, ticks the
+    runner, publishes `image_raw` and `point_cloud` topics; a test
+    consumer subscribes to those and asserts (a) per-sensor rate
+    matches `rate_hz` ±10%, (b) frame contents advance over time,
+    (c) the Playwright-driven viewer at the same `ws://` URL
+    renders the same vessels in lock-step. This closes both the v0.1
+    carry-forward *and* v0.2's main acceptance.
+12. **DSL grows topic-override fields.** `publish_topic_override:
+    string` per sensor (default derived from vessel.id + sensor.id +
+    Keelson convention). No codec/quality fields needed in v0.2 —
+    raw RGBA only.
 
 ### v0.2 acceptance
 
-- A test consumer subscribes to the Keelson camera and lidar topics
-  and decodes the wire format defined by S4. Frame rate matches each
-  sensor's `rate_hz`; frame contents change as the vessels move.
-- The `bino-node` Docker container with `--zenoh ws://...` both
-  *consumes* poses and *publishes* sensor data — full duplex.
-- Live e2e (#11) runs green in CI, including the viewer's
-  Zenoh-WS subscription path that v0.1 only exercised manually.
+- A test consumer subscribes to `image_raw` and `point_cloud` topics,
+  decodes via `keelson-js`, and confirms (a) Envelope timestamps
+  advance, (b) RawImage dimensions match scenario, (c) PointCloud
+  contains the expected point count.
+- Per-sensor publish rate honors `rate_hz` per the runner's new
+  scheduler.
+- `bino-node --zenoh ws://...` is full-duplex: subscribes to
+  `frame_transform` for vessel poses, publishes camera + lidar.
+- Live e2e (#11) green in CI, including the viewer's Zenoh-WS
+  subscription path.
 
 ### v0.2 risks worth flagging now
 
-- **Keelson schema availability.** S4's outcome can rewrite the task
-  graph. If no synthetic-sensor schema exists, v0.2 might pivot to
-  proposing one (writing the spec, getting Keelson buy-in) and
-  publishing actual bytes drops to v0.3.
-- **Codec CPU cost on software-rendered baseline.** A 1080p10 JPEG
-  encode in pure JS plausibly bottlenecks the runner before render
-  does. `sharp`, `node-canvas`, or a WASM JPEG codec each have
-  different cost profiles. S5 lands the verdict.
+- **Pose-format migration is a breaking change for any v0.1
+  consumer.** Practically, there are no v0.1 consumers in production;
+  but the v01_smoke.yaml topic names (e.g., `keelson/ego/nav/pose`)
+  predate the schema audit and need updating to the
+  `keelson/@v0/ego/pubsub/frame_transform/sim` shape.
+- **`@rise-maritime/keelson-js` is at 0.5.x with active RCs.** Pin
+  to a stable version (`0.5.0` exact) and audit the changelog before
+  bumping. Their API surface is small enough that breakage would be
+  obvious.
 - **Cross-backend pixel divergence becomes user-visible.** v0.1
   hashed for "did the frame change" — robust to small drift between
   Node ANGLE and Chromium. v0.2 publishes raw bytes; consumers
-  comparing across backends will see drift. It's a real concern but
-  not a v0.2 blocker — the fix is renderer-config discipline at v0.6.
+  comparing across backends will see drift. Not a v0.2 blocker — fix
+  is renderer-config discipline at v0.6.
+- **Per-sensor jitter under load.** If one kernel's encode misses
+  its deadline, default behavior is "drop the frame, log it." Revisit
+  when determinism matters at v0.6.
+- **Bandwidth claim is localhost-only.** Documented assumption: the
+  Bino container runs on the same node as the consuming system.
+  Anything else needs `image_compressed` (v0.3+).
 - **Per-sensor jitter under load.** If a slow encoder makes one sensor
   miss its deadline, do we drop the frame or fire late? Default
   v0.2 behavior: drop, log. Revisit when determinism matters.
