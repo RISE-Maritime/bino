@@ -74,10 +74,12 @@ function applyEnvironment(
   sky.material.uniforms["sunPosition"]!.value.copy(sunPos);
   sun.position.copy(sunPos);
 
-  // Below-horizon suns aren't useful as light sources; clamp.
+  // Below-horizon suns aren't useful as light sources; clamp. Keep
+  // a small floor on ambient so the scene isn't pitch-black during
+  // twilight (you'd still see ship navigation lights etc.).
   const intensity = Math.max(0, Math.sin(elevation));
   sun.intensity = 0.2 + 0.9 * intensity;
-  ambient.intensity = 0.05 + 0.25 * intensity;
+  ambient.intensity = 0.15 + 0.25 * intensity;
 }
 
 /**

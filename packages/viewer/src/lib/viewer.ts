@@ -59,14 +59,21 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   renderer.setPixelRatio(window.devicePixelRatio);
   resize(renderer, canvas);
 
+  // Far plane has to clear the terrain bbox extent (~7 km to far
+  // corners) and Sky's 450k-unit cube. 1e6 is generous and well
+  // within fp32 precision for a single-anchor scene.
   const debugCamera = new THREE.PerspectiveCamera(
     55,
     canvas.clientWidth / Math.max(1, canvas.clientHeight),
-    0.5,
-    2000,
+    1,
+    1_000_000,
   );
-  debugCamera.position.set(80, 60, 120);
-  debugCamera.lookAt(0, 0, 0);
+  // Above-water vantage looking forward over the bow: ~80 m up,
+  // 200 m back along +z, looking out toward -z (where the scripted
+  // ferry orbits). Close enough to see wave detail; far enough to
+  // see the ferry plus a sweep of coastline.
+  debugCamera.position.set(0, 80, 200);
+  debugCamera.lookAt(0, 0, -300);
 
   const kernels: Array<CameraKernel | LidarKernel | RadarKernel> = [];
   const cameraHelpers: THREE.CameraHelper[] = [];

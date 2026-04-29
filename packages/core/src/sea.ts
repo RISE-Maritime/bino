@@ -129,10 +129,18 @@ export interface SeaSurfaceOptions {
   yOffset?: number;
 }
 
+// Default sea-plane sizing: 4 km × 4 km × 384 segments (~10 m per
+// segment). Peak Pierson-Moskowitz wavelengths in normal seas are
+// 30-100 m → 3-10 segments per crest. Visible wave silhouettes
+// without the 512-seg vertex shader cost. Callers can override via
+// SeaSurfaceOptions if they need either denser detail or a wider
+// horizon. The previous default (10 km × 10 km × 256 segments,
+// 39 m per segment) aliased away every wave component — fine for
+// flat water, useless for a sea-state demo.
 const DEFAULT_OPTS: Required<SeaSurfaceOptions> = {
-  width: 10_000,
-  height: 10_000,
-  segments: 256,
+  width: 4_000,
+  height: 4_000,
+  segments: 384,
   yOffset: 0,
 };
 

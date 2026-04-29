@@ -56,7 +56,9 @@ export const v01Scenario: Scenario = {
       spectrum: "pierson_moskowitz",
     },
     wind: { speed: 8.5, direction_deg: 220 },
-    time_of_day: "20:30",
+    // Noon for the demo so the scene reads cleanly. The DSL supports
+    // any HH:MM; v04_kiel.yaml keeps the design-vision evening 20:30.
+    time_of_day: "12:00",
     visibility_m: 8000,
   },
   terrain: {
