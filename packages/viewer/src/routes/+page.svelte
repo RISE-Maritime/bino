@@ -1,15 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { MemoryPoseStream, type PoseStream } from "@bino/core";
+  import { type PoseStream } from "@bino/core";
   import { mountViewer, type ViewerHandle, type ViewerStats } from "$lib/viewer.js";
   import { connectZenohPoses, vesselsForZenoh, type ZenohConnection } from "$lib/zenoh.js";
+  import { startScriptedPoses, type ScriptedHandle } from "$lib/scripted.js";
   import { v01Scenario } from "$lib/scenario.js";
 
   let canvas: HTMLCanvasElement | undefined = $state();
   let handle: ViewerHandle | undefined;
   let zenoh: ZenohConnection | undefined;
+  let scripted: ScriptedHandle | undefined;
   let stats: ViewerStats = $state({ frames: 0, fps: 0, cameraFrames: 0, lidarPoints: 0 });
-  let source: "zenoh" | "memory" | "connecting" = $state("memory");
+  let source: "zenoh" | "scripted" | "connecting" = $state("scripted");
   let zenohError: string | undefined = $state();
 
   onMount(async () => {
@@ -26,11 +28,14 @@
         source = "zenoh";
       } catch (err) {
         zenohError = err instanceof Error ? err.message : String(err);
-        poses = new MemoryPoseStream();
-        source = "memory";
+        scripted = startScriptedPoses();
+        poses = scripted.stream;
+        source = "scripted";
       }
     } else {
-      poses = new MemoryPoseStream();
+      scripted = startScriptedPoses();
+      poses = scripted.stream;
+      source = "scripted";
     }
 
     handle = mountViewer({
@@ -44,6 +49,7 @@
 
   onDestroy(async () => {
     handle?.stop();
+    scripted?.stop();
     await zenoh?.close();
   });
 </script>
