@@ -56,6 +56,7 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
   debugCamera.lookAt(0, 0, 0);
 
   const kernels: Array<CameraKernel | LidarKernel> = [];
+  const cameraHelpers: THREE.CameraHelper[] = [];
   for (const vessel of compiled.vessels) {
     const vesselNode = built.entities.get(vessel.id);
     if (!vesselNode) continue;
@@ -63,14 +64,20 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
       const sensorNode = vesselNode.getObjectByName(sensor.id);
       if (!sensorNode) continue;
       if (sensor.type === "camera") {
-        kernels.push(
-          createCameraKernel({
-            renderer,
-            scene: built.scene,
-            sensorNode,
-            config: sensor,
-          }),
-        );
+        const kernel = createCameraKernel({
+          renderer,
+          scene: built.scene,
+          sensorNode,
+          config: sensor,
+        });
+        kernels.push(kernel);
+        // Frustum overlay (plan v0.2 #7) — Three's CameraHelper draws
+        // the kernel's perspective camera as a wireframe pyramid in
+        // the third-person view. Updated each tick because the camera
+        // matrix changes as the host vessel moves.
+        const helper = new THREE.CameraHelper(kernel.camera);
+        built.scene.add(helper);
+        cameraHelpers.push(helper);
       } else if (sensor.type === "lidar") {
         kernels.push(
           createLidarKernel({
@@ -115,6 +122,8 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
       else lidarPoints = out.count;
     }
 
+    for (const h of cameraHelpers) h.update();
+
     renderer.setRenderTarget(null);
     renderer.render(built.scene, debugCamera);
 
@@ -137,6 +146,10 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
       cancelAnimationFrame(rafId);
       poses.close();
       void pump.catch(() => {});
+      for (const h of cameraHelpers) {
+        built.scene.remove(h);
+        h.dispose();
+      }
       for (const k of kernels) k.dispose();
       renderer.dispose();
     },
