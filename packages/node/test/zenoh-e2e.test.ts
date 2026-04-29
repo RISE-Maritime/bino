@@ -5,10 +5,12 @@ import {
   createZenohPoseStream,
   decodeCameraEnvelope,
   decodePointCloudEnvelope,
+  decodeRadarSweepEnvelope,
   encodePoseUpdate,
   poseTopicKey,
   cameraTopicKey,
   lidarTopicKey,
+  radarTopicKey,
   DEFAULT_NAMING,
 } from "@bino/core";
 import { createNodeService } from "../src/service.js";
@@ -56,6 +58,18 @@ const scenario = {
           range_m: 200,
           rate_hz: 10,
         },
+        {
+          id: "main_radar",
+          type: "radar_marine",
+          mount: { x: 0, y: 0, z: 35 },
+          // Faster rotation than the scenario default (0.4 Hz) so we
+          // get at least 1-2 sweeps in the 3-second test window.
+          range_m: 2000,
+          rotation_rate_hz: 2.0,
+          beam_width_deg: 1.2,
+          spokes_per_rev: 90,
+          range_bins: 100,
+        },
       ],
     },
     {
@@ -70,7 +84,7 @@ const scenario = {
 
 describe("v0.2 e2e: full duplex via Zenoh", () => {
   itLive(
-    "publisher → bino-node service → camera + lidar consumers all roundtrip",
+    "publisher → bino-node service → camera + lidar + radar consumers all roundtrip",
     async () => {
       const compiled = compileScenario(scenario);
 
@@ -93,15 +107,18 @@ describe("v0.2 e2e: full duplex via Zenoh", () => {
         });
         expect(service.publisher).toBeDefined();
 
-        // Probe consumers for ego/bow_camera and ego/main_lidar.
+        // Probe consumers for camera, lidar, radar.
         const camTopic = cameraTopicKey(DEFAULT_NAMING, "ego", "bow_camera");
         const lidTopic = lidarTopicKey(DEFAULT_NAMING, "ego", "main_lidar");
+        const radTopic = radarTopicKey(DEFAULT_NAMING, "ego", "main_radar");
         const camSub = await probeSession.declareSubscriber(camTopic);
         const lidSub = await probeSession.declareSubscriber(lidTopic);
+        const radSub = await probeSession.declareSubscriber(radTopic);
 
         type CamSnap = { hash: number; t: number };
         const camFrames: CamSnap[] = [];
         const lidCounts: number[] = [];
+        const radSweeps: Array<{ spokes: number; t: number }> = [];
 
         const fnv = (b: Uint8Array): number => {
           let h = 0x811c9dc5;
@@ -130,6 +147,16 @@ describe("v0.2 e2e: full duplex via Zenoh", () => {
             if (!decoded) continue;
             lidCounts.push(decoded.count);
             if (lidCounts.length >= 10) break;
+          }
+        })();
+        const radTask = (async () => {
+          const recv = radSub.receiver();
+          if (!recv) return;
+          for await (const sample of recv) {
+            const decoded = decodeRadarSweepEnvelope(sample.payload().toBytes());
+            if (!decoded) continue;
+            radSweeps.push({ spokes: decoded.spokes.length, t: decoded.time });
+            if (radSweeps.length >= 3) break;
           }
         })();
 
@@ -170,6 +197,7 @@ describe("v0.2 e2e: full duplex via Zenoh", () => {
           publishTask,
           camTask.catch(() => {}),
           lidTask.catch(() => {}),
+          radTask.catch(() => {}),
         ]);
         runner.stop();
         poseStream.close();
@@ -189,9 +217,15 @@ describe("v0.2 e2e: full duplex via Zenoh", () => {
         //      placeholder hulls in view.
         for (const c of lidCounts) expect(c).toBeGreaterThan(0);
 
+        //  (d) radar fires at rotation_rate_hz=2.0 — expect ≥3 sweeps
+        //      in 3 seconds. Each sweep has spokes_per_rev=90 spokes.
+        expect(radSweeps.length).toBeGreaterThanOrEqual(3);
+        for (const s of radSweeps) expect(s.spokes).toBe(90);
+
         // Cleanup
         await camSub.undeclare();
         await lidSub.undeclare();
+        await radSub.undeclare();
         service.dispose();
       } finally {
         await serviceSession.close().catch(() => {});
