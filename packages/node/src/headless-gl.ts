@@ -8,7 +8,35 @@ export interface HeadlessRendererHandle {
   dispose: () => void;
 }
 
+// Three's WebGLRenderer constructor only wires its WebGLAnimation context
+// when `typeof self !== 'undefined'`. In Node's main thread `self` is
+// undefined, so the animation has no context — and both start() and
+// stop() blow up dereferencing null.{request,cancel}AnimationFrame.
+// Setting globalThis.self = globalThis (and stubbing the missing
+// methods) makes Three's check pass and gives the animation a usable
+// context. Spike never disposed/started so didn't hit this.
+function ensureAnimationFrameStubs(): void {
+  const g = globalThis as unknown as {
+    self?: unknown;
+    requestAnimationFrame?: (cb: FrameRequestCallback) => number;
+    cancelAnimationFrame?: (id: number) => void;
+  };
+  if (typeof g.requestAnimationFrame !== "function") {
+    g.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      setImmediate(() => cb(performance.now()));
+      return 0;
+    };
+  }
+  if (typeof g.cancelAnimationFrame !== "function") {
+    g.cancelAnimationFrame = () => {};
+  }
+  if (typeof g.self === "undefined") {
+    g.self = globalThis;
+  }
+}
+
 export function createHeadlessRenderer(width: number, height: number): HeadlessRendererHandle {
+  ensureAnimationFrameStubs();
   const createGL = require("@kmamal/gl") as (
     w: number,
     h: number,

@@ -49,6 +49,9 @@ export class BinoRunner {
     try {
       let i = 0;
       while (!this.stopped) {
+        // Yield to the pump so any pose updates buffered ahead of this
+        // tick land on entity transforms before the kernels render.
+        await new Promise<void>((r) => setImmediate(r));
         const t = this.clock.now();
         const renderStart = performance.now();
         const outputs = this.kernels.map((k) => k.step(t));
