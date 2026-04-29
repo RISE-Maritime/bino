@@ -568,11 +568,26 @@ browser viewer to a "non-strict" rendering option for live debugging.
 
 ## v1.0 — Marine radar v1
 
-- Sea-clutter model — its own research thread, may deserve a paper.
+- **Sea-clutter model** — its own research thread, may deserve a
+  paper. **Depends on v0.4's sea-surface modelling**: the wave field
+  (Gerstner spectrum, sea state per the DSL `environment.sea_state`)
+  is the input the clutter generator needs. v1.0 cannot start until
+  v0.4 has landed a usable wave field representation.
 - Antenna-pattern convolution.
-- Weather attenuation (rain/fog).
+- **Weather attenuation (rain / fog / snow / hail)** — depends on the
+  environmental-modelling cross-cutting thread (below). The DSL
+  already has `environment.visibility_m`; rain/snow/hail intensity
+  fields likely need to be added at the v1.0 boundary, possibly
+  earlier.
 - Full documentation as a standalone artifact other simulators can
   consume.
+
+**Architectural note (recorded after v0.3 demo, 2026-04-29):** noise
+injection across all sensors — radar clutter from sea state, camera
+contrast loss in fog, lidar attenuation in rain — is a *cross-cutting
+environmental concern*, not a radar-only concern. The v1.0 radar
+section above is its first concrete consumer; the v0.4 sea-surface
+work is its first concrete producer. See cross-cutting threads.
 
 ---
 
@@ -590,6 +605,26 @@ browser viewer to a "non-strict" rendering option for live debugging.
 - **Asset pipeline.** The longest open question. v0.1–v0.4 use
   placeholder geometry. v0.5 ships hand-authored glTF for two or three
   representative hulls. Procedural hulls is a v2+ research thread.
+- **Environmental modelling — feeds sensor-noise / realism across all
+  sensor types.** The design-vision DSL already has
+  `environment.sea_state` (Pierson-Moskowitz / wave height / direction),
+  `environment.wind`, `environment.time_of_day`, `environment.visibility_m`.
+  v0.1–v0.3 ignore this block entirely; v0.4 brings sea state in for
+  the wave shader; v1.0's radar noise model needs sea state (for
+  clutter) and visibility (for attenuation). Cross-cutting because
+  *every* sensor degrades with environment — rain/fog hurts cameras,
+  rain attenuates lidar, sea state generates radar clutter, etc.
+  Three implications:
+    1. The DSL `environment` block should be a first-class compiled
+       scene field (added when v0.4 needs it), not a per-sensor
+       afterthought.
+    2. Sensor kernels grow an `EnvironmentSnapshot` input alongside
+       the existing scene snapshot, so each kernel can consume what
+       it needs.
+    3. Weather parameters beyond `visibility_m` — rain intensity,
+       snow, hail — likely need DSL fields by v1.0. Add at the v1.0
+       boundary, or earlier if a sensor at v0.5/v0.6 needs them
+       first.
 
 ---
 
