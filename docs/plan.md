@@ -523,18 +523,171 @@ early.
 
 ## v0.4 — Terrain, sea, perf pass
 
-Two threads:
+Largest scope of any milestone so far. **Split into v0.4a (visuals +
+environment DSL) and v0.4b (perf: lidar Rust port + WebGPU eval)**;
+this is bookkeeping, not separate releases — both close before we
+call v0.4 done. Splitting makes it visible that v0.4a is a coherent
+demo-quality release on its own (the user's "less bare-bones" wish
+from the v0.3 review starts being met), while v0.4b is internal
+engineering with no visual payoff.
 
-1. **Terrain & sea surface.** OSM coastline loader, EMODnet bathymetry,
-   Gerstner-wave sea shader. Scene compiler in core gains a terrain
-   stage. Tile streaming is still v2; v0.4 loads a fixed bbox.
-2. **Lidar perf.** TS lidar kernel almost certainly bottlenecks once
-   real terrain is in the scene. Port to Rust/WASM behind the existing
-   `SensorKernel` interface — no API change for consumers.
-3. **WebGPU evaluation.** The headless-render spike flagged Three.js
-   r160's WebGPU pipeline as not-yet-drop-in. Re-evaluate against
-   current Three. If WebGPU is now stable, migrate `@bino/node`'s
-   renderer; else defer to v0.5 or beyond.
+### Spikes that should land before committing the v0.4 schedule
+
+Each ends in a verdict file under `spikes/`. Five total — bigger spike
+budget than prior milestones because the unknowns are real, not
+upstream-look-up-able like S4/S6/S9 were.
+
+- **S11 — OSM coastline data source. ~Half day.** Likely Overpass
+  API query for `way["natural"="coastline"]` over the bbox; convert
+  line strings to triangulated polygons via `polygon-clipping` +
+  `earcut`. Cache fetched data on disk so scene compile doesn't hit
+  the network on every dev reload. Verify a known harbour bbox
+  (Kiel) renders sensibly.
+- **S12 — EMODnet bathymetry data source. ~Half day.** GeoTIFF via
+  `geotiff.js`, sample to regular grid at the bbox, generate
+  `PlaneGeometry` with per-vertex elevations. Check resolution vs
+  bbox-size trade-off (a 10 km bbox at 50 m grid spacing = 200×200
+  vertices = 80 KB triangles — fine).
+- **S13 — Sea surface shader. ~1 day.** Custom Gerstner via
+  `THREE.ShaderMaterial`, NOT Three's `Water` example (too tied to a
+  specific reflection setup; we want DSL-driven Pierson-Moskowitz
+  spectrum parameters). Sum 4-8 wave components, vertex displacement
+  + normal perturbation. Verify visual at low and high sea state.
+- **S14 — Lidar Rust port algorithm. ~1 day.** TS lidar is GL-bound
+  (depth-pass via `MeshDepthMaterial(RGBADepthPacking)`). Rust port
+  must be ray-cast — different algorithm, same interface. Decisions
+  to settle: BVH library (`parry3d` heavyweight vs roll-our-own
+  AABB-tree), per-frame BVH rebuild vs cache-with-deltas, scene
+  geometry handoff (probably copy-each-frame like v0.3 radar; the
+  lidar's bigger ray budget — 32 ch × 360 az × 10 Hz = 115k rays/sec
+  — may stress this). Benchmark cost vs the depth-pass version
+  before committing.
+- **S15 — WebGPU re-evaluation. ~Half day.** Three.js's WebGPU
+  pipeline at r160 was not drop-in (the v0.1 spike found gaps in
+  `MeshDepthMaterial`). Bump to current Three (r170+ presumed) and
+  retry the headless-render bench candidates. If our camera + lidar
+  kernels run unchanged on `WebGPURenderer`, migrate. If not, defer
+  to v0.5 or beyond.
+
+Note that most v0.4 work doesn't depend on WebGPU; S15 is genuinely
+optional. Spike S14 is the biggest research risk — a lidar that's
+slower than the GL depth-pass would mean the perf claim of "Rust
+saves us" doesn't materialize and we either accept slower lidar or
+keep the GL version.
+
+### Tasks, in dependency order
+
+#### v0.4a — Terrain + sea + environment DSL
+
+1. **DSL `environment` block.** Per the design vision example:
+   `sea_state {significant_wave_height, peak_period, direction_deg,
+   spectrum}`, `wind {speed, direction_deg}`, `time_of_day`,
+   `visibility_m`. Zod schemas in `@bino/core`. `CompiledScene` grows
+   an `environment` field.
+2. **`EnvironmentSnapshot` interface in `@bino/core`.** Per-tick
+   payload that the runner produces from the static `environment`
+   plus any time-of-day animation. v0.4 sensor kernels don't consume
+   it yet — interface only — but the shape needs to be designed with
+   the v1.0 noise-injection use case in mind (cross-cutting thread).
+3. **OSM coastline loader.** Per S11. New `@bino/core/src/terrain.ts`
+   module: `loadCoastline(bbox)` returns triangulated polygons.
+   Caches per-bbox to `~/.cache/bino/osm/`. Fails loud on network
+   error (no silent fall-through to "ocean only").
+4. **EMODnet bathymetry loader.** Per S12. Same module:
+   `loadBathymetry(bbox)` returns vertex grid. Same cache pattern.
+5. **Terrain mesh in `buildScene`.** Combine #3 (above-water) + #4
+   (below-water) into a single landmass geometry. Above water = OSM
+   polygon extruded upward to a small height; below water = bathymetry
+   plane. Single material with depth-based colouring (sand → mud →
+   abyss).
+6. **Gerstner sea shader.** Per S13. `THREE.ShaderMaterial` driven by
+   `EnvironmentSnapshot.sea_state`. Animated each tick via a uniform
+   `uTime`. Plane geometry sized to bbox, segment count determined by
+   visual quality vs perf trade-off. Bonus: derive a height-sample
+   function the radar/lidar can consume (the "wave field" the v1.0
+   sea-clutter model needs — see env-modelling cross-cutting thread).
+7. **Sky + sun lighting tied to `time_of_day`.** Replace the v0.1
+   default ambient + directional with a sky shader and a `Sun`
+   directional light at the right elevation/azimuth for the configured
+   time. Three's `Sky` example is a decent starting point.
+8. **Scenario YAML extension.** `scenarios/v04_kiel.yaml` exercises
+   the full environment block with a real Kiel approach bbox.
+
+#### v0.4b — Lidar Rust port + WebGPU eval
+
+9. **`kernels/lidar/` Rust crate.** New member of the `kernels/`
+   workspace. `cdylib + rlib` like radar. Take the algorithm decided
+   in S14 (BVH choice, etc.) and implement.
+10. **Lidar kernel WASM wrapper in `@bino/core`.** Mirror the radar
+    pattern: `createLidarKernel` becomes WASM-backed, replacing the
+    GL depth-pass version. Same `LidarKernel` interface — service
+    and viewer don't change. The TS GL-based kernel becomes a
+    fallback (`createLidarKernelTs`) for the WebGPU-not-available
+    path; or deleted outright if S14 says ray-cast is strictly
+    better.
+11. **Benchmark.** Real-data cost comparison: TS GL depth-pass vs
+    Rust ray-cast, on the same v04_kiel scenario with terrain
+    rendering. Wall-clock, p50, p95. If Rust isn't decisively faster,
+    the architecture choice was wrong; revert.
+12. **WebGPU evaluation per S15.** If the verdict is "ready," migrate
+    `@bino/node`'s renderer construction to `WebGPURenderer`. Camera
+    kernel and (now WASM-based) lidar kernel both run unchanged.
+    Update the headless-render spike's results.md with new numbers.
+
+### v0.4 acceptance
+
+**v0.4a:**
+- `scenarios/v04_kiel.yaml` loads, compiles, and the viewer shows:
+  recognizable Kiel coastline geometry, animated sea surface, sun at
+  the configured time of day, all on a believable scale.
+- The DSL `environment` block validates and flows through to
+  `EnvironmentSnapshot`.
+
+**v0.4b:**
+- Rust lidar kernel passes the same vitest integration tests the v0.1
+  TS kernel did.
+- Benchmark shows Rust path beats GL path on the v04_kiel scenario
+  (specifically: in the presence of real terrain geometry, where the
+  v0.3 lidar would have been GL-bottlenecked).
+- (Optional) WebGPURenderer in `@bino/node` if S15 says yes;
+  otherwise documented "evaluated, not yet migrated" verdict.
+
+### v0.4 risks worth flagging now
+
+- **OSM/EMODnet network dependency at scene-compile time** is a real
+  shift. v0.1-v0.3 scenarios were entirely offline. v0.4 introduces
+  caching as a first-class concern. Plan the cache directory
+  structure and stale-data semantics now, not when v0.5's scenario
+  library expands.
+- **Custom shader maintenance** — Gerstner waves are a known thing
+  but the parameter space is fiddly. Document spectrum choices and
+  pin a default that matches the design vision YAML's
+  `pierson_moskowitz`. Visual realism trade-offs are not v0.4 scope;
+  call out anything that drifts toward v0.5+.
+- **Ray-cast lidar accuracy vs the depth-pass version.** They produce
+  different point clouds — different sampling patterns, different
+  edge behaviour, different precision. If v0.2 sensor publishing
+  consumers compare frames across versions, they'll see drift.
+  Document the version bump as a wire-incompatible change for
+  downstream consumers.
+- **WebGPU's `MeshDepthMaterial` gap may still be there.** Three's
+  WebGPU pipeline has been stabilizing slowly; if the camera kernel's
+  depth path doesn't work on r170+, the migration is non-trivial.
+  Defer if so.
+- **Demo expectations after v0.4a lands** — once the viewer shows
+  Kiel coastline + animated waves, stakeholders will reasonably
+  assume sensor *physics* match (radar clutter from the visible
+  waves, lidar attenuation in shown rain). They won't, until v1.0.
+  Surface this clearly in any demo material.
+- **WASM payload size growth** — adding the lidar kernel to
+  `kernels/` likely triples the .wasm. v0.3 radar binary is ~30 KB
+  release; lidar with BVH could be 200+ KB. Affects browser
+  cold-start on the viewer side (the kernels currently load lazily
+  via Vite + vite-plugin-wasm; verify still acceptable).
+- **Cargo cache persistence in the devcontainer** — v0.3 already
+  takes ~10 s to rebuild WASM cold; v0.4 with two crates will be
+  slower. Worth adding a Docker volume for `~/.cargo/registry` to the
+  devcontainer config (currently absent). Small ergonomics fix.
 
 ---
 
