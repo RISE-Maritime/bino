@@ -73,9 +73,13 @@ describe("v0.1 smoke: pose updates change camera frames", () => {
       const sample = async (): Promise<{ camHash: number; lidarCount: number }> => {
         await new Promise((r) => setImmediate(r));
         const { value } = await gen.next();
-        const cam = value!.outputs[0] as { pixels: Uint8Array };
-        const lidar = value!.outputs[1] as { count: number };
-        return { camHash: fnv1a(cam.pixels), lidarCount: lidar.count };
+        const cam = value!.outputs.find((o) => o.sensorId.endsWith("bow_camera"))!.output as {
+          pixels: Uint8Array;
+        };
+        const lid = value!.outputs.find((o) => o.sensorId.endsWith("main_lidar"))!.output as {
+          count: number;
+        };
+        return { camHash: fnv1a(cam.pixels), lidarCount: lid.count };
       };
 
       // Place ferry directly in front of the bow camera (which sits at

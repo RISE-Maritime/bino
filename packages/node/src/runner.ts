@@ -1,32 +1,50 @@
 import type * as THREE from "three";
 import { applyPoseUpdate, type Clock, type PoseStream } from "@bino/core";
 
-const DEFAULT_TICK_HZ = 30;
+const DEFAULT_TICK_HZ = 1000;
 
 export interface SensorKernelLike {
   step(time: number): unknown;
   dispose(): void;
 }
 
+export interface ScheduledKernel {
+  sensorId: string;
+  rate_hz: number;
+  kernel: SensorKernelLike;
+}
+
+export interface SensorOutput {
+  sensorId: string;
+  output: unknown;
+  renderMs: number;
+}
+
 export interface FrameEvent {
   index: number;
   time: number;
-  renderMs: number;
-  outputs: unknown[];
+  outputs: SensorOutput[];
 }
 
 export interface RunnerOptions {
   scene: THREE.Scene;
   entities: ReadonlyMap<string, THREE.Object3D>;
-  kernels: SensorKernelLike[];
+  kernels: ScheduledKernel[];
   clock: Clock;
+  /** Loop tick rate. Each kernel still fires at its own rate_hz; this
+   *  bounds the granularity. Defaults to 1000 Hz (1 ms). */
   tickHz?: number;
+}
+
+interface KernelSchedule extends ScheduledKernel {
+  period: number;
+  nextFireTime: number;
 }
 
 export class BinoRunner {
   private readonly scene: THREE.Scene;
   private readonly entities: ReadonlyMap<string, THREE.Object3D>;
-  private readonly kernels: SensorKernelLike[];
+  private readonly schedules: KernelSchedule[];
   private readonly clock: Clock;
   private readonly tickIntervalMs: number;
   private stopped = false;
@@ -34,9 +52,13 @@ export class BinoRunner {
   constructor(opts: RunnerOptions) {
     this.scene = opts.scene;
     this.entities = opts.entities;
-    this.kernels = opts.kernels;
     this.clock = opts.clock;
     this.tickIntervalMs = 1000 / (opts.tickHz ?? DEFAULT_TICK_HZ);
+    this.schedules = opts.kernels.map((k) => ({
+      ...k,
+      period: 1 / k.rate_hz,
+      nextFireTime: 0, // fire on first tick
+    }));
   }
 
   stop(): void {
@@ -44,20 +66,36 @@ export class BinoRunner {
   }
 
   async *frames(stream: PoseStream): AsyncGenerator<FrameEvent> {
-    void this.scene; // reserved for future per-frame scene-level work (env updates, etc.)
+    void this.scene; // reserved for future scene-level per-tick work
     const pump = pumpPoses(stream, this.entities);
     try {
-      let i = 0;
+      let index = 0;
       while (!this.stopped) {
-        // Yield to the pump so any pose updates buffered ahead of this
-        // tick land on entity transforms before the kernels render.
+        // Yield once so the pump can drain queued pose updates before
+        // any kernel reads entity transforms.
         await new Promise<void>((r) => setImmediate(r));
+
         const t = this.clock.now();
-        const renderStart = performance.now();
-        const outputs = this.kernels.map((k) => k.step(t));
-        const renderMs = performance.now() - renderStart;
-        yield { index: i, time: t, renderMs, outputs };
-        i += 1;
+        const fired: SensorOutput[] = [];
+        for (const s of this.schedules) {
+          if (s.nextFireTime > t) continue;
+          const renderStart = performance.now();
+          const output = s.kernel.step(t);
+          const renderMs = performance.now() - renderStart;
+          fired.push({ sensorId: s.sensorId, output, renderMs });
+          // Advance phase by enough periods to land at or beyond t —
+          // catches up cleanly after a stall instead of firing N times
+          // back-to-back to drain the backlog.
+          const overshoot = t - s.nextFireTime;
+          const skips = Math.floor(overshoot / s.period);
+          s.nextFireTime += s.period * (skips + 1);
+        }
+
+        if (fired.length > 0) {
+          yield { index, time: t, outputs: fired };
+          index += 1;
+        }
+
         await this.wait();
       }
     } finally {

@@ -21,45 +21,93 @@ function makeFixture() {
   return { scene, entities, ego };
 }
 
-describe("BinoRunner", () => {
-  it("ticks each kernel and emits a FrameEvent per tick", async () => {
+describe("BinoRunner — per-sensor scheduling", () => {
+  it("emits an event each time any sensor fires; tags outputs by sensorId", async () => {
     const { scene, entities } = makeFixture();
+    const clock = new SteppedClock();
     const camera = makeKernel();
     const lidar = makeKernel();
     const runner = new BinoRunner({
       scene,
       entities,
-      kernels: [camera, lidar],
-      clock: new SteppedClock(),
+      kernels: [
+        { sensorId: "cam", rate_hz: 10, kernel: camera },
+        { sensorId: "lid", rate_hz: 10, kernel: lidar },
+      ],
+      clock,
       tickHz: 1000,
     });
     const stream = new MemoryPoseStream();
     const gen = runner.frames(stream);
 
-    const events = [];
-    for (let i = 0; i < 3; i++) {
-      const { value } = await gen.next();
-      events.push(value!);
-    }
+    // First tick at t=0 fires both (nextFireTime starts at 0).
+    const ev0 = (await gen.next()).value!;
+    expect(ev0.outputs.map((o) => o.sensorId).sort()).toEqual(["cam", "lid"]);
+    expect(camera.stepMock).toHaveBeenCalledTimes(1);
+
+    // Advance clock past the next 10 Hz period (0.1 s) — both fire again.
+    clock.set(0.11);
+    const ev1 = (await gen.next()).value!;
+    expect(ev1.outputs).toHaveLength(2);
+    expect(camera.stepMock).toHaveBeenCalledTimes(2);
+
     runner.stop();
     stream.close();
     await gen.return(undefined);
-
-    expect(events).toHaveLength(3);
-    expect(camera.stepMock).toHaveBeenCalledTimes(3);
-    expect(lidar.stepMock).toHaveBeenCalledTimes(3);
-    expect(events[0]!.index).toBe(0);
-    expect(events[2]!.index).toBe(2);
-    expect(events[0]!.outputs).toHaveLength(2);
   });
 
-  it("applies pose updates from the stream to entity transforms", async () => {
-    const { scene, entities, ego } = makeFixture();
+  it("fires faster sensors more often than slower ones", async () => {
+    const { scene, entities } = makeFixture();
+    const clock = new SteppedClock();
+    const fast = makeKernel();
+    const slow = makeKernel();
     const runner = new BinoRunner({
       scene,
       entities,
-      kernels: [makeKernel()],
-      clock: new SteppedClock(),
+      kernels: [
+        { sensorId: "fast", rate_hz: 30, kernel: fast },
+        { sensorId: "slow", rate_hz: 10, kernel: slow },
+      ],
+      clock,
+      tickHz: 1000,
+    });
+    const stream = new MemoryPoseStream();
+    const gen = runner.frames(stream);
+
+    // Drain events while advancing clock to t=1.0s. Expect ~30 fast
+    // fires, ~10 slow fires. Tolerance ±1 for boundary effects.
+    let fastFires = 0;
+    let slowFires = 0;
+    let nextRead = 0;
+    for (let i = 0; i < 60; i++) {
+      clock.set((i + 1) * 0.034);
+      void nextRead;
+      const ev = (await gen.next()).value;
+      if (!ev) break;
+      for (const o of ev.outputs) {
+        if (o.sensorId === "fast") fastFires += 1;
+        if (o.sensorId === "slow") slowFires += 1;
+      }
+      if (clock.now() >= 1.0) break;
+    }
+    expect(fastFires).toBeGreaterThanOrEqual(28);
+    expect(fastFires).toBeLessThanOrEqual(32);
+    expect(slowFires).toBeGreaterThanOrEqual(9);
+    expect(slowFires).toBeLessThanOrEqual(11);
+
+    runner.stop();
+    stream.close();
+    await gen.return(undefined);
+  });
+
+  it("applies pose updates between ticks", async () => {
+    const { scene, entities, ego } = makeFixture();
+    const clock = new SteppedClock();
+    const runner = new BinoRunner({
+      scene,
+      entities,
+      kernels: [{ sensorId: "cam", rate_hz: 10, kernel: makeKernel() }],
+      clock,
       tickHz: 1000,
     });
     const stream = new MemoryPoseStream();
@@ -70,7 +118,6 @@ describe("BinoRunner", () => {
     });
 
     const gen = runner.frames(stream);
-    // Allow the pose pump a microtask to drain.
     await new Promise((r) => setImmediate(r));
     await gen.next();
 
@@ -81,14 +128,14 @@ describe("BinoRunner", () => {
     await gen.return(undefined);
   });
 
-  it("uses the clock for frame time", async () => {
+  it("frame.time uses clock.now() at fire time", async () => {
     const { scene, entities } = makeFixture();
     const clock = new SteppedClock();
     const camera = makeKernel();
     const runner = new BinoRunner({
       scene,
       entities,
-      kernels: [camera],
+      kernels: [{ sensorId: "cam", rate_hz: 10, kernel: camera }],
       clock,
       tickHz: 1000,
     });
@@ -105,12 +152,12 @@ describe("BinoRunner", () => {
     await gen.return(undefined);
   });
 
-  it("stop() ends the generator after the current frame", async () => {
+  it("stop() ends the generator", async () => {
     const { scene, entities } = makeFixture();
     const runner = new BinoRunner({
       scene,
       entities,
-      kernels: [makeKernel()],
+      kernels: [{ sensorId: "cam", rate_hz: 1000, kernel: makeKernel() }],
       clock: new SteppedClock(),
       tickHz: 1000,
     });

@@ -66,20 +66,21 @@ describe("createNodeService", () => {
 
       expect(events).toHaveLength(3);
       expect(events[0]!.outputs).toHaveLength(2); // camera + lidar
-      const cameraOutput = events[0]!.outputs[0] as {
+      const cam = events[0]!.outputs.find((o) => o.sensorId.endsWith("bow_camera"))!.output as {
         pixels: Uint8Array;
         width: number;
         height: number;
       };
-      expect(cameraOutput.width).toBe(128);
-      expect(cameraOutput.height).toBe(96);
-      expect(cameraOutput.pixels.length).toBe(128 * 96 * 4);
-      // At least some pixels should be non-zero — proves the GL pipeline rendered.
-      const nonZero = cameraOutput.pixels.some((b) => b !== 0);
+      expect(cam.width).toBe(128);
+      expect(cam.height).toBe(96);
+      expect(cam.pixels.length).toBe(128 * 96 * 4);
+      const nonZero = cam.pixels.some((b) => b !== 0);
       expect(nonZero).toBe(true);
 
-      const lidarOutput = events[0]!.outputs[1] as { count: number };
-      expect(lidarOutput.count).toBeGreaterThan(0);
+      const lid = events[0]!.outputs.find((o) => o.sensorId.endsWith("main_lidar"))!.output as {
+        count: number;
+      };
+      expect(lid.count).toBeGreaterThan(0);
     } finally {
       service.dispose();
     }

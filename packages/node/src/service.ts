@@ -8,7 +8,7 @@ import {
   type Clock,
 } from "@bino/core";
 import { createHeadlessRenderer, type HeadlessRendererHandle } from "./headless-gl.js";
-import { BinoRunner, type SensorKernelLike } from "./runner.js";
+import { BinoRunner, type ScheduledKernel } from "./runner.js";
 
 export interface NodeServiceOptions {
   scenario: CompiledScene;
@@ -45,7 +45,7 @@ function buildSceneFromScenario(
   handle: HeadlessRendererHandle,
 ): NodeService {
   const built = buildScene(scenario);
-  const kernels: SensorKernelLike[] = [];
+  const scheduled: ScheduledKernel[] = [];
   for (const vessel of scenario.vessels) {
     const vesselNode = built.entities.get(vessel.id);
     if (!vesselNode) continue;
@@ -53,35 +53,37 @@ function buildSceneFromScenario(
       const sensorNode = vesselNode.getObjectByName(sensor.id);
       if (!sensorNode) continue;
       if (sensor.type === "camera") {
-        kernels.push(
-          createCameraKernel({
+        scheduled.push({
+          sensorId: `${vessel.id}/${sensor.id}`,
+          rate_hz: sensor.rate_hz,
+          kernel: createCameraKernel({
             renderer: handle.renderer,
             scene: built.scene,
             sensorNode,
             config: sensor,
           }),
-        );
+        });
       } else if (sensor.type === "lidar") {
-        kernels.push(
-          createLidarKernel({
+        scheduled.push({
+          sensorId: `${vessel.id}/${sensor.id}`,
+          rate_hz: sensor.rate_hz,
+          kernel: createLidarKernel({
             renderer: handle.renderer,
             scene: built.scene,
             sensorNode,
             config: sensor,
           }),
-        );
+        });
       }
     }
   }
 
   const clock = createClock(scenario.modes.clock);
-  const tickHz = pickTickHz(scenario);
   const runner = new BinoRunner({
     scene: built.scene,
     entities: built.entities,
-    kernels,
+    kernels: scheduled,
     clock,
-    tickHz,
   });
 
   return {
@@ -89,7 +91,7 @@ function buildSceneFromScenario(
     scene: built.scene,
     renderer: handle.renderer,
     dispose() {
-      for (const k of kernels) k.dispose();
+      for (const s of scheduled) s.kernel.dispose();
       handle.dispose();
     },
   };
@@ -113,12 +115,3 @@ function pickContextSize(opts: NodeServiceOptions): { width: number; height: num
   return { width: w, height: h };
 }
 
-function pickTickHz(scenario: CompiledScene): number {
-  let max = 30;
-  for (const v of scenario.vessels) {
-    for (const s of v.sensors) {
-      max = Math.max(max, s.rate_hz);
-    }
-  }
-  return max;
-}

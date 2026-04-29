@@ -83,8 +83,10 @@ async function main(): Promise<void> {
       count += 1;
       const now = performance.now();
       if (now - lastLog >= 1000) {
+        const totalRenderMs = frame.outputs.reduce((s, o) => s + o.renderMs, 0);
+        const fired = frame.outputs.map((o) => o.sensorId).join(",");
         stdout.write(
-          `t=${frame.time.toFixed(2)}s  frames=${count}  renderMs=${frame.renderMs.toFixed(2)}\n`,
+          `t=${frame.time.toFixed(2)}s  frames=${count}  fired=[${fired}]  renderMs=${totalRenderMs.toFixed(2)}\n`,
         );
         lastLog = now;
       }
