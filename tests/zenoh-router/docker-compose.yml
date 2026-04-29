@@ -1,0 +1,27 @@
+# Test infrastructure: a Zenoh router with the remote-api plugin
+# enabled, reachable at ws://localhost:10000. Used by:
+#   - manual `bino-node --zenoh ws://localhost:10000`
+#   - manual viewer at http://localhost:5173/?zenoh=ws://localhost:10000
+#   - the v0.2 live e2e (plan #10)
+#
+# Bring it up:
+#   docker compose -f tests/zenoh-router/docker-compose.yml up -d
+# Tear it down:
+#   docker compose -f tests/zenoh-router/docker-compose.yml down
+
+services:
+  zenoh-router:
+    build: .
+    container_name: bino-zenoh-router
+    init: true
+    ports:
+      - "127.0.0.1:10000:10000" # remote-api WebSocket
+      - "127.0.0.1:8000:8000"   # REST plugin (handy for debugging)
+      - "127.0.0.1:7447:7447"   # zenoh peer protocol
+    environment:
+      - RUST_LOG=info
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/@/local"]
+      interval: 5s
+      timeout: 2s
+      retries: 5

@@ -191,10 +191,19 @@ investigation; verdicts inline rather than as separate spike folders.
   Keelson's `image_raw` schema accepts raw RGBA natively. v0.2
   publishes raw `RawImage` only. `image_compressed` (JPEG/WebP)
   becomes a v0.3+ option if a remote-consumer use case appears.
-- **S6 — `zenohd` + remote-api plugin in CI. Pending — ~half day.**
-  Required for #11. Pattern is established: a docker-compose side
-  service running `eclipse/zenoh:latest` with the remote-api plugin
-  enabled, reachable at a `ws://` locator the test config points at.
+- **S6 — `zenohd` + remote-api plugin in CI. ✅ Resolved.**
+  `tests/zenoh-router/` ships an Alpine-based image that wraps
+  `zenoh-bridge-remote-api` 1.9.0 (the standalone bridge binary the
+  eclipse-zenoh org publishes alongside every `zenoh-ts` release —
+  `zenohd` statically linked with the plugin). Compose file binds
+  `127.0.0.1:10000` for the WS endpoint, plus 8000 (REST) and 7447
+  (peer protocol) for debug. `packages/node/scripts/probe-zenoh.mjs`
+  does a publish-subscribe roundtrip; `packages/node/test/zenoh-live.test.ts`
+  is the vitest equivalent gated on `BINO_ZENOH_URL`. **Bonus
+  finding:** Node 22's built-in `WebSocket` is enough — the `ws`
+  polyfill `nodered-contrib-zenoh` injects is no longer needed
+  (zenoh-ts README is outdated on this point). #6's polyfill check
+  collapses.
 
 ### Conventions adopted from upstream patterns
 
@@ -255,11 +264,9 @@ independent of node publishing; the live e2e (#10) caps the milestone.
    Zenoh session; when provided, the runner's per-sensor outputs
    flow into publishers. CLI `--zenoh ws://...` activates both pose
    subscription *and* sensor publishing — full duplex.
-7. **Node WebSocket polyfill check.** Node 22 has built-in
-   `WebSocket` (since 21.0.0). Verify zenoh-ts uses it correctly in
-   our Docker image; if not, add the `ws` polyfill the way
-   `nodered-contrib-zenoh` does. (Likely a no-op verification step,
-   but call it out so we don't get bitten in #10.)
+7. ~~**Node WebSocket polyfill check.**~~ ✅ Resolved by S6 — Node 22's
+   built-in `WebSocket` works against `zenoh-bridge-remote-api`. No
+   polyfill needed.
 
 #### 3. `@bino/viewer` — sensor footprints + robustness
 
