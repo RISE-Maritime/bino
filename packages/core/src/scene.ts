@@ -57,8 +57,18 @@ export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}
 
   let seaHandle: SeaSurfaceHandle | undefined;
   if (opts.sea !== false) {
+    // Wave plane stays small + dense so per-segment wave resolution
+    // is good near the viewer.
     seaHandle = createSeaSurface(compiled.environment);
     scene.add(seaHandle.mesh);
+    // Coarse horizon-ocean filler covers the rest of the bbox (4
+    // verts, no waves) so the wave plane's edge doesn't show the
+    // seabed beyond it. v0.5+ can replace with proper LOD or a
+    // skybox horizon trick.
+    if (opts.terrain) {
+      const horizon = buildHorizonOcean(opts.terrain);
+      scene.add(horizon);
+    }
   }
 
   const entities = new Map<string, THREE.Object3D>();
@@ -73,6 +83,25 @@ export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}
   if (seaHandle) built.sea = seaHandle;
   if (skyHandle) built.sky = skyHandle;
   return built;
+}
+
+function buildHorizonOcean(terrain: TerrainData): THREE.Mesh {
+  const bbox = terrain.bathymetry.bbox;
+  const dLat = bbox[3] - bbox[1];
+  const dLon = bbox[2] - bbox[0];
+  const heightM = dLat * 111_320;
+  const widthM = dLon * 111_320 * Math.cos(((bbox[1] + dLat / 2) * Math.PI) / 180);
+  const size = Math.max(widthM, heightM) + 4_000;
+  const geom = new THREE.PlaneGeometry(size, size, 1, 1);
+  geom.rotateX(-Math.PI / 2);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x143850,
+    roughness: 0.7,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.name = "horizon-ocean";
+  mesh.position.y = -0.1; // just below the wave plane (y=0)
+  return mesh;
 }
 
 // Placeholder hull dimensions — bigger than the v0.1 20×4×6 box so

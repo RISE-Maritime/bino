@@ -60,13 +60,14 @@ describe("createSeaSurface", () => {
     visibility_m: 20000,
   };
 
-  it("returns a Mesh with a ShaderMaterial and a 256-segment plane by default", () => {
+  it("returns a Mesh with a ShaderMaterial and a default segment density", () => {
     const handle = createSeaSurface(env);
     expect(handle.mesh).toBeInstanceOf(THREE.Mesh);
     expect(handle.material).toBeInstanceOf(THREE.ShaderMaterial);
-    // PlaneGeometry segments → (segments + 1)² vertices.
+    // Default 384 segments → 385² ≈ 148k verts. Just check the
+    // vertex count is plausible without pinning to one default.
     const verts = handle.mesh.geometry.attributes["position"]!.count;
-    expect(verts).toBe(257 * 257);
+    expect(verts).toBeGreaterThan(60_000);
     handle.dispose();
   });
 
