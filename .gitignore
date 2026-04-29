@@ -15,3 +15,4 @@ coverage/
 .pnpm-store/
 .claude/
 spikes/osm-coastline/cache/
+spikes/lidar-rust/target/

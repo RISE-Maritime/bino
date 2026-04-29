@@ -1,0 +1,12 @@
+[package]
+name = "bino-spike-lidar"
+version = "0.0.0"
+edition = "2021"
+
+[[bin]]
+name = "bench"
+path = "bench.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
