@@ -1,4 +1,5 @@
-import { n as noop, g as getContext, e as escape_html } from "../../chunks/root.js";
+import { g as getContext, e as escape_html } from "../../chunks/escaping.js";
+import { n as noop } from "../../chunks/root.js";
 import { w as writable } from "../../chunks/exports.js";
 import "@sveltejs/kit/internal/server";
 import "@sveltejs/kit/internal";

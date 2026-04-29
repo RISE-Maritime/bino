@@ -87,8 +87,8 @@ declare module '$env/static/private' {
 	export const CODELLDB_LAUNCH_CONNECT_FILE: string;
 	export const npm_config_node_gyp: string;
 	export const PATH: string;
-	export const npm_package_name: string;
 	export const NODE: string;
+	export const npm_package_name: string;
 	export const COREPACK_ENABLE_AUTO_PIN: string;
 	export const XDG_RUNTIME_DIR: string;
 	export const npm_config_frozen_lockfile: string;
@@ -103,7 +103,6 @@ declare module '$env/static/private' {
 	export const REMOTE_CONTAINERS_DISPLAY_SOCK: string;
 	export const npm_package_scripts_test: string;
 	export const npm_package_devDependencies__sveltejs_kit: string;
-	export const npm_config_manage_package_manager_versions: string;
 	export const SHELL: string;
 	export const npm_package_version: string;
 	export const npm_lifecycle_event: string;
@@ -119,8 +118,9 @@ declare module '$env/static/private' {
 	export const CARGO_HOME: string;
 	export const NVM_CD_FLAGS: string;
 	export const CLAUDE_CODE_EXECPATH: string;
-	export const npm_command: string;
+	export const npm_config_recursive: string;
 	export const PNPM_SCRIPT_SRC_DIR: string;
+	export const npm_command: string;
 	export const npm_package_scripts_preview: string;
 	export const npm_package_devDependencies__types_three: string;
 	export const INIT_CWD: string;
@@ -260,8 +260,8 @@ declare module '$env/dynamic/private' {
 		CODELLDB_LAUNCH_CONNECT_FILE: string;
 		npm_config_node_gyp: string;
 		PATH: string;
-		npm_package_name: string;
 		NODE: string;
+		npm_package_name: string;
 		COREPACK_ENABLE_AUTO_PIN: string;
 		XDG_RUNTIME_DIR: string;
 		npm_config_frozen_lockfile: string;
@@ -276,7 +276,6 @@ declare module '$env/dynamic/private' {
 		REMOTE_CONTAINERS_DISPLAY_SOCK: string;
 		npm_package_scripts_test: string;
 		npm_package_devDependencies__sveltejs_kit: string;
-		npm_config_manage_package_manager_versions: string;
 		SHELL: string;
 		npm_package_version: string;
 		npm_lifecycle_event: string;
@@ -292,8 +291,9 @@ declare module '$env/dynamic/private' {
 		CARGO_HOME: string;
 		NVM_CD_FLAGS: string;
 		CLAUDE_CODE_EXECPATH: string;
-		npm_command: string;
+		npm_config_recursive: string;
 		PNPM_SCRIPT_SRC_DIR: string;
+		npm_command: string;
 		npm_package_scripts_preview: string;
 		npm_package_devDependencies__types_three: string;
 		INIT_CWD: string;

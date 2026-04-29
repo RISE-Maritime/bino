@@ -16,6 +16,7 @@
     "src": "../../node_modules/.pnpm/@sveltejs+kit@2.58.0_@sveltejs+vite-plugin-svelte@4.0.4_svelte@5.55.5_vite@5.4.21_@types+node_co7doas6wyu46ltrpqumshpvma/node_modules/@sveltejs/kit/src/runtime/components/svelte-5/error.svelte",
     "isEntry": true,
     "imports": [
+      "_escaping.js",
       "_root.js",
       "_exports.js",
       "_utils.js"
@@ -50,6 +51,17 @@
     "file": "chunks/environment.js",
     "name": "environment"
   },
+  "_errors.js": {
+    "file": "chunks/errors.js",
+    "name": "errors"
+  },
+  "_escaping.js": {
+    "file": "chunks/escaping.js",
+    "name": "escaping",
+    "imports": [
+      "_errors.js"
+    ]
+  },
   "_exports.js": {
     "file": "chunks/exports.js",
     "name": "exports",
@@ -73,7 +85,8 @@
     "file": "chunks/root.js",
     "name": "root",
     "imports": [
-      "_render-context.js"
+      "_render-context.js",
+      "_escaping.js"
     ]
   },
   "_shared.js": {
@@ -81,7 +94,8 @@
     "name": "shared",
     "imports": [
       "_utils.js",
-      "_render-context.js"
+      "_render-context.js",
+      "_errors.js"
     ]
   },
   "_utils.js": {
@@ -104,6 +118,12 @@
     "file": "entries/pages/_page.svelte.js",
     "name": "entries/pages/_page.svelte",
     "src": "src/routes/+page.svelte",
-    "isEntry": true
+    "isEntry": true,
+    "imports": [
+      "_escaping.js"
+    ],
+    "css": [
+      "_app/immutable/assets/_page.DT2cykMN.css"
+    ]
   }
 }

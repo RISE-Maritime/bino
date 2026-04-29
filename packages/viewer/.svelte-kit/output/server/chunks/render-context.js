@@ -479,16 +479,6 @@ function stringify_primitive(thing) {
   if (type === "bigint") return thing + "n";
   return str;
 }
-function experimental_async_required(name) {
-  {
-    throw new Error(`https://svelte.dev/e/experimental_async_required`);
-  }
-}
-function lifecycle_outside_component(name) {
-  {
-    throw new Error(`https://svelte.dev/e/lifecycle_outside_component`);
-  }
-}
 function await_invalid() {
   const error = new Error(`await_invalid
 Encountered asynchronous work while rendering synchronously.
@@ -542,16 +532,14 @@ export {
   DevalueError as D,
   is_plain_object as a,
   stringify_string as b,
-  experimental_async_required as c,
-  get_render_context as d,
+  get_render_context as c,
+  invalid_csp as d,
   enumerable_symbols as e,
-  invalid_csp as f,
+  await_invalid as f,
   get_type as g,
   hydratable_serialization_failed as h,
   is_primitive as i,
-  await_invalid as j,
-  invalid_id_prefix as k,
-  lifecycle_outside_component as l,
+  invalid_id_prefix as j,
   stringify_key as s,
   uneval as u,
   valid_array_indices as v

@@ -1,44 +1,5 @@
-import { l as lifecycle_outside_component, B as BROWSER, f as invalid_csp, j as await_invalid, d as get_render_context, k as invalid_id_prefix, u as uneval } from "./render-context.js";
-var ssr_context = null;
-function set_ssr_context(v) {
-  ssr_context = v;
-}
-function getContext(key) {
-  const context_map = get_or_init_context_map();
-  const result = (
-    /** @type {T} */
-    context_map.get(key)
-  );
-  return result;
-}
-function setContext(key, context) {
-  get_or_init_context_map().set(key, context);
-  return context;
-}
-function get_or_init_context_map(name) {
-  if (ssr_context === null) {
-    lifecycle_outside_component();
-  }
-  return ssr_context.c ??= new Map(get_parent_context(ssr_context) || void 0);
-}
-function push$1(fn) {
-  ssr_context = { p: ssr_context, c: null, r: null };
-}
-function pop$1() {
-  ssr_context = /** @type {SSRContext} */
-  ssr_context.p;
-}
-function get_parent_context(ssr_context2) {
-  let parent = ssr_context2.p;
-  while (parent !== null) {
-    const context_map = parent.c;
-    if (context_map !== null) {
-      return context_map;
-    }
-    parent = parent.p;
-  }
-  return null;
-}
+import { B as BROWSER, d as invalid_csp, f as await_invalid, c as get_render_context, j as invalid_id_prefix, u as uneval } from "./render-context.js";
+import { e as escape_html, s as ssr_context, a as set_ssr_context, p as push$1, b as pop$1, c as setContext } from "./escaping.js";
 var is_array = Array.isArray;
 var index_of = Array.prototype.indexOf;
 var includes = Array.prototype.includes;
@@ -120,22 +81,6 @@ function unresolved_hydratable(key, stack) {
 }
 const BLOCK_OPEN = `<!--${HYDRATION_START}-->`;
 const BLOCK_CLOSE = `<!--${HYDRATION_END}-->`;
-const ATTR_REGEX = /[&"<]/g;
-const CONTENT_REGEX = /[&<]/g;
-function escape_html(value, is_attr) {
-  const str = String(value ?? "");
-  const pattern = is_attr ? ATTR_REGEX : CONTENT_REGEX;
-  pattern.lastIndex = 0;
-  let escaped = "";
-  let last = 0;
-  while (pattern.test(str)) {
-    const i = pattern.lastIndex - 1;
-    const ch = str[i];
-    escaped += str.substring(last, i) + (ch === "&" ? "&amp;" : ch === '"' ? "&quot;" : "&lt;");
-    last = i + 1;
-  }
-  return escaped + str.substring(last);
-}
 function r(e) {
   var t, f, n = "";
   if ("string" == typeof e || "number" == typeof e) n += e;
@@ -4013,8 +3958,6 @@ function Root($$renderer, $$props) {
 }
 const root = asClassComponent(Root);
 export {
-  escape_html as e,
-  getContext as g,
   noop as n,
   root as r,
   safe_not_equal as s
