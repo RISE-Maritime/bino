@@ -1,0 +1,37 @@
+{
+  "bbox": {
+    "south": 54.28,
+    "west": 10.05,
+    "north": 54.38,
+    "east": 10.25
+  },
+  "source": "gmrt.org GridServer",
+  "fetched_bytes": 459310,
+  "raster": {
+    "width": 365,
+    "height": 314,
+    "samplesPerPixel": 1
+  },
+  "bbox_geotiff": [
+    10.049468239585122,
+    54.279497757093296,
+    10.25051955338363,
+    54.380398115499794
+  ],
+  "depth_m": {
+    "min": -16.598491668701172,
+    "max": 62.024436950683594,
+    "mean": 18.614911534892777
+  },
+  "valid_pixels": 114245,
+  "nodata_pixels": 365,
+  "resolution_m_per_pixel": {
+    "lat": 35.45222929936356,
+    "lon": 35.56847387424351
+  },
+  "grid_at_50m": {
+    "width": 260,
+    "height": 223,
+    "vertices": 57980
+  }
+}
