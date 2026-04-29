@@ -1,29 +1,76 @@
 #!/usr/bin/env node
 import { argv, exit, stderr, stdout } from "node:process";
-import { MemoryPoseStream } from "@bino/core";
+import { Config, open } from "@eclipse-zenoh/zenoh-ts";
+import { MemoryPoseStream, type PoseStream, type CompiledScene } from "@bino/core";
 import { loadScenario } from "./yaml.js";
 import { createNodeService } from "./service.js";
+import { createZenohPoseStream } from "./zenoh.js";
+
+interface CliArgs {
+  scenarioPath: string;
+  zenoh?: string;
+}
+
+function parseArgs(args: string[]): CliArgs | null {
+  let scenarioPath: string | undefined;
+  let zenoh: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === "--zenoh" || a === "-z") {
+      zenoh = args[++i];
+    } else if (!scenarioPath) {
+      scenarioPath = a;
+    }
+  }
+  if (!scenarioPath) return null;
+  return zenoh ? { scenarioPath, zenoh } : { scenarioPath };
+}
+
+function zenohVessels(scenario: CompiledScene): Array<{ vesselId: string; topic: string }> {
+  const out: Array<{ vesselId: string; topic: string }> = [];
+  for (const v of scenario.vessels) {
+    if (v.pose_source.type === "zenoh") {
+      out.push({ vesselId: v.id, topic: v.pose_source.topic });
+    }
+  }
+  return out;
+}
 
 async function main(): Promise<void> {
-  const [, , scenarioPath] = argv;
-  if (!scenarioPath) {
-    stderr.write("usage: bino-node <scenario.yaml>\n");
+  const parsed = parseArgs(argv.slice(2));
+  if (!parsed) {
+    stderr.write("usage: bino-node <scenario.yaml> [--zenoh ws://host:port]\n");
     exit(1);
   }
 
-  const scene = await loadScenario(scenarioPath);
+  const scene = await loadScenario(parsed.scenarioPath);
   stdout.write(
     `loaded scenario '${scene.name}': ${scene.vessels.length} vessel(s), ` +
       `mode=${scene.modes.rendering}/${scene.modes.clock}/${scene.modes.determinism}\n`,
   );
 
   const service = createNodeService({ scenario: scene });
-  const stream = new MemoryPoseStream();
+  let stream: PoseStream;
+  let zenohSession: Awaited<ReturnType<typeof open>> | undefined;
 
-  process.on("SIGINT", () => {
+  if (parsed.zenoh) {
+    zenohSession = await open(new Config(parsed.zenoh));
+    stream = await createZenohPoseStream({
+      session: zenohSession,
+      vessels: zenohVessels(scene),
+    });
+    stdout.write(`zenoh: connected to ${parsed.zenoh}, ${zenohVessels(scene).length} subscription(s)\n`);
+  } else {
+    stream = new MemoryPoseStream();
+    stdout.write("zenoh: no --zenoh endpoint, running without pose updates\n");
+  }
+
+  const shutdown = (): void => {
     service.runner.stop();
     stream.close();
-  });
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   try {
     let count = 0;
@@ -41,6 +88,7 @@ async function main(): Promise<void> {
     stdout.write(`stopped after ${count} frame(s)\n`);
   } finally {
     service.dispose();
+    await zenohSession?.close().catch(() => {});
   }
 }
 

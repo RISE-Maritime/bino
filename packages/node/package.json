@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@bino/core": "workspace:*",
+    "@eclipse-zenoh/zenoh-ts": "^1.9.0",
     "@kmamal/gl": "^9.1.0",
     "three": "0.160.1",
     "yaml": "^2.6.0"
