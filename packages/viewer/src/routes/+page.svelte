@@ -47,7 +47,7 @@
       source = "scripted";
     }
 
-    handle = mountViewer({
+    handle = await mountViewer({
       canvas,
       poses,
       onStats: (s) => {

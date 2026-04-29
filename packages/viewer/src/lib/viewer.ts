@@ -6,6 +6,7 @@ import {
   createCameraKernel,
   createLidarKernel,
   createRadarKernel,
+  prepareTerrain,
   type CameraKernel,
   type LidarKernel,
   type RadarFrame,
@@ -47,12 +48,12 @@ export interface MountOptions {
  * (off-screen render targets), and drives a third-person debug camera
  * that orbits ego.
  */
-export function mountViewer(opts: MountOptions): ViewerHandle {
+export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   const { canvas, poses, onStats } = opts;
 
   const compiled = compileScenario(v01Scenario);
-  const built = buildScene(compiled);
-  built.scene.background = new THREE.Color(0x0a1626);
+  const terrain = compiled.terrain ? await prepareTerrain(compiled.terrain.bbox) : undefined;
+  const built = buildScene(compiled, terrain ? { terrain } : {});
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);

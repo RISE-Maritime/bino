@@ -3,6 +3,7 @@ import type { CompiledScene } from "./compile.js";
 import type { Mount, Sensor, Vessel } from "./dsl.js";
 import { buildTerrainMesh, type TerrainData } from "./terrain.js";
 import { createSeaSurface, type SeaSurfaceHandle } from "./sea.js";
+import { createSky, type SkyHandle } from "./sky.js";
 
 export interface BuiltScene {
   scene: THREE.Scene;
@@ -14,22 +15,39 @@ export interface BuiltScene {
    *  configured to add one. The runner calls `sea.setTime(t)` per
    *  tick to animate. */
   sea?: SeaSurfaceHandle;
+  /** Reference to the sky handle, if buildScene was configured to
+   *  add one. Holds sun + ambient lights as well. */
+  sky?: SkyHandle;
 }
 
 export interface BuildSceneOptions {
   terrain?: TerrainData;
   /** Add a Gerstner sea surface driven by compiled.environment.sea_state.
-   *  Default: true if compiled.environment is set (which it always is
-   *  after compileScenario). Pass `false` to suppress. */
+   *  Default: true. Pass `false` to suppress. */
   sea?: boolean;
+  /** Add a Three.Sky + sun directional light tied to
+   *  compiled.environment.time_of_day. Default: true. Pass `false`
+   *  to fall back to the v0.1 default ambient + fixed directional. */
+  sky?: boolean;
 }
 
 export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}): BuiltScene {
   const scene = new THREE.Scene();
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-  sun.position.set(50, 100, 50);
-  scene.add(sun);
+
+  let skyHandle: SkyHandle | undefined;
+  if (opts.sky !== false) {
+    skyHandle = createSky(compiled.environment, compiled.anchor);
+    scene.add(skyHandle.sky);
+    scene.add(skyHandle.sun);
+    scene.add(skyHandle.ambient);
+  } else {
+    // Fallback: the v0.1 default lighting kept for tests / sky=false
+    // callers.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+    sun.position.set(50, 100, 50);
+    scene.add(sun);
+  }
 
   let terrainGroup: THREE.Group | undefined;
   if (opts.terrain) {
@@ -53,6 +71,7 @@ export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}
   const built: BuiltScene = { scene, entities };
   if (terrainGroup) built.terrain = terrainGroup;
   if (seaHandle) built.sea = seaHandle;
+  if (skyHandle) built.sky = skyHandle;
   return built;
 }
 

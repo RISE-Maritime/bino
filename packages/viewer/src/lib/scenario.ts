@@ -56,7 +56,10 @@ export const v01Scenario: Scenario = {
       spectrum: "pierson_moskowitz",
     },
     wind: { speed: 8.5, direction_deg: 220 },
-    time_of_day: "12:00",
+    time_of_day: "20:30",
     visibility_m: 8000,
+  },
+  terrain: {
+    bbox: [10.05, 54.28, 10.25, 54.38] as [number, number, number, number],
   },
 };

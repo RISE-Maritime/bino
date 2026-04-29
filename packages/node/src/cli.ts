@@ -4,8 +4,10 @@ import { Config, open } from "@eclipse-zenoh/zenoh-ts";
 import {
   MemoryPoseStream,
   createZenohPoseStream,
+  prepareTerrain,
   type PoseStream,
   type CompiledScene,
+  type TerrainData,
 } from "@bino/core";
 import { loadScenario } from "./yaml.js";
 import { createNodeService } from "./service.js";
@@ -53,6 +55,17 @@ async function main(): Promise<void> {
       `mode=${scene.modes.rendering}/${scene.modes.clock}/${scene.modes.determinism}\n`,
   );
 
+  let terrain: TerrainData | undefined;
+  if (scene.terrain) {
+    stdout.write(`terrain: fetching coastline + bathymetry for ${JSON.stringify(scene.terrain.bbox)}…\n`);
+    const t0 = performance.now();
+    terrain = await prepareTerrain(scene.terrain.bbox);
+    stdout.write(
+      `terrain: ready in ${(performance.now() - t0).toFixed(0)} ms ` +
+        `(${terrain.coastline.length} chains, ${terrain.bathymetry.width}x${terrain.bathymetry.height} grid)\n`,
+    );
+  }
+
   let stream: PoseStream;
   let zenohSession: Awaited<ReturnType<typeof open>> | undefined;
 
@@ -71,6 +84,7 @@ async function main(): Promise<void> {
   const service = createNodeService({
     scenario: scene,
     ...(zenohSession ? { zenohSession } : {}),
+    ...(terrain ? { terrain } : {}),
   });
   if (service.publisher) {
     stdout.write("zenoh: sensor publishing enabled\n");

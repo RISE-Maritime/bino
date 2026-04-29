@@ -8,6 +8,7 @@ import {
   type CompiledScene,
   type Clock,
   type KeelsonNaming,
+  type TerrainData,
 } from "@bino/core";
 import { createHeadlessRenderer, type HeadlessRendererHandle } from "./headless-gl.js";
 import { BinoRunner, type ScheduledKernel } from "./runner.js";
@@ -32,6 +33,10 @@ export interface NodeServiceOptions {
   zenohSession?: PublishSession;
   /** Override Keelson naming (base_path / source_id / parent_frame_id). */
   naming?: KeelsonNaming;
+  /** Pre-prepared terrain (from prepareTerrain). When the scenario has
+   *  a terrain.bbox the caller is expected to pass this in;
+   *  createNodeService stays synchronous to keep the test ergonomic. */
+  terrain?: TerrainData;
 }
 
 export interface NodeService {
@@ -58,7 +63,7 @@ function buildSceneFromScenario(
   handle: HeadlessRendererHandle,
 ): NodeService {
   const scenario = opts.scenario;
-  const built = buildScene(scenario);
+  const built = buildScene(scenario, opts.terrain ? { terrain: opts.terrain } : {});
   const scheduled: ScheduledKernel[] = [];
   const sensorMeta: SensorMeta[] = [];
 
