@@ -5,7 +5,7 @@
   "description": "Maritime perception sensor emulator for V&V",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22 <23"
   },
   "scripts": {
     "build": "pnpm -r build",
