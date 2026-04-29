@@ -6,6 +6,7 @@ test-results/
 playwright-report/
 target/
 packages/*/wasm/
+*.timestamp-*.mjs
 *.tsbuildinfo
 .DS_Store
 .env
