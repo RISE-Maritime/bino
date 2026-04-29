@@ -8,5 +8,6 @@ export * from "./camera.js";
 export * from "./lidar.js";
 export * from "./radar.js";
 export * from "./clock.js";
+export * from "./env.js";
 export * from "./zenoh.js";
 export * from "./keelson.js";

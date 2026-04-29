@@ -48,4 +48,15 @@ export const v01Scenario: Scenario = {
     },
   ],
   modes: { rendering: "replace", clock: "wall", determinism: "relaxed" },
+  environment: {
+    sea_state: {
+      significant_wave_height: 1.2,
+      peak_period: 6.5,
+      direction_deg: 215,
+      spectrum: "pierson_moskowitz",
+    },
+    wind: { speed: 8.5, direction_deg: 220 },
+    time_of_day: "12:00",
+    visibility_m: 8000,
+  },
 };

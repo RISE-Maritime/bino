@@ -5,6 +5,7 @@ export interface CompiledScene {
   anchor: ScenarioT["anchor"];
   vessels: ScenarioT["vessels"];
   modes: ScenarioT["modes"];
+  environment: ScenarioT["environment"];
 }
 
 export function compileScenario(input: unknown): CompiledScene {
@@ -14,5 +15,6 @@ export function compileScenario(input: unknown): CompiledScene {
     anchor: parsed.anchor,
     vessels: parsed.vessels,
     modes: parsed.modes,
+    environment: parsed.environment,
   };
 }

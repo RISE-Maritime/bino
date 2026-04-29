@@ -83,10 +83,45 @@ export const Modes = z.object({
 });
 export type Modes = z.infer<typeof Modes>;
 
+/** Wave-spectrum family. v0.4a ships pierson_moskowitz only;
+ *  jonswap and others are v1.0 sea-clutter work. */
+export const WaveSpectrum = z.enum(["pierson_moskowitz"]);
+export type WaveSpectrum = z.infer<typeof WaveSpectrum>;
+
+export const SeaState = z.object({
+  significant_wave_height: z.number().nonnegative(),
+  peak_period: z.number().positive(),
+  direction_deg: z.number(),
+  spectrum: WaveSpectrum.default("pierson_moskowitz"),
+});
+export type SeaState = z.infer<typeof SeaState>;
+
+export const Wind = z.object({
+  speed: z.number().nonnegative(),
+  direction_deg: z.number(),
+});
+export type Wind = z.infer<typeof Wind>;
+
+/** Environment block — terrain/sea/sky context for the scene.
+ *  v0.1-v0.3 ignored this; v0.4a is its first concrete consumer.
+ *  v0.5+ may add rain/snow/hail intensity per the env-modelling
+ *  cross-cutting thread in docs/plan.md. */
+export const Environment = z.object({
+  sea_state: SeaState.optional(),
+  wind: Wind.optional(),
+  time_of_day: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "time_of_day must be HH:MM (24h)")
+    .default("12:00"),
+  visibility_m: z.number().positive().default(20000),
+});
+export type Environment = z.infer<typeof Environment>;
+
 export const Scenario = z.object({
   name: z.string().min(1),
   anchor: Anchor,
   vessels: z.array(Vessel).min(1),
   modes: Modes,
+  environment: Environment.default({}),
 });
 export type Scenario = z.infer<typeof Scenario>;
