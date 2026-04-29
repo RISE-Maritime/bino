@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 import { argv, exit, stderr, stdout } from "node:process";
 import { Config, open } from "@eclipse-zenoh/zenoh-ts";
-import { MemoryPoseStream, type PoseStream, type CompiledScene } from "@bino/core";
+import {
+  MemoryPoseStream,
+  createZenohPoseStream,
+  type PoseStream,
+  type CompiledScene,
+} from "@bino/core";
 import { loadScenario } from "./yaml.js";
 import { createNodeService } from "./service.js";
-import { createZenohPoseStream } from "./zenoh.js";
 
 interface CliArgs {
   scenarioPath: string;

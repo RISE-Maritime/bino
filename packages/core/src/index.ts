@@ -7,3 +7,4 @@ export * from "./pose.js";
 export * from "./camera.js";
 export * from "./lidar.js";
 export * from "./clock.js";
+export * from "./zenoh.js";

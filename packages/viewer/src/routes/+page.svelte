@@ -1,17 +1,38 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { MemoryPoseStream } from "@bino/core";
+  import { MemoryPoseStream, type PoseStream } from "@bino/core";
   import { mountViewer, type ViewerHandle, type ViewerStats } from "$lib/viewer.js";
+  import { connectZenohPoses, vesselsForZenoh, type ZenohConnection } from "$lib/zenoh.js";
+  import { v01Scenario } from "$lib/scenario.js";
 
   let canvas: HTMLCanvasElement | undefined = $state();
   let handle: ViewerHandle | undefined;
+  let zenoh: ZenohConnection | undefined;
   let stats: ViewerStats = $state({ frames: 0, fps: 0, cameraFrames: 0, lidarPoints: 0 });
+  let source: "zenoh" | "memory" | "connecting" = $state("memory");
+  let zenohError: string | undefined = $state();
 
-  onMount(() => {
+  onMount(async () => {
     if (!canvas) return;
-    // Placeholder pose stream — #14 wires up scripted poses, #13 the
-    // real Zenoh-WS subscriber.
-    const poses = new MemoryPoseStream();
+    const params = new URLSearchParams(window.location.search);
+    const zenohUrl = params.get("zenoh");
+
+    let poses: PoseStream;
+    if (zenohUrl) {
+      source = "connecting";
+      try {
+        zenoh = await connectZenohPoses(zenohUrl, vesselsForZenoh(v01Scenario.vessels));
+        poses = zenoh.stream;
+        source = "zenoh";
+      } catch (err) {
+        zenohError = err instanceof Error ? err.message : String(err);
+        poses = new MemoryPoseStream();
+        source = "memory";
+      }
+    } else {
+      poses = new MemoryPoseStream();
+    }
+
     handle = mountViewer({
       canvas,
       poses,
@@ -21,15 +42,21 @@
     });
   });
 
-  onDestroy(() => handle?.stop());
+  onDestroy(async () => {
+    handle?.stop();
+    await zenoh?.close();
+  });
 </script>
 
 <main class="layout">
   <header>
     <h1>Bino viewer</h1>
     <span class="stats">
-      {stats.fps.toFixed(1)} fps · {stats.frames} frames · cam {stats.cameraFrames} · lidar {stats.lidarPoints} pts
+      {stats.fps.toFixed(1)} fps · {stats.frames} frames · cam {stats.cameraFrames} · lidar {stats.lidarPoints} pts · src: {source}
     </span>
+    {#if zenohError}
+      <span class="err">zenoh: {zenohError}</span>
+    {/if}
   </header>
   <canvas bind:this={canvas} class="scene"></canvas>
 </main>
@@ -57,6 +84,10 @@
     opacity: 0.65;
     font-size: 0.8125rem;
     font-variant-numeric: tabular-nums;
+  }
+  .err {
+    color: #f88;
+    font-size: 0.8125rem;
   }
   .scene {
     width: 100%;
