@@ -15,8 +15,11 @@
     fps: 0,
     cameraFrames: 0,
     lidarPoints: 0,
+    radar: {},
     staleEntities: [],
   });
+
+  let ppiCanvas: HTMLCanvasElement | undefined = $state();
   let source: "zenoh" | "scripted" | "connecting" = $state("scripted");
   let zenohError: string | undefined = $state();
 
@@ -50,6 +53,7 @@
       onStats: (s) => {
         stats = s;
       },
+      ...(ppiCanvas ? { ppiCanvas } : {}),
     });
   });
 
@@ -74,6 +78,10 @@
     {/if}
   </header>
   <canvas bind:this={canvas} class="scene"></canvas>
+  <div class="ppi-panel">
+    <div class="ppi-label">PPI · main_radar</div>
+    <canvas bind:this={ppiCanvas} width="220" height="220" class="ppi-canvas"></canvas>
+  </div>
 </main>
 
 <style>
@@ -111,5 +119,25 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+  .ppi-panel {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    background: rgba(10, 22, 38, 0.85);
+    border: 1px solid #1f2a3c;
+    border-radius: 6px;
+    padding: 6px 8px 8px;
+    font-size: 0.75rem;
+    color: #88a;
+  }
+  .ppi-label {
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 4px;
+    letter-spacing: 0.02em;
+  }
+  .ppi-canvas {
+    display: block;
+    image-rendering: pixelated;
   }
 </style>
