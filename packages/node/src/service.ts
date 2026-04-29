@@ -6,9 +6,16 @@ import {
   createLidarKernel,
   type CompiledScene,
   type Clock,
+  type KeelsonNaming,
 } from "@bino/core";
 import { createHeadlessRenderer, type HeadlessRendererHandle } from "./headless-gl.js";
 import { BinoRunner, type ScheduledKernel } from "./runner.js";
+import {
+  createSensorPublisher,
+  type PublishSession,
+  type SensorMeta,
+  type SensorPublisher,
+} from "./publisher.js";
 
 export interface NodeServiceOptions {
   scenario: CompiledScene;
@@ -19,12 +26,18 @@ export interface NodeServiceOptions {
   /** GL context dimensions — defaults to the largest sensor resolution. */
   width?: number;
   height?: number;
+  /** When set, the service exposes a publisher that emits each frame on the
+   *  configured Keelson topics. */
+  zenohSession?: PublishSession;
+  /** Override Keelson naming (base_path / source_id / parent_frame_id). */
+  naming?: KeelsonNaming;
 }
 
 export interface NodeService {
   runner: BinoRunner;
   scene: THREE.Scene;
   renderer: THREE.WebGLRenderer;
+  publisher?: SensorPublisher;
   dispose(): void;
 }
 
@@ -32,8 +45,7 @@ export function createNodeService(opts: NodeServiceOptions): NodeService {
   const { width, height } = pickContextSize(opts);
   const handle = createHeadlessRenderer(width, height);
   try {
-    const scene = buildSceneFromScenario(opts.scenario, handle);
-    return scene;
+    return buildSceneFromScenario(opts, handle);
   } catch (err) {
     handle.dispose();
     throw err;
@@ -41,20 +53,24 @@ export function createNodeService(opts: NodeServiceOptions): NodeService {
 }
 
 function buildSceneFromScenario(
-  scenario: CompiledScene,
+  opts: NodeServiceOptions,
   handle: HeadlessRendererHandle,
 ): NodeService {
+  const scenario = opts.scenario;
   const built = buildScene(scenario);
   const scheduled: ScheduledKernel[] = [];
+  const sensorMeta: SensorMeta[] = [];
+
   for (const vessel of scenario.vessels) {
     const vesselNode = built.entities.get(vessel.id);
     if (!vesselNode) continue;
     for (const sensor of vessel.sensors) {
       const sensorNode = vesselNode.getObjectByName(sensor.id);
       if (!sensorNode) continue;
+      const sensorId = `${vessel.id}/${sensor.id}`;
       if (sensor.type === "camera") {
         scheduled.push({
-          sensorId: `${vessel.id}/${sensor.id}`,
+          sensorId,
           rate_hz: sensor.rate_hz,
           kernel: createCameraKernel({
             renderer: handle.renderer,
@@ -63,9 +79,15 @@ function buildSceneFromScenario(
             config: sensor,
           }),
         });
+        sensorMeta.push({
+          sensorId,
+          vesselId: vessel.id,
+          topicSensorId: sensor.id,
+          type: "camera",
+        });
       } else if (sensor.type === "lidar") {
         scheduled.push({
-          sensorId: `${vessel.id}/${sensor.id}`,
+          sensorId,
           rate_hz: sensor.rate_hz,
           kernel: createLidarKernel({
             renderer: handle.renderer,
@@ -73,6 +95,12 @@ function buildSceneFromScenario(
             sensorNode,
             config: sensor,
           }),
+        });
+        sensorMeta.push({
+          sensorId,
+          vesselId: vessel.id,
+          topicSensorId: sensor.id,
+          type: "lidar",
         });
       }
     }
@@ -86,10 +114,19 @@ function buildSceneFromScenario(
     clock,
   });
 
+  const publisher = opts.zenohSession
+    ? createSensorPublisher({
+        session: opts.zenohSession,
+        sensors: sensorMeta,
+        ...(opts.naming ? { naming: opts.naming } : {}),
+      })
+    : undefined;
+
   return {
     runner,
     scene: built.scene,
     renderer: handle.renderer,
+    ...(publisher ? { publisher } : {}),
     dispose() {
       for (const s of scheduled) s.kernel.dispose();
       handle.dispose();

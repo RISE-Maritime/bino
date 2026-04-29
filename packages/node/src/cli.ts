@@ -53,7 +53,6 @@ async function main(): Promise<void> {
       `mode=${scene.modes.rendering}/${scene.modes.clock}/${scene.modes.determinism}\n`,
   );
 
-  const service = createNodeService({ scenario: scene });
   let stream: PoseStream;
   let zenohSession: Awaited<ReturnType<typeof open>> | undefined;
 
@@ -69,6 +68,14 @@ async function main(): Promise<void> {
     stdout.write("zenoh: no --zenoh endpoint, running without pose updates\n");
   }
 
+  const service = createNodeService({
+    scenario: scene,
+    ...(zenohSession ? { zenohSession } : {}),
+  });
+  if (service.publisher) {
+    stdout.write("zenoh: sensor publishing enabled\n");
+  }
+
   const shutdown = (): void => {
     service.runner.stop();
     stream.close();
@@ -81,6 +88,7 @@ async function main(): Promise<void> {
     let lastLog = performance.now();
     for await (const frame of service.runner.frames(stream)) {
       count += 1;
+      if (service.publisher) await service.publisher.publish(frame);
       const now = performance.now();
       if (now - lastLog >= 1000) {
         const totalRenderMs = frame.outputs.reduce((s, o) => s + o.renderMs, 0);
