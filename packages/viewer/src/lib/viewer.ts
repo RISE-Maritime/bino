@@ -16,7 +16,11 @@ export interface ViewerStats {
   fps: number;
   cameraFrames: number;
   lidarPoints: number;
+  /** Entities whose last pose update is older than the staleness threshold. */
+  staleEntities: string[];
 }
+
+const STALE_THRESHOLD_MS = 5000;
 
 export interface ViewerHandle {
   stop(): void;
@@ -79,14 +83,21 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
         built.scene.add(helper);
         cameraHelpers.push(helper);
       } else if (sensor.type === "lidar") {
-        kernels.push(
-          createLidarKernel({
-            renderer,
-            scene: built.scene,
-            sensorNode,
-            config: sensor,
-          }),
-        );
+        const kernel = createLidarKernel({
+          renderer,
+          scene: built.scene,
+          sensorNode,
+          config: sensor,
+        });
+        kernels.push(kernel);
+        // Lidar fan overlay (plan v0.2 #8). CameraHelper draws the
+        // kernel's depth-pass perspective camera; recolor it cyan so
+        // it visually distinguishes from the camera frustum (white).
+        const helper = new THREE.CameraHelper(kernel.camera);
+        const mat = helper.material as THREE.LineBasicMaterial;
+        mat.color = new THREE.Color(0x33ccff);
+        built.scene.add(helper);
+        cameraHelpers.push(helper);
       }
     }
   }
@@ -99,11 +110,14 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
   let lastFpsTick = performance.now();
   let framesSinceLastFpsTick = 0;
   let rafId = 0;
+  // Per-entity last-pose-arrival timestamps for stale detection.
+  const lastPoseAt = new Map<string, number>();
 
   const pump = (async () => {
     for await (const u of poses) {
       if (stopped) break;
       applyPoseUpdate(built.entities, u);
+      lastPoseAt.set(u.entityId, performance.now());
     }
   })();
 
@@ -134,7 +148,14 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
       fps = (framesSinceLastFpsTick * 1000) / (now - lastFpsTick);
       lastFpsTick = now;
       framesSinceLastFpsTick = 0;
-      onStats?.({ frames, fps, cameraFrames, lidarPoints });
+      const staleEntities: string[] = [];
+      for (const id of built.entities.keys()) {
+        const last = lastPoseAt.get(id);
+        if (last === undefined || now - last > STALE_THRESHOLD_MS) {
+          staleEntities.push(id);
+        }
+      }
+      onStats?.({ frames, fps, cameraFrames, lidarPoints, staleEntities });
     }
     rafId = requestAnimationFrame(tick);
   };
@@ -153,7 +174,7 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
       for (const k of kernels) k.dispose();
       renderer.dispose();
     },
-    stats: () => ({ frames, fps, cameraFrames, lidarPoints }),
+    stats: () => ({ frames, fps, cameraFrames, lidarPoints, staleEntities: [] }),
   };
 }
 

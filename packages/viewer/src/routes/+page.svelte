@@ -10,7 +10,13 @@
   let handle: ViewerHandle | undefined;
   let zenoh: ZenohConnection | undefined;
   let scripted: ScriptedHandle | undefined;
-  let stats: ViewerStats = $state({ frames: 0, fps: 0, cameraFrames: 0, lidarPoints: 0 });
+  let stats: ViewerStats = $state({
+    frames: 0,
+    fps: 0,
+    cameraFrames: 0,
+    lidarPoints: 0,
+    staleEntities: [],
+  });
   let source: "zenoh" | "scripted" | "connecting" = $state("scripted");
   let zenohError: string | undefined = $state();
 
@@ -59,6 +65,9 @@
     <h1>Bino viewer</h1>
     <span class="stats">
       {stats.fps.toFixed(1)} fps · {stats.frames} frames · cam {stats.cameraFrames} · lidar {stats.lidarPoints} pts · src: {source}
+      {#if stats.staleEntities.length > 0}
+        · <span class="stale">stale: {stats.staleEntities.join(", ")}</span>
+      {/if}
     </span>
     {#if zenohError}
       <span class="err">zenoh: {zenohError}</span>
@@ -94,6 +103,9 @@
   .err {
     color: #f88;
     font-size: 0.8125rem;
+  }
+  .stale {
+    color: #fb6;
   }
   .scene {
     width: 100%;
