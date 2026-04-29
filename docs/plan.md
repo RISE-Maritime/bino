@@ -3,13 +3,15 @@
 Companion to `docs/bino_design_vision.md`. The vision is the *what* and
 *why*; this is the *in what order* and *what's risky*. Updated as we go.
 
-**Status anchor (2026-04-29):** v0.1 closed — `docs/v01_retrospective.md`.
-All three packages shipping: `@bino/core` (DSL + scene + camera/lidar
-kernels + ENU geo + Zenoh helper), `@bino/node` (CLI + headless service
-+ Docker), `@bino/viewer` (SvelteKit + scripted/Zenoh modes).
-Software rendering verified end-to-end in Docker; Playwright e2e
-covers the viewer-only path. Live Zenoh round-trip is the headline
-deferred item from v0.1, picked up in v0.2 below.
+**Status anchor (2026-04-29):** v0.1 + v0.2 both closed —
+`docs/v01_retrospective.md`, `docs/v02_retrospective.md`. Bino now
+publishes synthetic camera + lidar on canonical Keelson topics
+(`image_raw` / `point_cloud` via `@rise-maritime/keelson-js`) and
+subscribes to `frame_transform` for vessel poses, full-duplex.
+`bino-node --zenoh ws://...` is end-to-end working; the live e2e
+gates on `BINO_ZENOH_URL` and runs against the
+`tests/zenoh-router/` Alpine container. **Next up: v0.3 marine radar
+v0** — Rust enters the codebase.
 
 ---
 
@@ -148,7 +150,12 @@ are independent of each other once core lands.
 
 ---
 
-## v0.2 — Sensor publishing
+## v0.2 — Sensor publishing ✅ CLOSED 2026-04-29
+
+Closed-state paper trail in `docs/v02_retrospective.md`. The task list
+below is preserved for reference; 10 of 11 tasks shipped (stretch #9
+deferred to v0.3). Spike outcomes resolved on Day 0 of v0.2 work and
+materially simplified the rest of the plan — see retrospective.
 
 Goal: camera frames and lidar point clouds published on Keelson topics
 that mirror real sensor topics, so a downstream consumer can swap real
