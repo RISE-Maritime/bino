@@ -3,15 +3,14 @@
 Companion to `docs/bino_design_vision.md`. The vision is the *what* and
 *why*; this is the *in what order* and *what's risky*. Updated as we go.
 
-**Status anchor (2026-04-29):** v0.1 + v0.2 both closed —
-`docs/v01_retrospective.md`, `docs/v02_retrospective.md`. Bino now
-publishes synthetic camera + lidar on canonical Keelson topics
-(`image_raw` / `point_cloud` via `@rise-maritime/keelson-js`) and
-subscribes to `frame_transform` for vessel poses, full-duplex.
-`bino-node --zenoh ws://...` is end-to-end working; the live e2e
-gates on `BINO_ZENOH_URL` and runs against the
-`tests/zenoh-router/` Alpine container. **Next up: v0.3 marine radar
-v0** — Rust enters the codebase.
+**Status anchor (2026-04-29):** v0.1 + v0.2 + v0.3 all closed —
+`docs/v01_retrospective.md`, `docs/v02_retrospective.md`,
+`docs/v03_retrospective.md`. Bino now runs camera + lidar + **radar**
+end-to-end, publishing on canonical Keelson topics. The radar is a
+Rust kernel in `kernels/radar/` (cdylib + rlib), exposed via
+wasm-bindgen for in-process use and as a native crate for offline
+log-analysis. Browser viewer shows a 2D PPI panel + max-range ring
+overlay. **Next up: v0.4 — Terrain, sea, perf pass.**
 
 ---
 
@@ -354,7 +353,13 @@ independent of node publishing; the live e2e (#10) caps the milestone.
 
 ---
 
-## v0.3 — Marine radar v0
+## v0.3 — Marine radar v0 ✅ CLOSED 2026-04-29
+
+Closed-state paper trail in `docs/v03_retrospective.md`. The full
+task list below is preserved for reference; all 10 numbered tasks
+shipped. Spike outcomes resolved on Day 0 of v0.3 and the radar work
+itself was meaningfully smaller because the unknowns had been
+settled up front.
 
 Goal: PPI-style radar returns from a geometry-of-returns kernel
 (ASVSim-style approximation), Rust from the start, exposed as both a
