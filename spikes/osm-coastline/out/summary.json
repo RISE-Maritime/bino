@@ -1,0 +1,16 @@
+{
+  "bbox": {
+    "south": 54.28,
+    "west": 10.05,
+    "north": 54.38,
+    "east": 10.25
+  },
+  "fetched_bytes": 147068,
+  "nodes": 1474,
+  "ways": 9,
+  "segments": 1473,
+  "chains": 1,
+  "closed_chains": 0,
+  "open_chains": 1,
+  "longest_chain_points": 1474
+}
