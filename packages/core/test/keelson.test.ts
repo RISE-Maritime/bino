@@ -94,6 +94,32 @@ describe("encodeCameraFrame / decodeCameraEnvelope", () => {
   });
 });
 
+describe("encodeRadarSweep / decodeRadarSweepEnvelope", () => {
+  const frame = {
+    spokes: [
+      { azimuth: 0, intensity: new Uint8Array([0, 0, 255, 0]) },
+      { azimuth: Math.PI, intensity: new Uint8Array([0, 0, 0, 255]) },
+    ],
+    time: 1.25,
+  };
+
+  it("roundtrips spokes via radar_sweep", async () => {
+    const { encodeRadarSweep, decodeRadarSweepEnvelope, radarTopicKey, DEFAULT_NAMING } =
+      await import("../src/keelson.js");
+    const { keyExpr, bytes } = encodeRadarSweep(frame, "ego", "main_radar", 200);
+    expect(keyExpr).toBe(radarTopicKey(DEFAULT_NAMING, "ego", "main_radar"));
+
+    const decoded = decodeRadarSweepEnvelope(bytes);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.spokes).toHaveLength(2);
+    expect(decoded!.spokes[0]!.azimuth).toBeCloseTo(0, 5);
+    expect(decoded!.spokes[1]!.azimuth).toBeCloseTo(Math.PI, 5);
+    expect(Array.from(decoded!.spokes[0]!.intensity)).toEqual([0, 0, 255, 0]);
+    expect(Array.from(decoded!.spokes[1]!.intensity)).toEqual([0, 0, 0, 255]);
+    expect(decoded!.time).toBeCloseTo(1.25, 3);
+  });
+});
+
 describe("encodePointCloud / decodePointCloudEnvelope", () => {
   const pts = new Float32Array([1, 2, 3, 4, 5, 6]);
   const frame: LidarFrame = { points: pts, count: 2, time: 0.25 };

@@ -4,6 +4,7 @@ import {
   createCameraKernel,
   createClock,
   createLidarKernel,
+  createRadarKernel,
   type CompiledScene,
   type Clock,
   type KeelsonNaming,
@@ -104,6 +105,26 @@ function buildSceneFromScenario(
           vesselId: vessel.id,
           topicSensorId: sensor.id,
           type: "lidar",
+          ...(sensor.publish_topic_override
+            ? { topicOverride: sensor.publish_topic_override }
+            : {}),
+        });
+      } else if (sensor.type === "radar_marine") {
+        scheduled.push({
+          sensorId,
+          rate_hz: sensor.rotation_rate_hz,
+          kernel: createRadarKernel({
+            scene: built.scene,
+            sensorNode,
+            config: sensor,
+          }),
+        });
+        sensorMeta.push({
+          sensorId,
+          vesselId: vessel.id,
+          topicSensorId: sensor.id,
+          type: "radar",
+          rangeM: sensor.range_m,
           ...(sensor.publish_topic_override
             ? { topicOverride: sensor.publish_topic_override }
             : {}),

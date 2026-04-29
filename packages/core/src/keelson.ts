@@ -15,14 +15,17 @@ import { PackedElementField_NumericType } from "@rise-maritime/keelson-js/dist/p
 import type { PoseUpdate } from "./pose.js";
 import type { CameraFrame } from "./camera.js";
 import type { LidarFrame } from "./lidar.js";
+import type { RadarFrame } from "./radar.js";
 
 const SUBJECT_FRAME_TRANSFORM = "frame_transform";
 const SUBJECT_IMAGE_RAW = "image_raw";
 const SUBJECT_POINT_CLOUD = "point_cloud";
+const SUBJECT_RADAR_SWEEP = "radar_sweep";
 
 const TYPE_FRAME_TRANSFORM = "foxglove.FrameTransform";
 const TYPE_RAW_IMAGE = "foxglove.RawImage";
 const TYPE_POINT_CLOUD = "foxglove.PointCloud";
+const TYPE_RADAR_SWEEP = "keelson.RadarSweep";
 
 export interface KeelsonNaming {
   base_path: string;
@@ -59,6 +62,14 @@ export function lidarTopicKey(
   sensorId: string,
 ): string {
   return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_POINT_CLOUD, sensorId);
+}
+
+export function radarTopicKey(
+  naming: KeelsonNaming,
+  vesselId: string,
+  sensorId: string,
+): string {
+  return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_RADAR_SWEEP, sensorId);
 }
 
 interface EncodedTopic {
@@ -221,6 +232,70 @@ export interface DecodedPointCloud {
   count: number;
   time: number;
   frameId: string;
+}
+
+export function encodeRadarSweep(
+  frame: RadarFrame,
+  vesselId: string,
+  sensorId: string,
+  range_m: number,
+  naming: KeelsonNaming = DEFAULT_NAMING,
+): EncodedTopic {
+  const frameId = `${vesselId}/${sensorId}`;
+  const ts = secondsToDate(frame.time);
+  const sweep = {
+    spokes: frame.spokes.map((s) => ({
+      timestamp: ts,
+      frameId,
+      pose: undefined,
+      azimuth: s.azimuth,
+      range: range_m,
+      fields: [
+        {
+          name: "intensity",
+          offset: 0,
+          type: PackedElementField_NumericType.UINT8,
+        },
+      ],
+      data: s.intensity,
+    })),
+  };
+  const bytes = envelopeBytes(TYPE_RADAR_SWEEP, sweep, ts);
+  return { keyExpr: radarTopicKey(naming, vesselId, sensorId), bytes };
+}
+
+export interface DecodedRadarSweep {
+  spokes: Array<{ azimuth: number; intensity: Uint8Array }>;
+  time: number;
+  frameId: string;
+}
+
+export function decodeRadarSweepEnvelope(bytes: Uint8Array): DecodedRadarSweep | null {
+  const env = unwrapEnvelope(bytes);
+  if (!env) return null;
+  const sweep = decodePayloadFromTypeName(TYPE_RADAR_SWEEP, env.payload) as
+    | {
+        spokes?: Array<{
+          azimuth?: number;
+          range?: number;
+          data?: Uint8Array;
+          timestamp?: Date;
+          frameId?: string;
+        }>;
+      }
+    | undefined;
+  if (!sweep || !sweep.spokes) return null;
+  const first = sweep.spokes[0];
+  return {
+    spokes: sweep.spokes.map((s) => ({
+      azimuth: s.azimuth ?? 0,
+      intensity: s.data ?? new Uint8Array(0),
+    })),
+    time: first?.timestamp
+      ? dateToSeconds(first.timestamp)
+      : dateToSeconds(env.enclosedAt),
+    frameId: first?.frameId ?? "",
+  };
 }
 
 export function decodePointCloudEnvelope(bytes: Uint8Array): DecodedPointCloud | null {

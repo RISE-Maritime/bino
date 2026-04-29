@@ -51,7 +51,21 @@ export const LidarSensor = z.object({
 });
 export type LidarSensor = z.infer<typeof LidarSensor>;
 
-export const Sensor = z.discriminatedUnion("type", [CameraSensor, LidarSensor]);
+export const RadarSensor = z.object({
+  id: z.string().min(1),
+  type: z.literal("radar_marine"),
+  mount: Mount,
+  range_m: z.number().positive(),
+  /** Antenna rotation rate; one full sweep is published per rotation. */
+  rotation_rate_hz: z.number().positive(),
+  beam_width_deg: z.number().positive().max(360),
+  spokes_per_rev: z.number().int().positive(),
+  range_bins: z.number().int().positive(),
+  publish_topic_override: z.string().min(1).optional(),
+});
+export type RadarSensor = z.infer<typeof RadarSensor>;
+
+export const Sensor = z.discriminatedUnion("type", [CameraSensor, LidarSensor, RadarSensor]);
 export type Sensor = z.infer<typeof Sensor>;
 
 export const Vessel = z.object({

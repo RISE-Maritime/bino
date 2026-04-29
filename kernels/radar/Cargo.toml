@@ -1,0 +1,16 @@
+[package]
+name = "bino-radar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Bino marine radar v0 — geometry-of-returns kernel"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+serde-wasm-bindgen = { workspace = true }

@@ -1,22 +1,26 @@
 import {
   encodeCameraFrame,
   encodePointCloud,
+  encodeRadarSweep,
   DEFAULT_NAMING,
   type KeelsonNaming,
 } from "@bino/core";
 import type { FrameEvent } from "./runner.js";
 
-export interface SensorMeta {
+interface BaseSensorMeta {
   /** Matches FrameEvent.outputs[].sensorId — usually "{vesselId}/{sensorId}". */
   sensorId: string;
   vesselId: string;
   /** The source_id segment of the Keelson topic key (typically the sensor.id). */
   topicSensorId: string;
-  type: "camera" | "lidar";
-  /** Optional full topic-key override (from DSL publish_topic_override).
-   *  When set, this replaces the construct_pubSub_key()-derived key. */
+  /** Optional full topic-key override (from DSL publish_topic_override). */
   topicOverride?: string;
 }
+
+export type SensorMeta =
+  | (BaseSensorMeta & { type: "camera" })
+  | (BaseSensorMeta & { type: "lidar" })
+  | (BaseSensorMeta & { type: "radar"; rangeM: number });
 
 export interface PublishSession {
   put(keyExpr: string, payload: Uint8Array): Promise<void>;
@@ -42,25 +46,32 @@ export function createSensorPublisher(opts: SensorPublisherOptions): SensorPubli
       for (const out of frame.outputs) {
         const meta = byId.get(out.sensorId);
         if (!meta) continue;
+        let encoded;
         if (meta.type === "camera") {
-          const encoded = encodeCameraFrame(
+          encoded = encodeCameraFrame(
             out.output as Parameters<typeof encodeCameraFrame>[0],
             meta.vesselId,
             meta.topicSensorId,
             naming,
           );
-          const keyExpr = meta.topicOverride ?? encoded.keyExpr;
-          puts.push(opts.session.put(keyExpr, encoded.bytes));
-        } else {
-          const encoded = encodePointCloud(
+        } else if (meta.type === "lidar") {
+          encoded = encodePointCloud(
             out.output as Parameters<typeof encodePointCloud>[0],
             meta.vesselId,
             meta.topicSensorId,
             naming,
           );
-          const keyExpr = meta.topicOverride ?? encoded.keyExpr;
-          puts.push(opts.session.put(keyExpr, encoded.bytes));
+        } else {
+          encoded = encodeRadarSweep(
+            out.output as Parameters<typeof encodeRadarSweep>[0],
+            meta.vesselId,
+            meta.topicSensorId,
+            meta.rangeM,
+            naming,
+          );
         }
+        const keyExpr = meta.topicOverride ?? encoded.keyExpr;
+        puts.push(opts.session.put(keyExpr, encoded.bytes));
       }
       await Promise.all(puts);
     },

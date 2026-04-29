@@ -36,6 +36,15 @@ scenario:
           channels: 32
           range_m: 200
           rate_hz: 10
+        - id: main_radar
+          type: radar_marine
+          # Masthead mount, well above the hull.
+          mount: { x: 0, y: 0, z: 35 }
+          range_m: 2000
+          rotation_rate_hz: 0.4
+          beam_width_deg: 1.2
+          spokes_per_rev: 360
+          range_bins: 200
 
     - id: ferry
       model: ferry_60m
