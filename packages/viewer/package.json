@@ -1,0 +1,30 @@
+{
+  "name": "@bino/viewer",
+  "version": "0.0.0",
+  "description": "Bino browser viewer — same scene the Node service renders, in SvelteKit",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bino/core": "workspace:*",
+    "@eclipse-zenoh/zenoh-ts": "^1.9.0",
+    "three": "0.160.1"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.8.0",
+    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "@types/three": "^0.160.0",
+    "svelte": "^5.1.0",
+    "svelte-check": "^4.0.5",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.5"
+  }
+}
