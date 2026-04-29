@@ -1,28 +1,10 @@
 import type * as THREE from "three";
-import { z } from "zod";
 import type { Pose } from "./sensor.js";
 
 export interface PoseUpdate {
   entityId: string;
   pose: Pose;
   time: number;
-}
-
-export const PoseMessage = z.object({
-  position: z.tuple([z.number(), z.number(), z.number()]),
-  orientation: z.tuple([z.number(), z.number(), z.number(), z.number()]),
-  time: z.number(),
-});
-export type PoseMessage = z.infer<typeof PoseMessage>;
-
-export function decodePoseMessage(json: unknown, entityId: string): PoseUpdate | null {
-  const result = PoseMessage.safeParse(json);
-  if (!result.success) return null;
-  return {
-    entityId,
-    pose: { position: result.data.position, orientation: result.data.orientation },
-    time: result.data.time,
-  };
 }
 
 export interface PoseStream extends AsyncIterable<PoseUpdate> {

@@ -1,7 +1,8 @@
-import { decodePoseMessage, MemoryPoseStream, type PoseStream } from "@bino/core";
+import { MemoryPoseStream, type PoseStream } from "./pose.js";
+import { decodePoseEnvelope } from "./keelson.js";
 
 export interface ZenohSampleLike {
-  payload: () => { toString: () => string };
+  payload: () => { toBytes: () => Uint8Array };
 }
 
 export interface ZenohSubscriberLike {
@@ -52,15 +53,13 @@ async function pumpSubscriber(
 ): Promise<void> {
   try {
     for await (const sample of recv) {
-      const text = sample.payload().toString();
-      let json: unknown;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        continue;
-      }
-      const update = decodePoseMessage(json, vesselId);
-      if (update) buffer.push(update);
+      const bytes = sample.payload().toBytes();
+      const decoded = decodePoseEnvelope(bytes);
+      if (!decoded) continue;
+      // The Keelson topic key is authoritative for which vessel this
+      // pose belongs to; override whatever the payload's
+      // child_frame_id claims.
+      buffer.push({ ...decoded, entityId: vesselId });
     }
   } catch {
     // subscriber error / undeclare race — silently end this pump

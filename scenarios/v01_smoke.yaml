@@ -17,7 +17,9 @@ scenario:
       model: tanker_120m
       pose_source:
         type: zenoh
-        topic: keelson/ego/nav/pose
+        # Keelson convention: {base}/@v0/{entity}/pubsub/{subject}/{source}.
+        # frame_transform → foxglove.FrameTransform inside a Keelson Envelope.
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
       sensors:
         - id: bow_camera
           type: camera
@@ -39,7 +41,7 @@ scenario:
       model: ferry_60m
       pose_source:
         type: zenoh
-        topic: keelson/ferry/nav/pose
+        topic: bino/@v0/ferry/pubsub/frame_transform/sim
       sensors: []
 
   modes:

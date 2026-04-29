@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createZenohPoseStream, type ZenohSessionLike } from "../src/zenoh.js";
+import { encodePoseUpdate } from "../src/keelson.js";
+import type { PoseUpdate } from "../src/pose.js";
 
 interface FakeSample {
-  payload: () => { toString: () => string };
+  payload: () => { toBytes: () => Uint8Array };
 }
 
 class FakeChannel {
@@ -17,7 +19,8 @@ class FakeChannel {
   }
   close(): void {
     this.closed = true;
-    while (this.waiters.length) this.waiters.shift()!({ value: undefined as unknown as FakeSample, done: true });
+    while (this.waiters.length)
+      this.waiters.shift()!({ value: undefined as unknown as FakeSample, done: true });
   }
   [Symbol.asyncIterator](): AsyncIterableIterator<FakeSample> {
     const self = this;
@@ -25,7 +28,8 @@ class FakeChannel {
       next(): Promise<IteratorResult<FakeSample>> {
         const buffered = self.buffer.shift();
         if (buffered) return Promise.resolve({ value: buffered, done: false });
-        if (self.closed) return Promise.resolve({ value: undefined as unknown as FakeSample, done: true });
+        if (self.closed)
+          return Promise.resolve({ value: undefined as unknown as FakeSample, done: true });
         return new Promise((r) => self.waiters.push(r));
       },
       [Symbol.asyncIterator](): AsyncIterableIterator<FakeSample> {
@@ -35,7 +39,11 @@ class FakeChannel {
   }
 }
 
-function makeSession(): { session: ZenohSessionLike; channels: Map<string, FakeChannel>; undeclared: string[] } {
+function makeSession(): {
+  session: ZenohSessionLike;
+  channels: Map<string, FakeChannel>;
+  undeclared: string[];
+} {
   const channels = new Map<string, FakeChannel>();
   const undeclared: string[] = [];
   const session: ZenohSessionLike = {
@@ -54,8 +62,12 @@ function makeSession(): { session: ZenohSessionLike; channels: Map<string, FakeC
   return { session, channels, undeclared };
 }
 
-function payload(text: string): FakeSample {
-  return { payload: () => ({ toString: () => text }) };
+function bytesPayload(bytes: Uint8Array): FakeSample {
+  return { payload: () => ({ toBytes: () => bytes }) };
+}
+
+function poseEnvelope(update: PoseUpdate): Uint8Array {
+  return encodePoseUpdate(update).bytes;
 }
 
 describe("createZenohPoseStream", () => {
@@ -63,14 +75,20 @@ describe("createZenohPoseStream", () => {
     const { session, channels } = makeSession();
     const stream = await createZenohPoseStream({
       session,
-      vessels: [{ vesselId: "ego", topic: "ego/pose" }],
+      vessels: [{ vesselId: "ego", topic: "bino/@v0/ego/pubsub/frame_transform/sim" }],
     });
 
-    channels.get("ego/pose")!.push(
-      payload(JSON.stringify({ position: [1, 2, 3], orientation: [0, 0, 0, 1], time: 0.1 })),
+    channels.get("bino/@v0/ego/pubsub/frame_transform/sim")!.push(
+      bytesPayload(
+        poseEnvelope({
+          entityId: "ego",
+          pose: { position: [1, 2, 3], orientation: [0, 0, 0, 1] },
+          time: 0.1,
+        }),
+      ),
     );
 
-    const seen: unknown[] = [];
+    const seen: PoseUpdate[] = [];
     const consumer = (async () => {
       for await (const u of stream) {
         seen.push(u);
@@ -79,27 +97,42 @@ describe("createZenohPoseStream", () => {
     })();
     await consumer;
 
-    expect(seen).toEqual([
-      { entityId: "ego", pose: { position: [1, 2, 3], orientation: [0, 0, 0, 1] }, time: 0.1 },
-    ]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.entityId).toBe("ego");
+    expect(seen[0]!.pose.position[0]).toBeCloseTo(1);
+    expect(seen[0]!.pose.position[1]).toBeCloseTo(2);
+    expect(seen[0]!.pose.position[2]).toBeCloseTo(3);
+    expect(seen[0]!.time).toBeCloseTo(0.1, 3);
     stream.close();
   });
 
-  it("merges multiple subscribers with the right entityId tagging", async () => {
+  it("merges multiple subscribers and tags by topic-side vesselId", async () => {
     const { session, channels } = makeSession();
     const stream = await createZenohPoseStream({
       session,
       vessels: [
-        { vesselId: "ego", topic: "ego/pose" },
-        { vesselId: "ferry", topic: "ferry/pose" },
+        { vesselId: "ego", topic: "bino/@v0/ego/pubsub/frame_transform/sim" },
+        { vesselId: "ferry", topic: "bino/@v0/ferry/pubsub/frame_transform/sim" },
       ],
     });
 
-    channels.get("ferry/pose")!.push(
-      payload(JSON.stringify({ position: [10, 0, 0], orientation: [0, 0, 0, 1], time: 1 })),
+    channels.get("bino/@v0/ferry/pubsub/frame_transform/sim")!.push(
+      bytesPayload(
+        poseEnvelope({
+          entityId: "ferry",
+          pose: { position: [10, 0, 0], orientation: [0, 0, 0, 1] },
+          time: 1,
+        }),
+      ),
     );
-    channels.get("ego/pose")!.push(
-      payload(JSON.stringify({ position: [0, 0, 0], orientation: [0, 0, 0, 1], time: 1 })),
+    channels.get("bino/@v0/ego/pubsub/frame_transform/sim")!.push(
+      bytesPayload(
+        poseEnvelope({
+          entityId: "ego",
+          pose: { position: [0, 0, 0], orientation: [0, 0, 0, 1] },
+          time: 1,
+        }),
+      ),
     );
 
     const ids = new Set<string>();
@@ -114,20 +147,56 @@ describe("createZenohPoseStream", () => {
     stream.close();
   });
 
+  it("overrides decoded entityId with the topic-side vesselId", async () => {
+    // Even if a misconfigured publisher writes child_frame_id="other"
+    // into a topic for vessel "ego", the subscriber tags by topic.
+    const { session, channels } = makeSession();
+    const stream = await createZenohPoseStream({
+      session,
+      vessels: [{ vesselId: "ego", topic: "bino/@v0/ego/pubsub/frame_transform/sim" }],
+    });
+    channels.get("bino/@v0/ego/pubsub/frame_transform/sim")!.push(
+      bytesPayload(
+        poseEnvelope({
+          entityId: "WRONG_FRAME_ID",
+          pose: { position: [1, 2, 3], orientation: [0, 0, 0, 1] },
+          time: 0,
+        }),
+      ),
+    );
+
+    const seen: PoseUpdate[] = [];
+    const consumer = (async () => {
+      for await (const u of stream) {
+        seen.push(u);
+        break;
+      }
+    })();
+    await consumer;
+    expect(seen[0]!.entityId).toBe("ego");
+    stream.close();
+  });
+
   it("silently drops malformed payloads", async () => {
     const { session, channels } = makeSession();
     const stream = await createZenohPoseStream({
       session,
-      vessels: [{ vesselId: "ego", topic: "ego/pose" }],
+      vessels: [{ vesselId: "ego", topic: "bino/@v0/ego/pubsub/frame_transform/sim" }],
     });
 
-    channels.get("ego/pose")!.push(payload("not json"));
-    channels.get("ego/pose")!.push(payload(JSON.stringify({ position: [1, 2] })));
-    channels.get("ego/pose")!.push(
-      payload(JSON.stringify({ position: [1, 2, 3], orientation: [0, 0, 0, 1], time: 0 })),
+    channels.get("bino/@v0/ego/pubsub/frame_transform/sim")!
+      .push(bytesPayload(new Uint8Array([1, 2, 3]))); // garbage
+    channels.get("bino/@v0/ego/pubsub/frame_transform/sim")!.push(
+      bytesPayload(
+        poseEnvelope({
+          entityId: "ego",
+          pose: { position: [1, 2, 3], orientation: [0, 0, 0, 1] },
+          time: 0,
+        }),
+      ),
     );
 
-    const seen: unknown[] = [];
+    const seen: PoseUpdate[] = [];
     const consumer = (async () => {
       for await (const u of stream) {
         seen.push(u);
@@ -144,14 +213,16 @@ describe("createZenohPoseStream", () => {
     const stream = await createZenohPoseStream({
       session,
       vessels: [
-        { vesselId: "ego", topic: "ego/pose" },
-        { vesselId: "ferry", topic: "ferry/pose" },
+        { vesselId: "ego", topic: "bino/@v0/ego/pubsub/frame_transform/sim" },
+        { vesselId: "ferry", topic: "bino/@v0/ferry/pubsub/frame_transform/sim" },
       ],
     });
     stream.close();
-    // close() fires undeclare in the background; give it a tick.
     await new Promise((r) => setImmediate(r));
     await new Promise((r) => setImmediate(r));
-    expect(undeclared.sort()).toEqual(["ego/pose", "ferry/pose"]);
+    expect(undeclared.sort()).toEqual([
+      "bino/@v0/ego/pubsub/frame_transform/sim",
+      "bino/@v0/ferry/pubsub/frame_transform/sim",
+    ]);
   });
 });
