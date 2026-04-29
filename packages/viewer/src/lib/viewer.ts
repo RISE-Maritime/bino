@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   applyPoseUpdate,
   buildScene,
@@ -74,6 +75,17 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   // see the ferry plus a sweep of coastline.
   debugCamera.position.set(0, 80, 200);
   debugCamera.lookAt(0, 0, -300);
+
+  // Pan/zoom/orbit: drag = orbit, right-drag = pan, wheel = zoom.
+  // Damping smooths the input; .target is the look-at point.
+  const controls = new OrbitControls(debugCamera, canvas);
+  controls.target.set(0, 0, -300);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI * 0.49; // don't let the user dive below water
+  controls.minDistance = 30;
+  controls.maxDistance = 50_000;
+  controls.update();
 
   const kernels: Array<CameraKernel | LidarKernel | RadarKernel> = [];
   const cameraHelpers: THREE.CameraHelper[] = [];
@@ -162,6 +174,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
       debugCamera.aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
       debugCamera.updateProjectionMatrix();
     }
+    controls.update();
 
     const t = performance.now() / 1000;
     if (built.sea) built.sea.setTime(t);
@@ -224,6 +237,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     stop() {
       stopped = true;
       cancelAnimationFrame(rafId);
+      controls.dispose();
       poses.close();
       void pump.catch(() => {});
       for (const h of cameraHelpers) {

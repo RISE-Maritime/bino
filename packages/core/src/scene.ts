@@ -75,16 +75,26 @@ export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}
   return built;
 }
 
+// Placeholder hull dimensions — bigger than the v0.1 20×4×6 box so
+// the vessel is visible against a multi-km sea, sized roughly like a
+// medium ferry. v0.5 replaces these with a real asset pipeline.
+const PLACEHOLDER_HULL = { length: 80, height: 12, beam: 14, draft: 4 };
+
 function buildVessel(vessel: Vessel): THREE.Object3D {
   const group = new THREE.Group();
   group.name = vessel.id;
   group.userData = { model: vessel.model };
 
+  const { length, height, beam, draft } = PLACEHOLDER_HULL;
   const hull = new THREE.Mesh(
-    new THREE.BoxGeometry(20, 4, 6),
+    new THREE.BoxGeometry(length, height, beam),
     new THREE.MeshStandardMaterial({ color: 0x808080 }),
   );
   hull.name = `${vessel.id}__placeholder_hull`;
+  // Sit the hull on the water with a fixed draft. The vessel group's
+  // origin remains the waterline-pose anchor; the hull sits above it
+  // by (height/2 - draft) so the configured draft is below water.
+  hull.position.y = height / 2 - draft;
   group.add(hull);
 
   for (const sensor of vessel.sensors) {
