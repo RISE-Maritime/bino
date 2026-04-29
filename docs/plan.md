@@ -531,49 +531,47 @@ demo-quality release on its own (the user's "less bare-bones" wish
 from the v0.3 review starts being met), while v0.4b is internal
 engineering with no visual payoff.
 
-### Spikes that should land before committing the v0.4 schedule
+### Spike outcomes (resolved 2026-04-29)
 
-Each ends in a verdict file under `spikes/`. Five total — bigger spike
-budget than prior milestones because the unknowns are real, not
-upstream-look-up-able like S4/S6/S9 were.
+All five v0.4 spikes resolved before v0.4 implementation work began.
+Verdicts in `spikes/{osm-coastline,bathymetry,sea-shader,lidar-rust,webgpu-eval}/results.md`.
+Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
 
-- **S11 — OSM coastline data source. ~Half day.** Likely Overpass
-  API query for `way["natural"="coastline"]` over the bbox; convert
-  line strings to triangulated polygons via `polygon-clipping` +
-  `earcut`. Cache fetched data on disk so scene compile doesn't hit
-  the network on every dev reload. Verify a known harbour bbox
-  (Kiel) renders sensibly.
-- **S12 — EMODnet bathymetry data source. ~Half day.** GeoTIFF via
-  `geotiff.js`, sample to regular grid at the bbox, generate
-  `PlaneGeometry` with per-vertex elevations. Check resolution vs
-  bbox-size trade-off (a 10 km bbox at 50 m grid spacing = 200×200
-  vertices = 80 KB triangles — fine).
-- **S13 — Sea surface shader. ~1 day.** Custom Gerstner via
-  `THREE.ShaderMaterial`, NOT Three's `Water` example (too tied to a
-  specific reflection setup; we want DSL-driven Pierson-Moskowitz
-  spectrum parameters). Sum 4-8 wave components, vertex displacement
-  + normal perturbation. Verify visual at low and high sea state.
-- **S14 — Lidar Rust port algorithm. ~1 day.** TS lidar is GL-bound
-  (depth-pass via `MeshDepthMaterial(RGBADepthPacking)`). Rust port
-  must be ray-cast — different algorithm, same interface. Decisions
-  to settle: BVH library (`parry3d` heavyweight vs roll-our-own
-  AABB-tree), per-frame BVH rebuild vs cache-with-deltas, scene
-  geometry handoff (probably copy-each-frame like v0.3 radar; the
-  lidar's bigger ray budget — 32 ch × 360 az × 10 Hz = 115k rays/sec
-  — may stress this). Benchmark cost vs the depth-pass version
-  before committing.
-- **S15 — WebGPU re-evaluation. ~Half day.** Three.js's WebGPU
-  pipeline at r160 was not drop-in (the v0.1 spike found gaps in
-  `MeshDepthMaterial`). Bump to current Three (r170+ presumed) and
-  retry the headless-render bench candidates. If our camera + lidar
-  kernels run unchanged on `WebGPURenderer`, migrate. If not, defer
-  to v0.5 or beyond.
-
-Note that most v0.4 work doesn't depend on WebGPU; S15 is genuinely
-optional. Spike S14 is the biggest research risk — a lidar that's
-slower than the GL depth-pass would mean the perf claim of "Rust
-saves us" doesn't materialize and we either accept slower lidar or
-keep the GL version.
+- **S11 — OSM coastline. ✅** Overpass API + ~30 LOC parser/stitcher
+  in `@bino/core/src/terrain.ts`. No third-party JS library needed
+  for ingest. Verified against Kiel bbox: 1474 points → single
+  1474-pt chain after stitching, 1.1 s cold / 5 ms cached. v0.4a #3
+  ships outline-only rendering first; filled-polygon rendering
+  (bbox-edge clipping + earcut) deferred until visually needed.
+- **S12 — Bathymetry. ✅** GMRT GridServer + `geotiff.js` (npm).
+  Public, no auth, ~35 m/px for the Kiel bbox (better than EMODnet
+  default). Data shape is identical across providers, so swapping
+  to EMODnet later is a one-line change. EMODnet itself deferred to
+  v1.0 because its high-res download flow needs portal navigation.
+- **S13 — Sea shader. ✅** Custom 4-component Gerstner
+  `THREE.ShaderMaterial` (~120 LOC), NOT Three's `Water` example.
+  17-20 ms/frame on `@kmamal/gl` for a 256-segment plane at
+  512×384. Sea-state-sensitive across calm/moderate/heavy. The
+  spike's `sea.mjs` IS the v0.4a #6 implementation — lift directly
+  to `@bino/core/src/sea.ts`. Pierson-Moskowitz spectral sampling
+  deferred (a ~30 LOC follow-up).
+- **S14 — Lidar Rust port. ✅ but with consequences.** Naive linear
+  ray-vs-AABB scan handles ≤100 boxes (v0.3 ceiling) at 1.5 ms
+  per sweep; breaks acceptance at v0.4a's terrain triangle count
+  (86 ms at 5k boxes, 910 ms at 60k). **BVH is required for v0.4b.**
+  Decisions locked: roll our own AABB-tree (~150 LOC, no `parry3d`),
+  separate trees for static terrain (built once at scenario load) +
+  moving vessels (rebuilt per-frame), copy-each-frame for vessels
+  (~3 KB/frame). Code sketch ready for v0.4b #9.
+- **S15 — WebGPU re-evaluation. ✅ but defer migration.** webgpu npm
+  0.4.0 loads cleanly on Bookworm now (v0.1's `GLIBCXX_3.4.32`
+  issue is resolved); but Dawn still needs a Vulkan runtime. More
+  importantly: the cost/benefit shifted under us. With v0.3 radar
+  + v0.4b lidar both moving to WASM kernels, GPU compute for
+  ray-casting is moot. Camera rendering at 1080p10 isn't a
+  bottleneck. v0.4b #12 closes as **deferred — revisit if a sensor
+  needs GPU compute or production runs on hardware-GPU hosts**.
+  Neither currently on the roadmap.
 
 ### Tasks, in dependency order
 
@@ -629,10 +627,10 @@ keep the GL version.
     Rust ray-cast, on the same v04_kiel scenario with terrain
     rendering. Wall-clock, p50, p95. If Rust isn't decisively faster,
     the architecture choice was wrong; revert.
-12. **WebGPU evaluation per S15.** If the verdict is "ready," migrate
-    `@bino/node`'s renderer construction to `WebGPURenderer`. Camera
-    kernel and (now WASM-based) lidar kernel both run unchanged.
-    Update the headless-render spike's results.md with new numbers.
+12. ~~**WebGPU evaluation per S15.**~~ ✅ Closed as deferred per
+    `spikes/webgpu-eval/results.md`. Revisit trigger: a sensor
+    needing GPU compute, or production on hardware-GPU hosts.
+    Neither currently on the roadmap.
 
 ### v0.4 acceptance
 
