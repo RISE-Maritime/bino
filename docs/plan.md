@@ -357,20 +357,162 @@ independent of node publishing; the live e2e (#10) caps the milestone.
 ## v0.3 — Marine radar v0
 
 Goal: PPI-style radar returns from a geometry-of-returns kernel
-(ASVSim-style approximation), Rust from the start.
+(ASVSim-style approximation), Rust from the start, exposed as both a
+WASM module and a native crate. Browser viewer gets a PPI overlay.
+The native-crate path lets the same kernel run in offline log
+analysis pipelines — a deliberately concrete payoff for going Rust
+early.
 
-- New workspace: `kernels/` (separate Rust crate), built as both WASM
-  and a native crate.
-- WASM module exposed through a `SensorKernel<RadarConfig, RadarOutput>`
-  binding in `@bino/core`.
-- Browser viewer adds a PPI overlay.
-- Native-crate path lets the same kernel run in offline log analysis
-  pipelines (a deliberately concrete payoff for going Rust early).
+### Spike outcomes (resolved 2026-04-29, before v0.3 work begins)
 
-**Decision to lock before starting:** wasm-bindgen vs wasm-pack vs
-hand-rolled, and how the JS side hands the scene buffer in (shared
-memory vs copy-each-frame). Affects perf and ergonomics for every
-future Rust kernel.
+- **S7 — Rust toolchain. ✅ Resolved: `wasm-bindgen` + cargo direct,
+  no `wasm-pack`.** Single crate compiles to both native (`cargo
+  build`) and wasm32 (`cargo build --target wasm32-unknown-unknown` +
+  `wasm-bindgen-cli` for JS glue). Conditional bindings via
+  `#[cfg(target_arch = "wasm32")]`. `wasm-pack` is a meta-tool that
+  bundles wasm-bindgen + a publish path we don't need; sticking to
+  bare cargo + wasm-bindgen-cli keeps the build script auditable.
+- **S8 — JS↔WASM memory model. ✅ Resolved: copy-each-frame.** v0.3
+  radar throughput is ~150 KB/s peak (360 spokes × 1024 range bins ×
+  0.4 Hz sweep rate). Trivial. SharedArrayBuffer requires COOP/COEP
+  headers in the browser viewer and serialization protocol design we
+  don't want to take on now. Revisit at v0.4 when the lidar's larger
+  ray budget makes copies hurt.
+- **S9 — Keelson radar schema. ✅ Resolved.** `radar_spoke:
+  keelson.RadarSpoke` (per-beam: timestamp, frame_id, pose, azimuth
+  in rad, range, PackedElementField[] for intensity layout, packed
+  bytes) and `radar_sweep: keelson.RadarSweep` (a `repeated
+  RadarSpoke spokes`). `@rise-maritime/keelson-js` already ships the
+  generated payload classes at `dist/payloads/RadarReading.{js,d.ts}`.
+  Same encode/decode pattern as v0.2's image_raw / point_cloud.
+- **S10 — Native + wasm dual-target test infra. Pending — ~half day.**
+  Native: `cargo test` from inside `kernels/`. WASM: vitest loads the
+  built `.wasm` + bindgen JS, runs the same test scenarios. Set up
+  CI matrix that runs both.
+
+### Tasks, in dependency order
+
+#### 1. `kernels/` Rust workspace setup
+
+1. **Cargo workspace skeleton.** `kernels/Cargo.toml` (workspace),
+   `kernels/radar/` member crate with `Cargo.toml` declaring
+   `crate-type = ["cdylib", "rlib"]` for dual targets. Add
+   `wasm-bindgen` + `serde` + `serde-wasm-bindgen` as deps. Pin
+   `wasm-bindgen-cli` version to match the crate.
+2. **Build script.** Root `package.json` script `kernels:build` runs
+   `cargo build --release --target wasm32-unknown-unknown` then
+   `wasm-bindgen --target bundler --out-dir packages/core/src/wasm`
+   (or wherever Vite + tsc can pick it up). `pnpm -r build` calls it
+   first when it's stale. Native build (`cargo build --release` plain)
+   for the offline-analysis crate path.
+
+#### 2. Radar kernel (Rust)
+
+3. **`SceneSnapshot` input structs.** Plain `serde`-derive structs
+   for what the kernel sees per frame: host pose, list of vessel
+   bounding boxes (position, heading, dimensions). Pure data — same
+   shape native and WASM.
+4. **`RadarConfig` input** matching the DSL `radar_marine` config:
+   range_m, rotation_rate_hz, beam_width_deg, spokes_per_rev (derived
+   or explicit).
+5. **Geometry-of-returns implementation.** For each spoke azimuth:
+   ray from radar origin in the horizontal plane, find nearest
+   bbox-intersection from the snapshot's vessels, fill intensity bins
+   by range. ASVSim simplifications: binary intensity (no antenna
+   pattern), no sea clutter, no rain, no propagation effects. Make
+   the simplifications loud in code comments — we don't want a
+   downstream perception team thinking this is realistic radar.
+6. **`step()` entry point** consumes a copied scene snapshot,
+   produces a packed `RadarSweep` (or partial spokes per tick if the
+   sweep takes multiple ticks). Native API: `pub fn step(...) ->
+   RadarSweep`. WASM API: same, with `#[wasm_bindgen]` and serde
+   conversions for the JS side.
+7. **Native unit tests.** "ego at origin, ferry at (0, 100) bow-on,
+   spoke at azimuth=0 has return at range≈100." Cargo test, runs
+   without WASM.
+
+#### 3. JS-side wiring
+
+8. **WASM loader in `@bino/core`.** Thin wrapper around the
+   wasm-bindgen-generated module that exposes
+   `createRadarKernel({ scene, sensorNode, config })` matching the
+   pattern of camera + lidar kernels. Builds the SceneSnapshot from
+   Three.js objects each frame; calls into WASM; returns a frame the
+   runner can publish.
+9. **Vitest integration test.** Loads the built `.wasm`, exercises a
+   simple scenario, asserts output structure. Gated on
+   `kernels:build` having run.
+
+#### 4. DSL + Keelson encoder
+
+10. **`RadarSensor` Zod schema.** New variant on the `Sensor`
+    discriminated union. Fields: `range_m`, `rotation_rate_hz`,
+    `beam_width_deg`, `spokes_per_rev`, optional `publish_topic_override`.
+11. **`encodeRadarSweep` / `decodeRadarSweepEnvelope` in keelson.ts.**
+    Same shape as the camera/lidar encoders. `radar_sweep` topic on
+    `{base}/@v0/{vessel}/pubsub/radar_sweep/{sensor}`.
+
+#### 5. Service + publisher integration
+
+12. **`createNodeService` recognizes `radar_marine` sensors,**
+    instantiates radar kernels alongside camera/lidar, schedules
+    them at `rotation_rate_hz`, publishes via the sensor publisher.
+13. **DSL update for `v01_smoke.yaml`** (or new `v03_radar.yaml`):
+    add a `marine_radar` sensor at the masthead.
+
+#### 6. Viewer PPI overlay
+
+14. **PPI rendering in viewer.** A round overlay panel in a viewer
+    corner, showing the most-recent sweep as polar plot. Probably a
+    canvas2d sub-element rather than a Three.js texture — simpler,
+    and the PPI is conventionally 2D anyway. Subscribes locally to
+    its own kernel's output (no Zenoh for the overlay).
+15. **Frustum-style overlay** for the radar sensor in the third-person
+    view (a wedge showing beam width + range), analogous to camera
+    frustum and lidar fan.
+
+#### 7. Glue + acceptance
+
+16. **Live e2e extension.** v0.2's `zenoh-e2e.test.ts` grows a
+    radar-topic consumer; assert `radar_sweep` arrives at the
+    rotation_rate_hz and contains the expected spoke count.
+17. **Manual viewer demo run-through.** Browser shows the PPI sweep
+    updating, frustum overlay visible alongside camera/lidar.
+
+### v0.3 acceptance
+
+- A `radar_marine` sensor in the DSL produces sweeps at its
+  `rotation_rate_hz`, published on canonical Keelson topics, decoded
+  by a probe consumer.
+- The native crate runs `cargo test` green.
+- The viewer's PPI overlay shows the sweep updating live, with returns
+  visibly correlating to other vessels' positions.
+- Live e2e (#16) green: synthetic publisher → bino service (with
+  radar) → consumer probes for camera + lidar + radar all roundtrip.
+
+### v0.3 risks worth flagging now
+
+- **Build chain reliability.** wasm-bindgen-cli must match the
+  wasm-bindgen crate version exactly. CI needs to lock both, and
+  contributors need a documented `rustup` + `cargo install` path.
+  Plan to pin via `rust-toolchain.toml` in `kernels/`.
+- **WASM cold-start cost.** First `kernel.step()` call triggers
+  module instantiation (~tens of ms). For a sensor at 0.4 Hz
+  rotation that's a 4% one-time hit; real systems with 30 Hz radar
+  would feel it more. Pre-warm in `createRadarKernel`.
+- **The geometry-of-returns approximation is crude — call it loudly.**
+  No antenna pattern, no sea clutter, no propagation, binary
+  intensity. Real V&V of collision-avoidance under clutter cannot use
+  this. Document as v0.3 limitation; the v1.0 sea-clutter model is a
+  research thread.
+- **PPI overlay performance budget.** Drawing 360 polar lines per
+  sweep on canvas2d is fine; doing it as a Three texture pass is
+  more authentic but eats render budget. Default to canvas2d unless
+  someone needs the texture.
+- **Native crate distribution.** Spec'd as "available for offline
+  analysis." Means the `kernels/radar` crate should be publishable
+  to crates.io eventually, with a stable Rust API. Keep the public
+  Rust surface minimal and documented from the start.
 
 ---
 
