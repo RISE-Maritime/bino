@@ -6,6 +6,7 @@ export interface CompiledScene {
   vessels: ScenarioT["vessels"];
   modes: ScenarioT["modes"];
   environment: ScenarioT["environment"];
+  terrain?: ScenarioT["terrain"];
 }
 
 export function compileScenario(input: unknown): CompiledScene {
@@ -16,5 +17,6 @@ export function compileScenario(input: unknown): CompiledScene {
     vessels: parsed.vessels,
     modes: parsed.modes,
     environment: parsed.environment,
+    ...(parsed.terrain ? { terrain: parsed.terrain } : {}),
   };
 }

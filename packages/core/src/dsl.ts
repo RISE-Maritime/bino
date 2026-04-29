@@ -117,11 +117,26 @@ export const Environment = z.object({
 });
 export type Environment = z.infer<typeof Environment>;
 
+/** Bbox in [west, south, east, north] degrees — same convention
+ *  Overpass + GMRT use. */
+export const Bbox = z.tuple([z.number(), z.number(), z.number(), z.number()]);
+export type Bbox = z.infer<typeof Bbox>;
+
+/** Terrain block — when present, the scene compiler triggers a
+ *  prepareTerrain() async pass that fetches OSM coastline +
+ *  bathymetry for the given bbox. v0.4a uses a single bbox for
+ *  both sources; per-source bbox / source overrides are v0.5+. */
+export const Terrain = z.object({
+  bbox: Bbox,
+});
+export type Terrain = z.infer<typeof Terrain>;
+
 export const Scenario = z.object({
   name: z.string().min(1),
   anchor: Anchor,
   vessels: z.array(Vessel).min(1),
   modes: Modes,
   environment: Environment.default({}),
+  terrain: Terrain.optional(),
 });
 export type Scenario = z.infer<typeof Scenario>;

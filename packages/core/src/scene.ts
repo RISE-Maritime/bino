@@ -1,18 +1,33 @@
 import * as THREE from "three";
 import type { CompiledScene } from "./compile.js";
 import type { Mount, Sensor, Vessel } from "./dsl.js";
+import { buildTerrainMesh, type TerrainData } from "./terrain.js";
 
 export interface BuiltScene {
   scene: THREE.Scene;
   entities: Map<string, THREE.Object3D>;
+  /** Optional reference to the terrain group, if buildScene was
+   *  passed prepared terrain data. Useful for hiding/showing it
+   *  per inject-mode (v0.6) without rebuilding the scene. */
+  terrain?: THREE.Group;
 }
 
-export function buildScene(compiled: CompiledScene): BuiltScene {
+export interface BuildSceneOptions {
+  terrain?: TerrainData;
+}
+
+export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}): BuiltScene {
   const scene = new THREE.Scene();
   scene.add(new THREE.AmbientLight(0xffffff, 0.5));
   const sun = new THREE.DirectionalLight(0xffffff, 1.0);
   sun.position.set(50, 100, 50);
   scene.add(sun);
+
+  let terrainGroup: THREE.Group | undefined;
+  if (opts.terrain) {
+    terrainGroup = buildTerrainMesh(opts.terrain, compiled.anchor);
+    scene.add(terrainGroup);
+  }
 
   const entities = new Map<string, THREE.Object3D>();
   for (const vessel of compiled.vessels) {
@@ -20,7 +35,7 @@ export function buildScene(compiled: CompiledScene): BuiltScene {
     scene.add(group);
     entities.set(vessel.id, group);
   }
-  return { scene, entities };
+  return terrainGroup ? { scene, entities, terrain: terrainGroup } : { scene, entities };
 }
 
 function buildVessel(vessel: Vessel): THREE.Object3D {

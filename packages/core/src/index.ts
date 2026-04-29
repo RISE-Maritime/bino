@@ -9,5 +9,6 @@ export * from "./lidar.js";
 export * from "./radar.js";
 export * from "./clock.js";
 export * from "./env.js";
+export * from "./terrain.js";
 export * from "./zenoh.js";
 export * from "./keelson.js";
