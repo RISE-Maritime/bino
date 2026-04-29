@@ -34,6 +34,11 @@ export interface RunnerOptions {
   /** Loop tick rate. Each kernel still fires at its own rate_hz; this
    *  bounds the granularity. Defaults to 1000 Hz (1 ms). */
   tickHz?: number;
+  /** Per-tick scene-level update, called BEFORE any kernel fires
+   *  with the current clock time. Used to advance time-driven
+   *  uniforms — e.g. the sea surface's `uTime` — so kernel reads
+   *  see a consistent scene state. */
+  onTick?: (time: number) => void;
 }
 
 interface KernelSchedule extends ScheduledKernel {
@@ -47,6 +52,7 @@ export class BinoRunner {
   private readonly schedules: KernelSchedule[];
   private readonly clock: Clock;
   private readonly tickIntervalMs: number;
+  private readonly onTick: ((t: number) => void) | undefined;
   private stopped = false;
 
   constructor(opts: RunnerOptions) {
@@ -54,6 +60,7 @@ export class BinoRunner {
     this.entities = opts.entities;
     this.clock = opts.clock;
     this.tickIntervalMs = 1000 / (opts.tickHz ?? DEFAULT_TICK_HZ);
+    this.onTick = opts.onTick;
     this.schedules = opts.kernels.map((k) => ({
       ...k,
       period: 1 / k.rate_hz,
@@ -76,6 +83,7 @@ export class BinoRunner {
         await new Promise<void>((r) => setImmediate(r));
 
         const t = this.clock.now();
+        if (this.onTick) this.onTick(t);
         const fired: SensorOutput[] = [];
         for (const s of this.schedules) {
           if (s.nextFireTime > t) continue;

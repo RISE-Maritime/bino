@@ -139,6 +139,13 @@ function buildSceneFromScenario(
     entities: built.entities,
     kernels: scheduled,
     clock,
+    ...(built.sea
+      ? {
+          onTick: (t) => {
+            built.sea!.setTime(t);
+          },
+        }
+      : {}),
   });
 
   const publisher = opts.zenohSession

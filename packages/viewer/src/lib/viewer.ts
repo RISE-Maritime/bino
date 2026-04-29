@@ -156,6 +156,7 @@ export function mountViewer(opts: MountOptions): ViewerHandle {
     }
 
     const t = performance.now() / 1000;
+    if (built.sea) built.sea.setTime(t);
     const radarStats: Record<string, { spokes: number; bins: number }> = {};
     for (const k of kernels) {
       const out = k.step(t);

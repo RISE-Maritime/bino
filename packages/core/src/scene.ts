@@ -2,18 +2,26 @@ import * as THREE from "three";
 import type { CompiledScene } from "./compile.js";
 import type { Mount, Sensor, Vessel } from "./dsl.js";
 import { buildTerrainMesh, type TerrainData } from "./terrain.js";
+import { createSeaSurface, type SeaSurfaceHandle } from "./sea.js";
 
 export interface BuiltScene {
   scene: THREE.Scene;
   entities: Map<string, THREE.Object3D>;
-  /** Optional reference to the terrain group, if buildScene was
-   *  passed prepared terrain data. Useful for hiding/showing it
-   *  per inject-mode (v0.6) without rebuilding the scene. */
+  /** Reference to the terrain group, if buildScene was passed
+   *  prepared terrain data. */
   terrain?: THREE.Group;
+  /** Reference to the sea-surface handle, if buildScene was
+   *  configured to add one. The runner calls `sea.setTime(t)` per
+   *  tick to animate. */
+  sea?: SeaSurfaceHandle;
 }
 
 export interface BuildSceneOptions {
   terrain?: TerrainData;
+  /** Add a Gerstner sea surface driven by compiled.environment.sea_state.
+   *  Default: true if compiled.environment is set (which it always is
+   *  after compileScenario). Pass `false` to suppress. */
+  sea?: boolean;
 }
 
 export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}): BuiltScene {
@@ -29,13 +37,23 @@ export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}
     scene.add(terrainGroup);
   }
 
+  let seaHandle: SeaSurfaceHandle | undefined;
+  if (opts.sea !== false) {
+    seaHandle = createSeaSurface(compiled.environment);
+    scene.add(seaHandle.mesh);
+  }
+
   const entities = new Map<string, THREE.Object3D>();
   for (const vessel of compiled.vessels) {
     const group = buildVessel(vessel);
     scene.add(group);
     entities.set(vessel.id, group);
   }
-  return terrainGroup ? { scene, entities, terrain: terrainGroup } : { scene, entities };
+
+  const built: BuiltScene = { scene, entities };
+  if (terrainGroup) built.terrain = terrainGroup;
+  if (seaHandle) built.sea = seaHandle;
+  return built;
 }
 
 function buildVessel(vessel: Vessel): THREE.Object3D {
