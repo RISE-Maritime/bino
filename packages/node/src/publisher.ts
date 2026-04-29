@@ -13,6 +13,9 @@ export interface SensorMeta {
   /** The source_id segment of the Keelson topic key (typically the sensor.id). */
   topicSensorId: string;
   type: "camera" | "lidar";
+  /** Optional full topic-key override (from DSL publish_topic_override).
+   *  When set, this replaces the construct_pubSub_key()-derived key. */
+  topicOverride?: string;
 }
 
 export interface PublishSession {
@@ -40,21 +43,23 @@ export function createSensorPublisher(opts: SensorPublisherOptions): SensorPubli
         const meta = byId.get(out.sensorId);
         if (!meta) continue;
         if (meta.type === "camera") {
-          const { keyExpr, bytes } = encodeCameraFrame(
+          const encoded = encodeCameraFrame(
             out.output as Parameters<typeof encodeCameraFrame>[0],
             meta.vesselId,
             meta.topicSensorId,
             naming,
           );
-          puts.push(opts.session.put(keyExpr, bytes));
+          const keyExpr = meta.topicOverride ?? encoded.keyExpr;
+          puts.push(opts.session.put(keyExpr, encoded.bytes));
         } else {
-          const { keyExpr, bytes } = encodePointCloud(
+          const encoded = encodePointCloud(
             out.output as Parameters<typeof encodePointCloud>[0],
             meta.vesselId,
             meta.topicSensorId,
             naming,
           );
-          puts.push(opts.session.put(keyExpr, bytes));
+          const keyExpr = meta.topicOverride ?? encoded.keyExpr;
+          puts.push(opts.session.put(keyExpr, encoded.bytes));
         }
       }
       await Promise.all(puts);

@@ -99,6 +99,26 @@ describe("createSensorPublisher", () => {
     expect(puts).toHaveLength(0);
   });
 
+  it("uses topicOverride when set, bypassing construct_pubSub_key", async () => {
+    const { session, puts } = makeSession();
+    const overridden: SensorMeta[] = [
+      {
+        sensorId: "ego/bow_camera",
+        vesselId: "ego",
+        topicSensorId: "bow_camera",
+        type: "camera",
+        topicOverride: "custom/topic/foo",
+      },
+    ];
+    const publisher = createSensorPublisher({ session, sensors: overridden });
+    await publisher.publish({
+      ...sampleFrame,
+      outputs: [sampleFrame.outputs[0]!],
+    });
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.keyExpr).toBe("custom/topic/foo");
+  });
+
   it("respects a custom KeelsonNaming", async () => {
     const { session, puts } = makeSession();
     const publisher = createSensorPublisher({

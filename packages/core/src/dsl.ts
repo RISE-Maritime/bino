@@ -32,6 +32,11 @@ export const CameraSensor = z.object({
   fov_deg: z.number().positive().max(180),
   resolution: z.tuple([z.number().int().positive(), z.number().int().positive()]),
   rate_hz: z.number().positive(),
+  /** Override the Keelson-derived publish topic. When set, the
+   *  publisher uses this exact string instead of
+   *  construct_pubSub_key(...). Real deployments may want non-Keelson
+   *  topics; the trade-off is losing real-Keelson-tool interop. */
+  publish_topic_override: z.string().min(1).optional(),
 });
 export type CameraSensor = z.infer<typeof CameraSensor>;
 
@@ -42,6 +47,7 @@ export const LidarSensor = z.object({
   channels: z.number().int().positive(),
   range_m: z.number().positive(),
   rate_hz: z.number().positive(),
+  publish_topic_override: z.string().min(1).optional(),
 });
 export type LidarSensor = z.infer<typeof LidarSensor>;
 

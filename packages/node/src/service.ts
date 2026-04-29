@@ -84,6 +84,9 @@ function buildSceneFromScenario(
           vesselId: vessel.id,
           topicSensorId: sensor.id,
           type: "camera",
+          ...(sensor.publish_topic_override
+            ? { topicOverride: sensor.publish_topic_override }
+            : {}),
         });
       } else if (sensor.type === "lidar") {
         scheduled.push({
@@ -101,6 +104,9 @@ function buildSceneFromScenario(
           vesselId: vessel.id,
           topicSensorId: sensor.id,
           type: "lidar",
+          ...(sensor.publish_topic_override
+            ? { topicOverride: sensor.publish_topic_override }
+            : {}),
         });
       }
     }
