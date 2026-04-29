@@ -1,0 +1,13 @@
+{
+  "name": "bino-spike-sea-shader",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "spike": "node spike.mjs"
+  },
+  "dependencies": {
+    "@kmamal/gl": "^9.1.0",
+    "three": "0.160.1"
+  }
+}

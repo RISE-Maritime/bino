@@ -1,0 +1,74 @@
+{
+  "calm": {
+    "unique_colours": 18,
+    "R": {
+      "min": 115,
+      "max": 119,
+      "mean": 118.4
+    },
+    "G": {
+      "min": 162,
+      "max": 168,
+      "mean": 167.1
+    },
+    "B": {
+      "min": 199,
+      "max": 206,
+      "mean": 204.9
+    },
+    "render_ms": 53.96,
+    "state": {
+      "significant_wave_height": 0.3,
+      "peak_period": 4,
+      "direction_deg": 0
+    }
+  },
+  "moderate": {
+    "unique_colours": 50,
+    "R": {
+      "min": 106,
+      "max": 119,
+      "mean": 118.7
+    },
+    "G": {
+      "min": 150,
+      "max": 168,
+      "mean": 167.5
+    },
+    "B": {
+      "min": 186,
+      "max": 206,
+      "mean": 205.4
+    },
+    "render_ms": 18.11,
+    "state": {
+      "significant_wave_height": 1.5,
+      "peak_period": 6,
+      "direction_deg": 30
+    }
+  },
+  "heavy": {
+    "unique_colours": 48,
+    "R": {
+      "min": 107,
+      "max": 119,
+      "mean": 118.7
+    },
+    "G": {
+      "min": 152,
+      "max": 168,
+      "mean": 167.5
+    },
+    "B": {
+      "min": 187,
+      "max": 206,
+      "mean": 205.5
+    },
+    "render_ms": 16.69,
+    "state": {
+      "significant_wave_height": 3.5,
+      "peak_period": 9,
+      "direction_deg": 60
+    }
+  }
+}
