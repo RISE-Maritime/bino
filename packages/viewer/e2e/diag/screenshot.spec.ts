@@ -1,8 +1,9 @@
 import { test } from "@playwright/test";
 
-// Diagnostic — captures a screenshot for visual sanity. Run with
-// `pnpm exec playwright test e2e/screenshot.spec.ts --headed=false`
-// and look at the artifact.
+// Diagnostic — captures a screenshot for visual sanity. Excluded from
+// the default `pnpm test:e2e` run via `testIgnore` in playwright.config.ts.
+// Invoke explicitly:
+//   pnpm exec playwright test e2e/diag/screenshot.spec.ts
 test("capture viewer screenshot", async ({ page }) => {
   await page.goto("/");
   // Wait for terrain fetch + scene mount.

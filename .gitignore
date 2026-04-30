@@ -18,3 +18,4 @@ spikes/osm-coastline/cache/
 spikes/lidar-rust/target/
 spikes/webgpu-eval/node_modules/
 spikes/sea-shader/node_modules/
+spikes/headless-render/out/
