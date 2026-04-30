@@ -8,7 +8,9 @@ import {
   createLidarKernel,
   createRadarKernel,
   prepareTerrain,
+  type CameraFrame,
   type CameraKernel,
+  type LidarFrame,
   type LidarKernel,
   type RadarFrame,
   type RadarKernel,
@@ -38,9 +40,11 @@ export interface MountOptions {
   canvas: HTMLCanvasElement;
   poses: PoseStream;
   onStats?: (stats: ViewerStats) => void;
-  /** Optional canvas for the radar PPI; if provided, the latest radar
-   *  sweep per sensor is rasterized here as a polar plot. */
-  ppiCanvas?: HTMLCanvasElement;
+  /** Preview canvases keyed by sensor ID. Each tick, the matching
+   *  kernel's output is rendered to the canvas: camera frames as RGBA
+   *  (Y-flipped), lidar points as a top-down scatter, radar sweeps as
+   *  a PPI polar plot. Sensors not in the map produce no preview. */
+  previewCanvases?: Map<string, HTMLCanvasElement>;
 }
 
 /**
@@ -69,17 +73,17 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     1,
     1_000_000,
   );
-  // Above-water vantage looking forward over the bow: ~80 m up,
-  // 200 m back along +z, looking out toward -z (where the scripted
-  // ferry orbits). Close enough to see wave detail; far enough to
-  // see the ferry plus a sweep of coastline.
-  debugCamera.position.set(0, 80, 200);
-  debugCamera.lookAt(0, 0, -300);
+  // Above-water vantage from north of ego, looking south down the
+  // fjord — that's where the Kiel coastline + city are, with the
+  // narrow fjord walls converging on the horizon. ~80 m up, 200 m
+  // north of ego (-z), aimed at a point ~500 m south.
+  debugCamera.position.set(0, 80, -200);
+  debugCamera.lookAt(0, 0, 500);
 
   // Pan/zoom/orbit: drag = orbit, right-drag = pan, wheel = zoom.
   // Damping smooths the input; .target is the look-at point.
   const controls = new OrbitControls(debugCamera, canvas);
-  controls.target.set(0, 0, -300);
+  controls.target.set(0, 0, 500);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.maxPolarAngle = Math.PI * 0.49; // don't let the user dive below water
@@ -90,14 +94,44 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   const kernels: Array<CameraKernel | LidarKernel | RadarKernel> = [];
   const cameraHelpers: THREE.CameraHelper[] = [];
   const radarOverlays: Array<{ ring: THREE.LineLoop }> = [];
-  const radarKernels: Array<{ id: string; kernel: RadarKernel }> = [];
-  const latestSweeps = new Map<string, RadarFrame>();
+  /** Per-sensor preview wiring. The same map across all three sensor
+   *  types — branched on type at draw time. */
+  interface CameraPreview {
+    type: "camera";
+    id: string;
+    kernel: CameraKernel;
+    canvas: HTMLCanvasElement;
+    /** Re-used offscreen at sensor resolution; intermediate for
+     *  scaled drawImage onto the small preview canvas. */
+    offscreen: HTMLCanvasElement;
+    /** Pre-allocated ImageData backed by an ArrayBuffer (not
+     *  ArrayBufferLike) — frame.pixels gets copied into this each
+     *  tick. Avoids the TS narrowing pain of constructing ImageData
+     *  from a possibly-SharedArrayBuffer Uint8Array. */
+    imageData: ImageData;
+  }
+  interface LidarPreview {
+    type: "lidar";
+    id: string;
+    kernel: LidarKernel;
+    canvas: HTMLCanvasElement;
+    range: number;
+  }
+  interface RadarPreview {
+    type: "radar";
+    id: string;
+    kernel: RadarKernel;
+    canvas: HTMLCanvasElement;
+  }
+  const previews: Array<CameraPreview | LidarPreview | RadarPreview> = [];
+  const previewCanvases = opts.previewCanvases;
   for (const vessel of compiled.vessels) {
     const vesselNode = built.entities.get(vessel.id);
     if (!vesselNode) continue;
     for (const sensor of vessel.sensors) {
       const sensorNode = vesselNode.getObjectByName(sensor.id);
       if (!sensorNode) continue;
+      const previewCanvas = previewCanvases?.get(sensor.id);
       if (sensor.type === "camera") {
         const kernel = createCameraKernel({
           renderer,
@@ -113,6 +147,13 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         const helper = new THREE.CameraHelper(kernel.camera);
         built.scene.add(helper);
         cameraHelpers.push(helper);
+        if (previewCanvas) {
+          const offscreen = document.createElement("canvas");
+          offscreen.width = sensor.resolution[0];
+          offscreen.height = sensor.resolution[1];
+          const imageData = new ImageData(sensor.resolution[0], sensor.resolution[1]);
+          previews.push({ type: "camera", id: sensor.id, kernel, canvas: previewCanvas, offscreen, imageData });
+        }
       } else if (sensor.type === "lidar") {
         const kernel = createLidarKernel({
           renderer,
@@ -129,6 +170,9 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         mat.color = new THREE.Color(0x33ccff);
         built.scene.add(helper);
         cameraHelpers.push(helper);
+        if (previewCanvas) {
+          previews.push({ type: "lidar", id: sensor.id, kernel, canvas: previewCanvas, range: sensor.range_m });
+        }
       } else if (sensor.type === "radar_marine") {
         const kernel = createRadarKernel({
           scene: built.scene,
@@ -136,7 +180,6 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           config: sensor,
         });
         kernels.push(kernel);
-        radarKernels.push({ id: sensor.id, kernel });
         // Radar wedge overlay (plan v0.3 #15) — green wireframe ring
         // in the horizontal plane at sensor.range_m, attached to the
         // sensor node so it follows the host vessel. Distinct from
@@ -144,6 +187,9 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         const ring = makeRadarRing(sensor.range_m);
         sensorNode.add(ring);
         radarOverlays.push({ ring });
+        if (previewCanvas) {
+          previews.push({ type: "radar", id: sensor.id, kernel, canvas: previewCanvas });
+        }
       }
     }
   }
@@ -179,26 +225,32 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     const t = performance.now() / 1000;
     if (built.sea) built.sea.setTime(t);
     const radarStats: Record<string, { spokes: number; bins: number }> = {};
+    const latestByKernel = new Map<unknown, CameraFrame | LidarFrame | RadarFrame>();
     for (const k of kernels) {
       const out = k.step(t);
+      latestByKernel.set(k, out);
       if ("pixels" in out) cameraFrames += 1;
       else if ("count" in out) lidarPoints = out.count;
-      else if ("spokes" in out) {
-        // RadarFrame
-        const id = radarKernels.find((r) => r.kernel === k)?.id;
-        if (id) {
-          latestSweeps.set(id, out);
-          radarStats[id] = {
-            spokes: out.spokes.length,
-            bins: out.spokes[0]?.intensity.length ?? 0,
-          };
-        }
+    }
+    // Radar stats are keyed by sensor id, not kernel — pull them from
+    // the preview wiring (which is the only place id↔kernel is bound).
+    for (const p of previews) {
+      if (p.type !== "radar") continue;
+      const out = latestByKernel.get(p.kernel) as RadarFrame | undefined;
+      if (out) {
+        radarStats[p.id] = {
+          spokes: out.spokes.length,
+          bins: out.spokes[0]?.intensity.length ?? 0,
+        };
       }
     }
 
-    if (opts.ppiCanvas && radarKernels[0]) {
-      const sweep = latestSweeps.get(radarKernels[0].id);
-      if (sweep) drawPpi(opts.ppiCanvas, sweep);
+    for (const p of previews) {
+      const out = latestByKernel.get(p.kernel);
+      if (!out) continue;
+      if (p.type === "camera") drawCameraPreview(p.canvas, p.offscreen, p.imageData, out as CameraFrame);
+      else if (p.type === "lidar") drawLidarPreview(p.canvas, out as LidarFrame, p.range);
+      else if (p.type === "radar") drawPpi(p.canvas, out as RadarFrame);
     }
 
     for (const h of cameraHelpers) h.update();
@@ -276,6 +328,72 @@ function makeRadarRing(range_m: number): THREE.LineLoop {
   geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const mat = new THREE.LineBasicMaterial({ color: 0x55ff66, transparent: true, opacity: 0.4 });
   return new THREE.LineLoop(geom, mat);
+}
+
+function drawCameraPreview(
+  canvas: HTMLCanvasElement,
+  offscreen: HTMLCanvasElement,
+  imageData: ImageData,
+  frame: CameraFrame,
+): void {
+  const dst = canvas.getContext("2d");
+  if (!dst) return;
+  const offCtx = offscreen.getContext("2d");
+  if (!offCtx) return;
+  // Copy into the pre-allocated ImageData (backed by an ArrayBuffer,
+  // unlike frame.pixels whose buffer type is ArrayBufferLike — TS
+  // refuses to construct ImageData from the latter). Then putImageData
+  // at native resolution, then drawImage scaled + Y-flipped onto the
+  // small preview canvas.
+  imageData.data.set(frame.pixels);
+  offCtx.putImageData(imageData, 0, 0);
+  dst.save();
+  dst.translate(0, canvas.height);
+  dst.scale(canvas.width / frame.width, -canvas.height / frame.height);
+  dst.drawImage(offscreen, 0, 0);
+  dst.restore();
+}
+
+function drawLidarPreview(canvas: HTMLCanvasElement, frame: LidarFrame, range: number): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const r = Math.min(cx, cy) - 4;
+
+  ctx.fillStyle = "#0a1626";
+  ctx.fillRect(0, 0, w, h);
+
+  // range rings + crosshair, same look as the PPI for visual coherence
+  ctx.strokeStyle = "#1f3a4d";
+  ctx.lineWidth = 1;
+  for (let k = 1; k <= 4; k++) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, (r * k) / 4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.moveTo(cx - r, cy);
+  ctx.lineTo(cx + r, cy);
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx, cy + r);
+  ctx.stroke();
+
+  // points: top-down scatter onto x-z plane.
+  // Sensor-local frame: camera looks down -Z, so forward is -z. Map
+  // forward → up on the canvas (small canvas-y), right → right.
+  ctx.fillStyle = "#ffaa55";
+  const scale = r / range;
+  for (let i = 0; i < frame.count; i++) {
+    const px = frame.points[i * 3 + 0]!;
+    const pz = frame.points[i * 3 + 2]!;
+    const sx = cx + px * scale;
+    const sy = cy + pz * scale; // pz<0 (forward) → sy<cy (above center)
+    if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
+    ctx.fillRect(sx - 0.5, sy - 0.5, 1.5, 1.5);
+  }
 }
 
 function drawPpi(canvas: HTMLCanvasElement, sweep: RadarFrame): void {

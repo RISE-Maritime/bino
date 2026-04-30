@@ -5,7 +5,7 @@ import type { Scenario } from "@bino/core";
 // viewer's flat module so we can swap to a fetched YAML at v0.2.
 export const v01Scenario: Scenario = {
   name: "kiel_demo",
-  anchor: { lat: 54.3233, lon: 10.1394, height: 0 },
+  anchor: { lat: 54.3700, lon: 10.1850, height: 0 },
   vessels: [
     {
       id: "ego",

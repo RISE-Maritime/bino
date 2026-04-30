@@ -19,7 +19,29 @@
     staleEntities: [],
   });
 
-  let ppiCanvas: HTMLCanvasElement | undefined = $state();
+  // One preview panel per sensor on the ego vessel. Camera frames
+  // render at 4:3 (matching the configured 640×480); lidar + radar
+  // panels are square polar plots. Sensor type drives the size +
+  // label only; the actual draw routine is in viewer.ts and
+  // dispatches on the kernel's frame shape.
+  type PreviewSpec = { id: string; type: "camera" | "lidar" | "radar"; w: number; h: number; label: string };
+  const previewSpecs: PreviewSpec[] = (v01Scenario.vessels[0]?.sensors ?? [])
+    .map((s): PreviewSpec | null => {
+      if (s.type === "camera") return { id: s.id, type: "camera", w: 240, h: 180, label: `camera · ${s.id}` };
+      if (s.type === "lidar") return { id: s.id, type: "lidar", w: 220, h: 220, label: `lidar · ${s.id}` };
+      if (s.type === "radar_marine") return { id: s.id, type: "radar", w: 220, h: 220, label: `PPI · ${s.id}` };
+      return null;
+    })
+    .filter((s): s is PreviewSpec => s !== null);
+  const previewCanvasMap = new Map<string, HTMLCanvasElement>();
+  function bindPreview(node: HTMLCanvasElement, id: string) {
+    previewCanvasMap.set(id, node);
+    return {
+      destroy() {
+        previewCanvasMap.delete(id);
+      },
+    };
+  }
   let source: "zenoh" | "scripted" | "connecting" = $state("scripted");
   let zenohError: string | undefined = $state();
 
@@ -53,7 +75,7 @@
       onStats: (s) => {
         stats = s;
       },
-      ...(ppiCanvas ? { ppiCanvas } : {}),
+      previewCanvases: previewCanvasMap,
     });
   });
 
@@ -78,9 +100,19 @@
     {/if}
   </header>
   <canvas bind:this={canvas} class="scene"></canvas>
-  <div class="ppi-panel">
-    <div class="ppi-label">PPI · main_radar</div>
-    <canvas bind:this={ppiCanvas} width="220" height="220" class="ppi-canvas"></canvas>
+  <div class="preview-stack">
+    {#each previewSpecs as spec (spec.id)}
+      <div class="preview-panel">
+        <div class="preview-label">{spec.label}</div>
+        <canvas
+          width={spec.w}
+          height={spec.h}
+          class="preview-canvas"
+          class:pixelated={spec.type !== "camera"}
+          use:bindPreview={spec.id}
+        ></canvas>
+      </div>
+    {/each}
   </div>
 </main>
 
@@ -120,10 +152,16 @@
     height: 100%;
     display: block;
   }
-  .ppi-panel {
+  .preview-stack {
     position: absolute;
     bottom: 16px;
     right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .preview-panel {
     background: rgba(10, 22, 38, 0.85);
     border: 1px solid #1f2a3c;
     border-radius: 6px;
@@ -131,13 +169,15 @@
     font-size: 0.75rem;
     color: #88a;
   }
-  .ppi-label {
+  .preview-label {
     font-variant-numeric: tabular-nums;
     margin-bottom: 4px;
     letter-spacing: 0.02em;
   }
-  .ppi-canvas {
+  .preview-canvas {
     display: block;
+  }
+  .preview-canvas.pixelated {
     image-rendering: pixelated;
   }
 </style>

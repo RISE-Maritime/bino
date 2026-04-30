@@ -206,33 +206,38 @@ export async function prepareTerrain(bbox: Bbox): Promise<TerrainData> {
 }
 
 /**
- * Build a Three.js Group containing:
- *  - a seabed plane mesh from the bathymetry grid
- *  - line objects for each coastline chain at z=0
- * The group is positioned at ENU origin (the scenario anchor).
+ * Build a Three.js Group containing a single bathymetry-driven
+ * terrain mesh: positive heights become coloured landmass, negative
+ * heights become coloured seabed.
+ *
+ * Note for v0.4a finish: the OSM coastline is loaded and exposed on
+ * `TerrainData.coastline` for downstream consumers (v0.5 asset
+ * pipeline will use it for buildings + seamarks placement), but is
+ * not rendered. An earlier attempt overlaid OSM as a coloured
+ * outline; the OSM↔GMRT sub-cell-width disagreement made the line
+ * visibly drift from the bathymetry's zero-isobath. Filled landmass
+ * polygons from OSM (the architecturally cleaner fix) need bbox-
+ * edge-clipping of the open coastline chains to determine the
+ * land-side correctly — that's deferred to v0.5 along with the
+ * asset pipeline. Until then, bathymetry is the single visible
+ * authority for the coast.
  */
 export function buildTerrainMesh(terrain: TerrainData, anchor: Anchor): THREE.Group {
   const group = new THREE.Group();
   group.name = "terrain";
-
   group.add(buildSeabedMesh(terrain.bathymetry, anchor));
-  for (const chain of terrain.coastline) {
-    group.add(buildCoastlineLine(chain, anchor));
-  }
   return group;
 }
 
 function buildSeabedMesh(grid: BathymetryGrid, anchor: Anchor): THREE.Mesh {
-  // Plane spans the bbox; vertex heights are y values.
   const [west, south, east, north] = grid.bbox;
-  // SW corner ENU.
   const sw = geodeticToEnu({ lat: south, lon: west, height: 0 }, anchor);
   const ne = geodeticToEnu({ lat: north, lon: east, height: 0 }, anchor);
   const widthM = ne.e - sw.e;
   const heightM = ne.n - sw.n;
 
   const geom = new THREE.PlaneGeometry(widthM, heightM, grid.width - 1, grid.height - 1);
-  geom.rotateX(-Math.PI / 2); // Y up; plane lies in XZ.
+  geom.rotateX(-Math.PI / 2);
 
   const positions = geom.attributes["position"]!.array as Float32Array;
   const colors = new Float32Array(grid.width * grid.height * 3);
@@ -250,7 +255,6 @@ function buildSeabedMesh(grid: BathymetryGrid, anchor: Anchor): THREE.Mesh {
   geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   geom.computeVertexNormals();
 
-  // Centre the mesh on the bbox centre in ENU.
   const centreE = (sw.e + ne.e) / 2;
   const centreN = (sw.n + ne.n) / 2;
 
@@ -261,49 +265,19 @@ function buildSeabedMesh(grid: BathymetryGrid, anchor: Anchor): THREE.Mesh {
   });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.name = "seabed";
-  // ENU: x=east, y=up, z=-north (right-handed). Our scene uses y-up
-  // and treats +x=east, -z=north (same as Three.js's lookAt
-  // convention). Place the seabed centre accordingly.
   mesh.position.set(centreE, 0, -centreN);
   return mesh;
 }
 
-/** Map a bathymetry height (positive = land, negative = sea floor)
- *  to a vertex colour. Land uses a sand → grass ramp, underwater
- *  uses shallow-teal → deep-navy. Crude but reads cleanly at
- *  distance and lets a single mesh stand in for both terrain and
- *  seabed without alpha or geometry tricks. */
+/** Bathymetry depth → vertex colour ramp. Land uses sand→grass,
+ *  underwater uses shallow-teal→deep-navy. Reads cleanly at distance
+ *  with a single mesh standing in for both regimes. */
 function depthToColor(h: number): [number, number, number] {
   if (h >= 0) {
-    const t = Math.min(1, h / 60); // ~60 m max for typical Kiel bbox
+    const t = Math.min(1, h / 60);
     return [0.85 - 0.30 * t, 0.78 - 0.10 * t, 0.55 - 0.20 * t];
   }
   const t = Math.min(1, -h / 20);
   return [0.20 - 0.16 * t, 0.42 - 0.30 * t, 0.55 - 0.30 * t];
 }
 
-function buildCoastlineLine(chain: CoastlineChain, anchor: Anchor): THREE.Line {
-  const positions = new Float32Array(chain.points.length * 3);
-  for (let i = 0; i < chain.points.length; i++) {
-    const [lon, lat] = chain.points[i]!;
-    const enu = geodeticToEnu({ lat, lon, height: 0 }, anchor);
-    positions[i * 3 + 0] = enu.e;
-    // Lift above the max bathymetry land elevation (~60 m for the
-    // Kiel bbox) so the line reads on top of the terrain mesh
-    // wherever the bathymetry shows positive height.
-    positions[i * 3 + 1] = 80;
-    positions[i * 3 + 2] = -enu.n;
-  }
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const mat = new THREE.LineBasicMaterial({
-    color: 0xfff0c0,
-    depthTest: false,
-    transparent: true,
-    opacity: 0.9,
-  });
-  const line = new THREE.Line(geom, mat);
-  line.name = chain.closed ? "coastline-closed" : "coastline-open";
-  line.renderOrder = 999;
-  return line;
-}

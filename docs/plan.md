@@ -698,6 +698,23 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
   templates baked in.
 - Schema-validated CI for the scenario repo (Zod schemas from
   `@bino/core` are the single source of truth).
+- **OSM building footprints (extruded by `building:levels × 3 m`) +
+  OSM seamarks (glTF placeholder per `seamark:type`).** The asset
+  pipeline question (named entity → glTF) is the same shape as the
+  ship model question, so they want to share infrastructure rather
+  than each grow ad-hoc.
+- **OSM-as-authoritative landmask.** v0.4a finish revealed that
+  rendering OSM coastline as a *visible* layer alongside bathymetry
+  exposes their sub-cell-width disagreement; the architecturally
+  cleaner fix (filled landmass polygons from OSM, bathymetry only
+  contributes sub-water shape) needs proper bbox-edge-clipping of
+  open coastline chains — open chains often exit the bbox far past
+  the edge, so a naive endpoint-on-bbox close yields a wrong-side
+  polygon. Until v0.5 ships this, bathymetry is the single visible
+  authority and the OSM coastline is loaded but not rendered. The
+  loaded data is exposed on `TerrainData.coastline` so the v0.5
+  asset pipeline can use it directly for landmass + seamark
+  placement.
 
 **Open question — locked here, not v0.1:** where do the ship models
 actually come from? Hand-authored glTF for v0.5 is the path of least

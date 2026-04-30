@@ -87,14 +87,17 @@ describe("buildTerrainMesh", () => {
     ];
   }
 
-  it("returns a group with one seabed mesh + one line per chain", () => {
+  it("returns a group with one seabed mesh (OSM coastline data exposed but not rendered)", () => {
+    // v0.4a finish: OSM is loaded onto TerrainData for the v0.5 asset
+    // pipeline but does NOT render — the floating outline disagreed
+    // visibly with bathymetry at sub-cell distances. The seabed mesh
+    // is the only visible terrain artifact.
     const data: TerrainData = { coastline: fakeCoastline(), bathymetry: fakeGrid() };
     const group = buildTerrainMesh(data, KIEL);
     expect(group).toBeInstanceOf(THREE.Group);
     const seabeds = group.children.filter((c) => c.name === "seabed");
-    const lines = group.children.filter((c) => c.name.startsWith("coastline"));
     expect(seabeds).toHaveLength(1);
-    expect(lines).toHaveLength(1);
+    expect(group.children).toHaveLength(1);
   });
 
   it("seabed mesh applies the bathymetry heights to vertex y", () => {

@@ -16,8 +16,8 @@
 scenario:
   name: v04_kiel
   anchor:
-    lat: 54.3300
-    lon: 10.1500
+    lat: 54.3700
+    lon: 10.1850
     height: 0.0
 
   environment:

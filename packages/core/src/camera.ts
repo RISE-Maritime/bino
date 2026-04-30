@@ -2,7 +2,12 @@ import * as THREE from "three";
 import type { CameraSensor } from "./dsl.js";
 
 const NEAR_DEFAULT = 0.1;
-const FAR_DEFAULT = 5000;
+// Far plane has to clear the Sky cube (~450k units) and the bbox
+// extents so the camera kernel renders the same world the debug
+// view does. Comfortably within fp32 precision for a single-anchor
+// scene; still inside the depth-buffer's effective resolution given
+// near=0.1.
+const FAR_DEFAULT = 1_000_000;
 
 export interface CameraFrame {
   pixels: Uint8Array;
