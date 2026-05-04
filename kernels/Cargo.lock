@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "bino-lidar"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde-wasm-bindgen",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "bino-radar"
 version = "0.0.0"
 dependencies = [

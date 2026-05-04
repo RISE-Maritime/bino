@@ -17,13 +17,15 @@
 	"mounts": [
 		"source=/mnt/ext/,target=/mnt/ext/,readonly,type=bind",
 		"source=${localEnv:HOME}/.claude/,target=/home/vscode/.claude/,type=bind,consistency=cached",
-		"source=/usr/lib/wsl,target=/usr/lib/wsl,readonly,type=bind"
+		"source=/usr/lib/wsl,target=/usr/lib/wsl,readonly,type=bind",
+		"source=bino-cargo-registry,target=/home/vscode/.cargo/registry,type=volume",
+		"source=bino-cargo-git,target=/home/vscode/.cargo/git,type=volume"
 	],
   	"runArgs": [
     	"--gpus=all",
     	"--env=NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility,display"
   	],
-	"postCreateCommand": "echo /usr/lib/wsl/lib | sudo tee /etc/ld.so.conf.d/wsl.conf && sudo ldconfig"
+	"postCreateCommand": "echo /usr/lib/wsl/lib | sudo tee /etc/ld.so.conf.d/wsl.conf && sudo ldconfig && sudo chown -R vscode:vscode /home/vscode/.cargo/registry /home/vscode/.cargo/git"
 
 	// 👇 Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
