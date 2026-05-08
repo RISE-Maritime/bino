@@ -3,7 +3,7 @@ import {
   buildScene,
   createCameraKernel,
   createClock,
-  createLidarKernel,
+  createLidarKernelWasm,
   createRadarKernel,
   type CompiledScene,
   type Clock,
@@ -98,11 +98,11 @@ function buildSceneFromScenario(
         scheduled.push({
           sensorId,
           rate_hz: sensor.rate_hz,
-          kernel: createLidarKernel({
-            renderer: handle.renderer,
+          kernel: createLidarKernelWasm({
             scene: built.scene,
             sensorNode,
             config: sensor,
+            terrain: built.terrain,
           }),
         });
         sensorMeta.push({
@@ -182,9 +182,6 @@ function pickContextSize(opts: NodeServiceOptions): { width: number; height: num
       if (s.type === "camera") {
         w = Math.max(w, s.resolution[0]);
         h = Math.max(h, s.resolution[1]);
-      } else if (s.type === "lidar") {
-        w = Math.max(w, s.channels);
-        h = Math.max(h, s.channels);
       }
     }
   }
