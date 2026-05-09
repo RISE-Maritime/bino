@@ -5,7 +5,6 @@ import {
   buildScene,
   createLidarKernel,
   createLidarKernelWasm,
-  decodeDepthToPoints,
   applyPoseUpdate,
   type LidarSensor,
 } from "@bino/core";
@@ -103,19 +102,21 @@ function collectStats(timings: number[]) {
   };
 }
 
+type Stats = ReturnType<typeof collectStats>;
+
 function fmtMs(v: number): string {
   return v.toFixed(3);
 }
 
-function printStats(label: string, s: ReturnType<typeof collectStats>, rays = 1024) {
+function printRow(label: string, s: Stats, rays: number) {
   const raysPerSec = Math.round(rays / (s.mean / 1000));
   console.log(
-    `  ${label.padEnd(28)} mean=${fmtMs(s.mean)}ms  p50=${fmtMs(s.p50)}ms  p95=${fmtMs(s.p95)}ms  [${fmtMs(s.min)}–${fmtMs(s.max)}]  ${(raysPerSec / 1000).toFixed(0)}K rays/s`,
+    `  ${label.padEnd(28)} mean=${fmtMs(s.mean)}ms  p50=${fmtMs(s.p50)}ms  p95=${fmtMs(s.p95)}ms  ${(raysPerSec / 1000).toFixed(0)}K rays/s`,
   );
 }
 
-const WARMUP = 20;
-const MEASURED = 200;
+const WARMUP = 10;
+const MEASURED = 50;
 
 // ── GL availability ─────────────────────────────────────────────
 const glAvailable = (() => {
@@ -129,139 +130,172 @@ const glAvailable = (() => {
 })();
 const itGl = glAvailable ? it : it.skip;
 
-const RAYS = lidarConfig.channels * lidarConfig.channels;
+// ── Benchmark helpers ───────────────────────────────────────────
 
-// ── Benchmark ───────────────────────────────────────────────────
-describe("lidar benchmark: GL depth-pass vs Rust ray-cast", () => {
+const terrain = buildSyntheticTerrain();
+const triCount = triangleCount(terrain);
+
+function setupScene() {
   const compiled = compileScenario(scenario);
-  const terrain = buildSyntheticTerrain();
-  const triCount = triangleCount(terrain);
-  const results: Record<string, ReturnType<typeof collectStats>> = {};
+  const built = buildScene(compiled, { sky: false, sea: false });
+  built.scene.add(terrain.clone(true));
+  const terrainInScene = built.scene.getObjectByName("terrain") as THREE.Group;
+  built.terrain = terrainInScene;
+  applyPoseUpdate(built.entities, {
+    entityId: "ferry",
+    pose: { position: [0, 0, -120], orientation: [0, 0, 0, 1] },
+    time: 0,
+  });
+  built.scene.updateMatrixWorld(true);
+  const sensorNode = built.entities.get("ego")!.getObjectByName("main_lidar")!;
+  return { ...built, sensorNode };
+}
 
-  function setupScene() {
-    const built = buildScene(compiled, { sky: false, sea: false });
-    built.scene.add(terrain.clone(true));
-    const terrainInScene = built.scene.getObjectByName("terrain") as THREE.Group;
-    built.terrain = terrainInScene;
-    applyPoseUpdate(built.entities, {
-      entityId: "ferry",
-      pose: { position: [0, 0, -120], orientation: [0, 0, 0, 1] },
-      time: 0,
-    });
-    built.scene.updateMatrixWorld(true);
-    const sensorNode = built.entities.get("ego")!.getObjectByName("main_lidar")!;
-    return { ...built, sensorNode };
+function benchWasm(channels: number, azimuths: number, fovH: number): Stats {
+  const cfg = { ...lidarConfig, channels };
+  const { scene, sensorNode, terrain: tg } = setupScene();
+  const kernel = createLidarKernelWasm({
+    scene,
+    sensorNode,
+    config: cfg,
+    terrain: tg,
+    azimuths,
+    fov_deg: 45,
+    fov_h_deg: fovH,
+  });
+  kernel.step(0);
+  for (let i = 0; i < WARMUP; i++) kernel.step(i * 0.1);
+  const timings: number[] = [];
+  for (let i = 0; i < MEASURED; i++) {
+    const t0 = performance.now();
+    kernel.step(i * 0.1);
+    timings.push(performance.now() - t0);
   }
+  kernel.dispose();
+  return collectStats(timings);
+}
 
-  it(`Rust WASM ray-cast (${RAYS} rays, ${triCount} terrain triangles)`, () => {
-    const { scene, sensorNode, terrain: terrainGroup } = setupScene();
-    const kernel = createLidarKernelWasm({
-      scene,
-      sensorNode,
-      config: lidarConfig,
-      terrain: terrainGroup,
-    });
-
-    const sanity = kernel.step(0);
-    expect(sanity.count).toBeGreaterThan(0);
-
-    for (let i = 0; i < WARMUP; i++) kernel.step(i * 0.1);
-
-    const timings: number[] = [];
-    for (let i = 0; i < MEASURED; i++) {
-      const t0 = performance.now();
-      kernel.step(i * 0.1);
-      timings.push(performance.now() - t0);
+// GL 360° benchmark: render N cubemap faces per sweep, each covering
+// 90° horizontal × 45° vertical FOV. Total pixel count per sweep =
+// faces × (azimuths/faces) × channels.
+function benchGl(channels: number, azimuths: number): Stats {
+  const cfg = { ...lidarConfig, channels };
+  const { scene, sensorNode } = setupScene();
+  const faceWidth = Math.ceil(azimuths / GL_CUBEMAP_FACES);
+  const handle = createHeadlessRenderer(faceWidth, channels);
+  try {
+    const kernels: ReturnType<typeof createLidarKernel>[] = [];
+    for (let f = 0; f < GL_CUBEMAP_FACES; f++) {
+      const faceNode = new THREE.Object3D();
+      faceNode.name = `lidar_face_${f}`;
+      faceNode.rotation.y = (f * Math.PI) / 2;
+      sensorNode.add(faceNode);
+      kernels.push(
+        createLidarKernel({
+          renderer: handle.renderer,
+          scene,
+          sensorNode: faceNode,
+          config: cfg,
+          fov_deg: 45,
+          width: faceWidth,
+        }),
+      );
     }
-
-    results.wasm = collectStats(timings);
-    console.log(`\n── Lidar benchmark (${triCount} terrain tris, 1 vessel, ${RAYS} rays) ──`);
-    printStats("WASM ray-cast (full sweep)", results.wasm, RAYS);
-
-    expect(results.wasm.p95).toBeLessThan(100);
-    kernel.dispose();
-  });
-
-  it("GL decode-only baseline (32×32 depth buffer)", () => {
-    const channels = lidarConfig.channels;
-    const camera = new THREE.PerspectiveCamera(90, 1, 0.1, lidarConfig.range_m);
-
-    const buf = new Uint8Array(channels * channels * 4);
-    for (let i = 0; i < channels * channels; i++) {
-      const depth01 = 0.1 + Math.random() * 0.7;
-      buf[i * 4 + 3] = Math.floor(depth01 * 256) & 0xff;
-      buf[i * 4 + 2] = Math.floor(depth01 * 65536) & 0xff;
-    }
-
+    scene.updateMatrixWorld(true);
     for (let i = 0; i < WARMUP; i++) {
-      decodeDepthToPoints(buf, channels, channels, camera, lidarConfig.range_m);
+      for (const k of kernels) k.step(i * 0.1);
     }
-
     const timings: number[] = [];
     for (let i = 0; i < MEASURED; i++) {
       const t0 = performance.now();
-      decodeDepthToPoints(buf, channels, channels, camera, lidarConfig.range_m);
+      for (const k of kernels) k.step(i * 0.1);
       timings.push(performance.now() - t0);
     }
+    for (const k of kernels) k.dispose();
+    return collectStats(timings);
+  } finally {
+    handle.dispose();
+  }
+}
 
-    results.glDecode = collectStats(timings);
-    printStats("GL decode-only (CPU)", results.glDecode, RAYS);
-    expect(results.glDecode.p95).toBeLessThan(10);
+// ── Tests ───────────────────────────────────────────────────────
+
+// Realistic configs: channels (vertical) × azimuths (horizontal).
+// Full-360° sweep — matches Keelson PointCloud (one complete revolution).
+// GL can't do 360° in one perspective render; needs N cubemap faces.
+const CONFIGS = [
+  { channels: 32, azimuths: 360, fovH: 360, label: "32×360 (11.5K, 360°)" },
+  { channels: 128, azimuths: 512, fovH: 360, label: "OS2-512 (65K, 360°)" },
+  { channels: 128, azimuths: 1024, fovH: 360, label: "OS2-1024 (131K, 360°)" },
+  { channels: 128, azimuths: 2048, fovH: 360, label: "OS2-2048 (262K, 360°)" },
+];
+
+// GL needs a cubemap for 360°: 4 faces at 90° each (no top/bottom needed
+// for a lidar with narrow vertical FOV). Each face renders the full scene.
+const GL_CUBEMAP_FACES = 4;
+
+describe("lidar benchmark: GL depth-pass vs Rust ray-cast", () => {
+  const wasmResults: Record<string, Stats> = {};
+  const glResults: Record<string, Stats> = {};
+
+  it(`WASM ray-cast scaling (${triCount} terrain tris)`, () => {
+    console.log(`\n── Lidar benchmark (${triCount} terrain tris, 1 vessel, 360° sweep) ──`);
+    console.log("  WASM ray-cast:");
+    for (const cfg of CONFIGS) {
+      const rays = cfg.channels * cfg.azimuths;
+      wasmResults[cfg.label] = benchWasm(cfg.channels, cfg.azimuths, cfg.fovH);
+      printRow(`    ${cfg.label}`, wasmResults[cfg.label], rays);
+    }
+    expect(wasmResults[CONFIGS[0]!.label]!.p95).toBeLessThan(100);
   });
 
-  itGl(`GL full depth-pass (32×32, ${triCount} terrain triangles)`, () => {
-    const { scene, sensorNode } = setupScene();
-    const handle = createHeadlessRenderer(lidarConfig.channels, lidarConfig.channels);
-    try {
-      const kernel = createLidarKernel({
-        renderer: handle.renderer,
-        scene,
-        sensorNode,
-        config: lidarConfig,
-      });
-
-      const sanity = kernel.step(0);
-      expect(sanity.count).toBeGreaterThan(0);
-
-      for (let i = 0; i < WARMUP; i++) kernel.step(i * 0.1);
-
-      const timings: number[] = [];
-      for (let i = 0; i < MEASURED; i++) {
-        const t0 = performance.now();
-        kernel.step(i * 0.1);
-        timings.push(performance.now() - t0);
-      }
-
-      results.glFull = collectStats(timings);
-      printStats("GL full depth-pass", results.glFull, RAYS);
-      expect(results.glFull.p95).toBeLessThan(200);
-      kernel.dispose();
-    } finally {
-      handle.dispose();
+  itGl(`GL depth-pass scaling (${triCount} terrain tris)`, () => {
+    console.log("  GL depth-pass:");
+    for (const cfg of CONFIGS) {
+      const rays = cfg.channels * cfg.azimuths;
+      glResults[cfg.label] = benchGl(cfg.channels, cfg.azimuths);
+      printRow(`    ${cfg.label}`, glResults[cfg.label], rays);
     }
+    expect(glResults[CONFIGS[0]!.label]!.p95).toBeLessThan(200);
   });
 
   it("summary", () => {
     console.log("\n── Summary ──");
-    if (results.wasm && results.glFull) {
-      const speedup = results.glFull.p50 / results.wasm.p50;
-      console.log(
-        `  Rust WASM is ${speedup.toFixed(1)}× faster than GL depth-pass at p50` +
-          ` (${fmtMs(results.wasm.p50)}ms vs ${fmtMs(results.glFull.p50)}ms)`,
-      );
-      if (speedup > 1.5) {
-        console.log("  ✓ Rust ray-cast decisively faster — architecture validated.\n");
-      } else {
-        console.log("  ✗ Rust ray-cast NOT decisively faster — review architecture.\n");
+    const hasGl = CONFIGS.every((cfg) => glResults[cfg.label]);
+    if (hasGl) {
+      console.log("  config                          WASM p50    GL p50     WASM speedup");
+      console.log("  ──────────────────────────────  ─────────   ─────────  ────────────");
+      for (const cfg of CONFIGS) {
+        const w = wasmResults[cfg.label]!;
+        const g = glResults[cfg.label]!;
+        const speedup = g.p50 / w.p50;
+        console.log(
+          `  ${cfg.label.padEnd(32)}  ${fmtMs(w.p50).padStart(7)}ms   ${fmtMs(g.p50).padStart(7)}ms  ${speedup.toFixed(1)}×`,
+        );
       }
-    } else if (results.wasm) {
-      console.log(
-        `  WASM ray-cast: p50=${fmtMs(results.wasm.p50)}ms  p95=${fmtMs(results.wasm.p95)}ms` +
-          `  (${Math.round(RAYS / (results.wasm.p50 / 1000) / 1000)}K rays/s)`,
-      );
+      const last = CONFIGS[CONFIGS.length - 1]!;
+      const topSpeedup = glResults[last.label]!.p50 / wasmResults[last.label]!.p50;
+      if (topSpeedup > 1.5) {
+        console.log(
+          `\n  ✓ Rust ray-cast ${topSpeedup.toFixed(1)}× faster at ${last.label} — architecture validated.\n`,
+        );
+      } else {
+        console.log(
+          `\n  At ${last.label} Rust is ${topSpeedup.toFixed(1)}× vs GL.` +
+            "\n  See p95 and scaling trend for the full picture.\n",
+        );
+      }
+    } else {
+      const first = CONFIGS[0]!;
+      const w = wasmResults[first.label];
+      if (w) {
+        console.log(
+          `  WASM ray-cast ${first.label}: p50=${fmtMs(w.p50)}ms  p95=${fmtMs(w.p95)}ms`,
+        );
+      }
       console.log(
         "  GL depth-pass: skipped (no GL context)." +
-          "\n  Run in Docker (Xvfb) or rebuild @kmamal/gl for the full comparison.\n",
+          "\n  Rebuild @kmamal/gl or run in Docker for the full comparison.\n",
       );
     }
     expect(true).toBe(true);

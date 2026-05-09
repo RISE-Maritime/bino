@@ -23,6 +23,8 @@ export interface LidarKernelOptions {
   sensorNode: THREE.Object3D;
   config: LidarSensor;
   fov_deg?: number;
+  /** Render target width (horizontal pixels / azimuths). Defaults to config.channels. */
+  width?: number;
 }
 
 export interface DecodedPoints {
@@ -34,7 +36,7 @@ export function createLidarKernel(opts: LidarKernelOptions): LidarKernel {
   const fov = opts.fov_deg ?? DEFAULT_FOV_DEG;
   const channels = opts.config.channels;
   const range = opts.config.range_m;
-  const width = channels;
+  const width = opts.width ?? channels;
   const height = channels;
 
   const camera = new THREE.PerspectiveCamera(fov, width / height, NEAR_DEFAULT, range);

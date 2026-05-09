@@ -521,7 +521,11 @@ early.
 
 ---
 
-## v0.4 — Terrain, sea, perf pass
+## v0.4 — Terrain, sea, perf pass ✅ CLOSED 2026-05-09
+
+Closed-state paper trail: v0.4a acceptance met at commit cf80089;
+v0.4b acceptance met at this commit. Lidar architecture decision
+recorded in `docs/adr-001-lidar-kernel-architecture.md`.
 
 Largest scope of any milestone so far. **Split into v0.4a (visuals +
 environment DSL) and v0.4b (perf: lidar Rust port + WebGPU eval)**;
@@ -624,12 +628,12 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
     path; or deleted outright if S14 says ray-cast is strictly
     better.
 11. **Benchmark.** ✅ `packages/node/test/lidar-bench.test.ts` —
-    v04_kiel-complexity synthetic terrain (114K tris, 1 vessel, 1024
-    rays). WASM ray-cast: p50 ≈ 0.96 ms, p95 ≈ 1.1 ms, ~1M rays/s.
-    GL full depth-pass comparison gated on `@kmamal/gl` availability
-    (runs in Docker / Xvfb). GL decode-only baseline: p50 ≈ 0.03 ms
-    (CPU decode is trivial; GL cost is dominated by render + readback).
-    WASM path comfortably meets 10 Hz budget at 32 channels.
+    114K terrain tris, 360° sweep comparison. At 32×360 (v04_kiel
+    class): WASM 3.5× faster than GL cubemap (1.1 ms vs 3.8 ms) —
+    GL needs 4 render passes for 360°, WASM traces rays natively.
+    At OS2 128×1024: GL 3.5× faster (4.9 ms vs 17 ms), but WASM
+    still within 10 Hz budget. Architecture decision: keep WASM.
+    Full rationale in `docs/adr-001-lidar-kernel-architecture.md`.
 12. ~~**WebGPU evaluation per S15.**~~ ✅ Closed as deferred per
     `spikes/webgpu-eval/results.md`. Revisit trigger: a sensor
     needing GPU compute, or production on hardware-GPU hosts.
@@ -645,13 +649,14 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
   `EnvironmentSnapshot`.
 
 **v0.4b:**
-- Rust lidar kernel passes the same vitest integration tests the v0.1
-  TS kernel did.
-- Benchmark shows Rust path beats GL path on the v04_kiel scenario
-  (specifically: in the presence of real terrain geometry, where the
-  v0.3 lidar would have been GL-bottlenecked).
-- (Optional) WebGPURenderer in `@bino/node` if S15 says yes;
-  otherwise documented "evaluated, not yet migrated" verdict.
+- ✅ Rust lidar kernel passes vitest integration tests (5 tests in
+  `lidar-wasm.test.ts`: vessel detection, terrain detection,
+  occlusion, out-of-range, dispose).
+- ✅ Benchmark: WASM ray-cast 3.5× faster than GL cubemap at the
+  v04_kiel config (32ch, 360° sweep). At OS2 scale (128ch) GL is
+  faster per-ray but WASM is within budget. Decision: keep WASM
+  for 360° native support, GL independence, determinism. ADR-001.
+- ✅ WebGPU: evaluated, deferred per S15.
 
 ### v0.4 risks worth flagging now
 

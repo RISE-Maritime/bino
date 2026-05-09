@@ -11,7 +11,13 @@ export interface LidarKernelWasmOptions {
   sensorNode: THREE.Object3D;
   config: LidarSensor;
   terrain?: THREE.Group | undefined;
+  /** Vertical FOV in degrees. Defaults to 90. */
   fov_deg?: number | undefined;
+  /** Horizontal FOV in degrees. Defaults to fov_deg. For 360° sweep
+   *  lidars (OS2-style), set to 360. */
+  fov_h_deg?: number | undefined;
+  /** Horizontal sample count. Defaults to config.channels (square grid). */
+  azimuths?: number | undefined;
 }
 
 export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
@@ -22,9 +28,9 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
 
   const wasmConfig = {
     channels: config.channels,
-    azimuths: config.channels,
+    azimuths: opts.azimuths ?? config.channels,
     fov_v_deg: fov,
-    fov_h_deg: fov,
+    fov_h_deg: opts.fov_h_deg ?? fov,
     range_m: config.range_m,
   };
 
