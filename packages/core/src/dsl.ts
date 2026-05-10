@@ -118,8 +118,7 @@ export type Wind = z.infer<typeof Wind>;
 
 /** Environment block — terrain/sea/sky context for the scene.
  *  v0.1-v0.3 ignored this; v0.4a is its first concrete consumer.
- *  v0.5+ may add rain/snow/hail intensity per the env-modelling
- *  cross-cutting thread in docs/plan.md. */
+ *  v1.0 adds rain_rate_mm_h for radar weather attenuation. */
 export const Environment = z.object({
   sea_state: SeaState.optional(),
   wind: Wind.optional(),
@@ -128,6 +127,7 @@ export const Environment = z.object({
     .regex(/^\d{2}:\d{2}$/, "time_of_day must be HH:MM (24h)")
     .default("12:00"),
   visibility_m: z.number().positive().default(20000),
+  rain_rate_mm_h: z.number().nonnegative().default(0),
 });
 export type Environment = z.infer<typeof Environment>;
 

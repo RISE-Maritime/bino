@@ -178,6 +178,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           scene: built.scene,
           sensorNode,
           config: sensor,
+          environment: compiled.environment,
         });
         kernels.push(kernel);
         // Radar wedge overlay (plan v0.3 #15) — green wireframe ring
@@ -424,20 +425,20 @@ function drawPpi(canvas: HTMLCanvasElement, sweep: RadarFrame): void {
   ctx.lineTo(cx, cy + r);
   ctx.stroke();
 
-  // returns
+  // returns — intensity-mapped green phosphor
   const bins = sweep.spokes[0]?.intensity.length ?? 0;
   if (bins === 0) return;
-  ctx.fillStyle = "#55ff66";
   for (const spoke of sweep.spokes) {
     for (let b = 0; b < bins; b++) {
       const v = spoke.intensity[b]!;
       if (v === 0) continue;
+      const alpha = v / 255;
       const radius = (b / bins) * r;
-      // azimuth=0 is +x in the sensor's local horizontal plane → up
-      // on the PPI is the host's bow. Translate accordingly.
       const angle = spoke.azimuth - Math.PI / 2;
       const px = cx + Math.cos(angle) * radius;
       const py = cy + Math.sin(angle) * radius;
+      const green = Math.round(100 + 155 * alpha);
+      ctx.fillStyle = `rgba(${Math.round(alpha * 40)}, ${green}, ${Math.round(alpha * 30)}, ${Math.max(alpha, 0.15)})`;
       ctx.beginPath();
       ctx.arc(px, py, 1.5, 0, Math.PI * 2);
       ctx.fill();

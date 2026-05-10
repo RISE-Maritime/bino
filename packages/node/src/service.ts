@@ -128,6 +128,7 @@ function buildSceneFromScenario(
             scene: built.scene,
             sensorNode,
             config: sensor,
+            environment: scenario.environment,
           }),
           phaseOffset_s: sensor.phase_offset_s,
         });

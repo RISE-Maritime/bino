@@ -3,13 +3,13 @@
 Companion to `docs/bino_design_vision.md`. The vision is the *what* and
 *why*; this is the *in what order* and *what's risky*. Updated as we go.
 
-**Status anchor (2026-05-10):** v0.1 + v0.2 + v0.3 + v0.4 + v0.5 +
-v0.6 all closed. Bino runs camera + lidar + radar end-to-end with
-inject/replace rendering modes, stepped clock, strict determinism
-(renderer config locking), intra-sweep temporal modeling, and DSL
-extensions for phase offsets and exposure times. **Next up: v1.0 —
-Marine radar v1 (sea-clutter model, antenna pattern, weather
-attenuation).**
+**Status anchor (2026-05-10):** v0.1 through v1.0 all closed. Bino
+runs camera + lidar + radar end-to-end with inject/replace rendering
+modes, stepped clock, strict determinism, intra-sweep temporal
+modeling, and DSL extensions for phase offsets and exposure times.
+v1.0 adds K-distribution sea clutter, Gaussian antenna-pattern
+convolution, and ITU-R P.838 rain attenuation to the radar kernel.
+Radar output is now continuous intensity (0-255), no longer binary.
 
 ---
 
@@ -753,28 +753,45 @@ browser viewer to a "non-strict" rendering option for live debugging.
 
 ---
 
-## v1.0 — Marine radar v1
+## v1.0 — Marine radar v1 ✅ CLOSED 2026-05-10
 
-- **Sea-clutter model** — its own research thread, may deserve a
-  paper. **Depends on v0.4's sea-surface modelling**: the wave field
-  (Gerstner spectrum, sea state per the DSL `environment.sea_state`)
-  is the input the clutter generator needs. v1.0 cannot start until
-  v0.4 has landed a usable wave field representation.
-- Antenna-pattern convolution.
-- **Weather attenuation (rain / fog / snow / hail)** — depends on the
-  environmental-modelling cross-cutting thread (below). The DSL
-  already has `environment.visibility_m`; rain/snow/hail intensity
-  fields likely need to be added at the v1.0 boundary, possibly
-  earlier.
-- Full documentation as a standalone artifact other simulators can
-  consume.
+Closed-state paper trail: spike S16 (`spikes/sea-clutter/results.md`)
+resolved the model choice (K-distribution), CPU Gerstner feasibility
+(fast but unnecessary — flat-earth grazing sufficient), and
+integration architecture (kernel-internal, Option A). Implementation
+adds four new Rust modules to `kernels/radar/src/`:
+
+- **Sea clutter** (`clutter.rs`): K-distribution (Ward 1981) —
+  Rayleigh speckle × Gamma texture, Nathanson-inspired σ₀(Hs, ψ).
+  Shape parameter ν = 30/(Hs+0.5). Deterministic via frame-index-
+  derived seed.
+- **Antenna pattern** (`antenna.rs`): Gaussian main-lobe convolution
+  across azimuth, FWHM = `beam_width_deg` from DSL.
+- **Weather attenuation** (`weather.rs`): ITU-R P.838 rain
+  attenuation, range-dependent two-way path loss. DSL gains
+  `environment.rain_rate_mm_h`.
+- **Gerstner evaluator** (`gerstner.rs`): CPU port of the GLSL
+  shader, available for future wave-crest shadowing. Not used for
+  clutter grazing angle per S16 verdict.
+- **RNG** (`rng.rs`): xoshiro128+ PRNG, no external dependency.
+
+Radar output changes from binary (0/255) to continuous intensity
+(0-255), auto-scaled per sweep with vessel returns pinned at 255.
+Viewer PPI updated for intensity-mapped rendering. WASM binding
+grows a 4th argument (`RadarEnvironment`); backward compatible when
+omitted (falls back to binary geometry-of-returns).
+
+Deferred: standalone crate documentation, Doppler, sidelobe
+modelling, temporal correlation of texture across sweeps, terrain
+clutter, Pierson-Moskowitz spectral sampling for Gerstner
+components, snow/hail/fog attenuation models.
 
 **Architectural note (recorded after v0.3 demo, 2026-04-29):** noise
 injection across all sensors — radar clutter from sea state, camera
 contrast loss in fog, lidar attenuation in rain — is a *cross-cutting
 environmental concern*, not a radar-only concern. The v1.0 radar
-section above is its first concrete consumer; the v0.4 sea-surface
-work is its first concrete producer. See cross-cutting threads.
+is its first concrete consumer; the v0.4 sea-surface work is its
+first concrete producer. See cross-cutting threads.
 
 ---
 

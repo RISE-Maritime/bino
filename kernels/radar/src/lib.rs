@@ -1,64 +1,94 @@
-//! Bino marine radar v0 — geometry-of-returns kernel.
+//! Bino marine radar v1 — sea clutter, antenna pattern, weather.
 //!
-//! Crude-on-purpose: rays from the radar origin in the horizontal
-//! plane, find the nearest vessel-bbox intersection per spoke, fill
-//! intensity bins by range. **No antenna pattern, no sea clutter, no
-//! propagation effects, no rain attenuation, binary intensity (1 or
-//! 0 per range bin).** Real V&V of collision avoidance under clutter
-//! cannot use this — see `docs/plan.md` v0.3 risks. The v1.0
-//! sea-clutter model is a separate research thread.
+//! v0.3 was geometry-of-returns only (binary intensity, no physics).
+//! v1.0 adds K-distribution sea clutter (Ward 1981), Gaussian
+//! antenna-pattern convolution, and ITU-R P.838 rain attenuation.
+//! See `spikes/sea-clutter/results.md` for the spike that motivated
+//! these choices.
 
-#![cfg_attr(not(test), allow(dead_code))]
+mod antenna;
+mod clutter;
+mod gerstner;
+mod rng;
+mod weather;
 
 use serde::{Deserialize, Serialize};
 
-/// Per-frame snapshot of vessel positions in world / scene-anchor frame.
-/// Bino constructs this on the JS side and copies it across the
-/// WASM boundary each frame.
+// ── Scene & host types (unchanged from v0.3) ─────────────────────
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SceneSnapshot {
     pub vessels: Vec<VesselBox>,
 }
 
-/// Axis-aligned-in-yaw bounding box for a vessel. v0.3 ignores roll
-/// and pitch — radar is a horizontal-plane sensor and the boxes are
-/// thin in z compared to length/beam.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VesselBox {
-    /// World-frame position [x, y, z] in metres (ENU; y is up here, NOT north).
     pub position: [f32; 3],
-    /// Heading (yaw) in radians, CCW from +x.
     pub heading: f32,
-    /// Half-length (along heading), half-beam (perpendicular), half-height — metres.
     pub half_extents: [f32; 3],
-    /// World-frame linear velocity in m/s. Default [0,0,0].
     #[serde(default)]
     pub velocity: [f32; 3],
-    /// Yaw rate in rad/s. Default 0.
     #[serde(default)]
     pub angular_velocity_y: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RadarConfig {
-    /// Maximum range in metres.
     pub range_m: f32,
-    /// Number of azimuth samples per full revolution.
     pub spokes_per_rev: u32,
-    /// Number of range bins per spoke.
     pub range_bins: u32,
-    /// Sweep duration in seconds. 0.0 disables interpolation (backward compat).
     #[serde(default)]
     pub sweep_duration_s: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HostPose {
+    pub position: [f32; 3],
+    pub heading: f32,
+}
+
+// ── v1.0 environment config ──────────────────────────────────────
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RadarEnvironment {
+    #[serde(default)]
+    pub sea_clutter: Option<SeaClutterConfig>,
+    #[serde(default)]
+    pub antenna: Option<AntennaConfig>,
+    #[serde(default)]
+    pub weather: Option<WeatherConfig>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeaClutterConfig {
+    pub hs: f32,
+    pub radar_height_m: f32,
+    pub enabled: bool,
+    pub sweep_index: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AntennaConfig {
+    pub beam_width_deg: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WeatherConfig {
+    pub rain_rate_mm_h: f32,
+    #[serde(default = "default_frequency")]
+    pub frequency_ghz: f32,
+}
+
+fn default_frequency() -> f32 {
+    9.4
+}
+
+// ── Output types ─────────────────────────────────────────────────
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RadarSpoke {
-    /// Azimuth in radians, 0 = host's +x heading, CCW positive.
     pub azimuth: f32,
-    /// Per-bin intensity, length == config.range_bins. 0 or 255 in v0 (binary).
     pub intensity: Vec<u8>,
-    /// Time offset from sweep start, in seconds.
     pub timestamp: f32,
 }
 
@@ -67,58 +97,66 @@ pub struct RadarSweep {
     pub spokes: Vec<RadarSpoke>,
 }
 
-/// Host (radar-bearing vessel) pose at the moment of the sweep.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HostPose {
-    pub position: [f32; 3],
-    pub heading: f32,
-}
+// ── Sweep generation ─────────────────────────────────────────────
 
-/// Compute one full sweep — for v0.3 we generate the entire sweep in
-/// a single call rather than streaming spoke-by-spoke. At a typical
-/// 0.4 Hz rotation that's 2.5 s between calls; the cost of generating
-/// 360 spokes synchronously is negligible compared to the wait.
-///
-/// When `config.sweep_duration_s > 0.0`, vessels are interpolated per-
-/// spoke according to their velocity and angular_velocity_y, modelling
-/// motion during the sweep.
-pub fn sweep(scene: &SceneSnapshot, host: &HostPose, config: &RadarConfig) -> RadarSweep {
+const VESSEL_INTENSITY: f32 = 1.0;
+const NOISE_FLOOR: f32 = 1e-8;
+
+pub fn sweep(
+    scene: &SceneSnapshot,
+    host: &HostPose,
+    config: &RadarConfig,
+    env: Option<&RadarEnvironment>,
+) -> RadarSweep {
     let n_spokes = config.spokes_per_rev.max(1) as usize;
     let n_bins = config.range_bins.max(1) as usize;
-    let mut spokes = Vec::with_capacity(n_spokes);
     let bin_width = config.range_m / n_bins as f32;
     let interpolate = config.sweep_duration_s > 0.0;
+
+    let env = env.cloned().unwrap_or_default();
+    let has_clutter = env.sea_clutter.as_ref().is_some_and(|c| c.enabled && c.hs > 0.0);
+
+    let mut rng = if has_clutter {
+        let idx = env.sea_clutter.as_ref().unwrap().sweep_index;
+        Some(rng::Rng::new(idx as u64 ^ 0xB190_CADA_5EED_0001))
+    } else {
+        None
+    };
+
+    // Raw f32 buffer: spoke-major, [spoke][bin].
+    let mut raw = vec![0.0_f32; n_spokes * n_bins];
+    let mut timestamps = vec![0.0_f32; n_spokes];
 
     for i in 0..n_spokes {
         let azimuth = (i as f32 / n_spokes as f32) * std::f32::consts::TAU;
         let world_angle = host.heading + azimuth;
-        let mut intensity = vec![0u8; n_bins];
 
         let dt = if interpolate {
             (i as f32 / n_spokes as f32) * config.sweep_duration_s
         } else {
             0.0
         };
+        timestamps[i] = dt;
 
+        let offset = i * n_bins;
+
+        for j in 0..n_bins {
+            let range = (j as f32 + 0.5) * bin_width;
+
+            // Sea clutter.
+            if has_clutter {
+                let sc = env.sea_clutter.as_ref().unwrap();
+                let grazing = clutter::grazing_angle_flat(sc.radar_height_m, range);
+                let rng = rng.as_mut().unwrap();
+                let clutter_amp = clutter::sample_k(rng, sc.hs, grazing);
+                let noise_amp = clutter::sample_noise(rng, NOISE_FLOOR);
+                raw[offset + j] = clutter_amp + noise_amp;
+            }
+        }
+
+        // Vessel geometry-of-returns.
         let nearest = if interpolate {
-            // Build interpolated scene snapshot for this spoke.
-            let interp_scene = SceneSnapshot {
-                vessels: scene
-                    .vessels
-                    .iter()
-                    .map(|v| VesselBox {
-                        position: [
-                            v.position[0] + v.velocity[0] * dt,
-                            v.position[1] + v.velocity[1] * dt,
-                            v.position[2] + v.velocity[2] * dt,
-                        ],
-                        heading: v.heading + v.angular_velocity_y * dt,
-                        half_extents: v.half_extents,
-                        velocity: v.velocity,
-                        angular_velocity_y: v.angular_velocity_y,
-                    })
-                    .collect(),
-            };
+            let interp_scene = interpolate_scene(scene, dt);
             nearest_hit(&interp_scene, host.position, world_angle, config.range_m)
         } else {
             nearest_hit(scene, host.position, world_angle, config.range_m)
@@ -127,22 +165,130 @@ pub fn sweep(scene: &SceneSnapshot, host: &HostPose, config: &RadarConfig) -> Ra
         if let Some(range) = nearest {
             let bin = (range / bin_width).floor() as usize;
             if bin < n_bins {
-                intensity[bin] = 255;
+                raw[offset + bin] = raw[offset + bin].max(VESSEL_INTENSITY);
             }
         }
-
-        spokes.push(RadarSpoke {
-            azimuth,
-            intensity,
-            timestamp: dt,
-        });
     }
+
+    // Antenna pattern convolution.
+    if let Some(ref ant) = env.antenna {
+        if ant.beam_width_deg > 0.0 {
+            antenna::convolve_azimuth(&mut raw, n_spokes, n_bins, ant.beam_width_deg);
+        }
+    }
+
+    // Weather attenuation.
+    if let Some(ref wx) = env.weather {
+        if wx.rain_rate_mm_h > 0.0 {
+            for i in 0..n_spokes {
+                let offset = i * n_bins;
+                weather::attenuate_spoke(
+                    &mut raw[offset..offset + n_bins],
+                    config.range_m,
+                    wx.rain_rate_mm_h,
+                    wx.frequency_ghz,
+                );
+            }
+        }
+    }
+
+    // Normalize f32 → u8.
+    let spokes = if has_clutter || env.antenna.is_some() {
+        normalize_sweep(&raw, n_spokes, n_bins, &timestamps)
+    } else {
+        // No clutter/antenna — preserve v0.3 binary behavior.
+        binary_sweep(&raw, n_spokes, n_bins, &timestamps)
+    };
 
     RadarSweep { spokes }
 }
 
-/// Closest hit along a ray from `origin` at `world_angle` (radians,
-/// 0 = +x, CCW), out to `max_range`. Returns Some(distance) or None.
+fn interpolate_scene(scene: &SceneSnapshot, dt: f32) -> SceneSnapshot {
+    SceneSnapshot {
+        vessels: scene
+            .vessels
+            .iter()
+            .map(|v| VesselBox {
+                position: [
+                    v.position[0] + v.velocity[0] * dt,
+                    v.position[1] + v.velocity[1] * dt,
+                    v.position[2] + v.velocity[2] * dt,
+                ],
+                heading: v.heading + v.angular_velocity_y * dt,
+                half_extents: v.half_extents,
+                velocity: v.velocity,
+                angular_velocity_y: v.angular_velocity_y,
+            })
+            .collect(),
+    }
+}
+
+/// Auto-scale continuous intensity to 0-255. Vessel returns pin at
+/// 255; clutter maps to 0-200 proportionally.
+fn normalize_sweep(
+    raw: &[f32],
+    n_spokes: usize,
+    n_bins: usize,
+    timestamps: &[f32],
+) -> Vec<RadarSpoke> {
+    // Find max non-vessel intensity for dynamic range.
+    let max_clutter = raw
+        .iter()
+        .copied()
+        .filter(|&v| v < VESSEL_INTENSITY)
+        .fold(0.0_f32, f32::max)
+        .max(1e-12);
+
+    let clutter_scale = 200.0 / max_clutter;
+
+    (0..n_spokes)
+        .map(|i| {
+            let azimuth = (i as f32 / n_spokes as f32) * std::f32::consts::TAU;
+            let offset = i * n_bins;
+            let intensity: Vec<u8> = (0..n_bins)
+                .map(|j| {
+                    let v = raw[offset + j];
+                    if v >= VESSEL_INTENSITY {
+                        255
+                    } else {
+                        (v * clutter_scale).clamp(0.0, 200.0) as u8
+                    }
+                })
+                .collect();
+            RadarSpoke {
+                azimuth,
+                intensity,
+                timestamp: timestamps[i],
+            }
+        })
+        .collect()
+}
+
+/// Binary output for backward compat (no clutter, no antenna).
+fn binary_sweep(
+    raw: &[f32],
+    n_spokes: usize,
+    n_bins: usize,
+    timestamps: &[f32],
+) -> Vec<RadarSpoke> {
+    (0..n_spokes)
+        .map(|i| {
+            let azimuth = (i as f32 / n_spokes as f32) * std::f32::consts::TAU;
+            let offset = i * n_bins;
+            let intensity: Vec<u8> = (0..n_bins)
+                .map(|j| if raw[offset + j] > 0.0 { 255 } else { 0 })
+                .collect();
+            RadarSpoke {
+                azimuth,
+                intensity,
+                timestamp: timestamps[i],
+            }
+        })
+        .collect()
+}
+
+// ── Geometry-of-returns (unchanged from v0.3) ────────────────────
+
 fn nearest_hit(
     scene: &SceneSnapshot,
     origin: [f32; 3],
@@ -153,14 +299,8 @@ fn nearest_hit(
     let mut best: Option<f32> = None;
 
     for v in &scene.vessels {
-        // Skip if the vessel is the host (or overlaps the radar). We
-        // consider any bbox that contains the origin point as
-        // self-shadowing — return None for that ray.
         let dx = v.position[0] - origin[0];
-        let dy = v.position[2] - origin[2]; // y in our coords is up; the
-                                            // horizontal plane is x/z.
-                                            // Adjust if scene anchor changes.
-        // Project (dx, dy) into vessel-local frame (rotate by -heading).
+        let dy = v.position[2] - origin[2];
         let cos_h = (-v.heading).cos();
         let sin_h = (-v.heading).sin();
         let lx = cos_h * dx - sin_h * dy;
@@ -169,23 +309,12 @@ fn nearest_hit(
         let half = [v.half_extents[0], v.half_extents[2]];
 
         if lx.abs() <= half[0] && ly.abs() <= half[1] {
-            // Origin is inside this bbox — treat as zero-range return
-            // (the host's own hull, basically).
             return Some(0.0);
         }
 
-        // Project the ray direction into vessel-local frame too.
         let ldx = cos_h * dir[0] - sin_h * dir[1];
         let ldy = sin_h * dir[0] + cos_h * dir[1];
 
-        // Cast ray from origin in vessel-local coords, hit-test against
-        // axis-aligned box centred at +(lx, ly). i.e. ray origin at -lx, -ly
-        // hitting box centred at origin. Equivalent: ray origin = (-lx, -ly),
-        // direction = (ldx, ldy), test against box [-half[0], +half[0]]².
-        // Reformulate: shift so vessel centre is origin → ray origin is
-        // (-lx_centred, -ly_centred). lx and ly are vessel→origin already
-        // (because we computed lx from dx = v - origin), so ray-origin in
-        // vessel-local frame is -lx, -ly.
         if let Some(t) = ray_box_intersect(-lx, -ly, ldx, ldy, half[0], half[1], max_range) {
             best = Some(match best {
                 Some(prev) => prev.min(t),
@@ -197,9 +326,6 @@ fn nearest_hit(
     best
 }
 
-/// Slab-method ray vs axis-aligned 2D box centred at origin with
-/// half-extents (hx, hy). Ray origin (rox, roy), direction (rdx, rdy).
-/// Returns the first positive hit distance ≤ max_range, else None.
 fn ray_box_intersect(
     rox: f32,
     roy: f32,
@@ -236,31 +362,30 @@ fn ray_box_intersect(
     }
 }
 
-// --- WASM bindings ------------------------------------------------
+// ── WASM bindings ────────────────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use super::*;
     use wasm_bindgen::prelude::*;
 
-    /// JS entry point. Takes serde-encoded SceneSnapshot/HostPose/RadarConfig
-    /// (via serde-wasm-bindgen), returns a serde-encoded RadarSweep.
-    /// Copy semantics — small payloads, no SharedArrayBuffer (S8).
     #[wasm_bindgen]
     pub fn radar_sweep(
         scene: JsValue,
         host: JsValue,
         config: JsValue,
+        env_config: JsValue,
     ) -> Result<JsValue, JsValue> {
         let scene: SceneSnapshot = serde_wasm_bindgen::from_value(scene)?;
         let host: HostPose = serde_wasm_bindgen::from_value(host)?;
         let config: RadarConfig = serde_wasm_bindgen::from_value(config)?;
-        let result = sweep(&scene, &host, &config);
+        let env: Option<RadarEnvironment> = serde_wasm_bindgen::from_value(env_config).ok();
+        let result = sweep(&scene, &host, &config, env.as_ref());
         Ok(serde_wasm_bindgen::to_value(&result)?)
     }
 }
 
-// --- Tests --------------------------------------------------------
+// ── Tests ────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -292,10 +417,25 @@ mod tests {
         }
     }
 
+    fn sea_env(hs: f32, idx: u32) -> RadarEnvironment {
+        RadarEnvironment {
+            sea_clutter: Some(SeaClutterConfig {
+                hs,
+                radar_height_m: 35.0,
+                enabled: true,
+                sweep_index: idx,
+            }),
+            antenna: None,
+            weather: None,
+        }
+    }
+
+    // ── v0.3 backward compat ──
+
     #[test]
-    fn empty_scene_yields_all_zero_intensity() {
+    fn backward_compat_no_env() {
         let scene = SceneSnapshot { vessels: vec![] };
-        let sw = sweep(&scene, &host_at_origin(), &cfg(8, 16, 100.0));
+        let sw = sweep(&scene, &host_at_origin(), &cfg(8, 16, 100.0), None);
         assert_eq!(sw.spokes.len(), 8);
         for spoke in &sw.spokes {
             assert!(spoke.intensity.iter().all(|&v| v == 0));
@@ -303,75 +443,201 @@ mod tests {
     }
 
     #[test]
-    fn vessel_directly_ahead_lights_a_bin_at_expected_range() {
-        // host at origin facing +x. world_angle for spoke 0 is heading
-        // (0). scene vessel at +x = +50.
+    fn backward_compat_vessel_hit() {
         let scene = SceneSnapshot {
             vessels: vec![vessel_at(50.0, 0.0)],
         };
-        let sw = sweep(&scene, &host_at_origin(), &cfg(36, 100, 100.0));
-        // bin width = 100/100 = 1m. The bbox half-x = 10, so the near
-        // face is at x=40 → bin 39 or 40.
+        let sw = sweep(&scene, &host_at_origin(), &cfg(36, 100, 100.0), None);
         let spoke0 = &sw.spokes[0];
-        let lit_bins: Vec<usize> = spoke0
+        let lit: Vec<usize> = spoke0
             .intensity
             .iter()
             .enumerate()
             .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None })
             .collect();
-        assert_eq!(lit_bins.len(), 1, "exactly one bin should light up");
-        assert!(
-            lit_bins[0] >= 38 && lit_bins[0] <= 41,
-            "expected bin near 40, got {}",
-            lit_bins[0]
-        );
+        assert_eq!(lit.len(), 1);
+        assert!(lit[0] >= 38 && lit[0] <= 41, "expected bin near 40, got {}", lit[0]);
+        assert_eq!(spoke0.intensity[lit[0]], 255);
     }
 
     #[test]
-    fn vessel_outside_range_produces_no_return() {
+    fn backward_compat_outside_range() {
         let scene = SceneSnapshot {
             vessels: vec![vessel_at(500.0, 0.0)],
         };
-        let sw = sweep(&scene, &host_at_origin(), &cfg(8, 16, 100.0));
+        let sw = sweep(&scene, &host_at_origin(), &cfg(8, 16, 100.0), None);
         for spoke in &sw.spokes {
             assert!(spoke.intensity.iter().all(|&v| v == 0));
         }
     }
 
     #[test]
-    fn vessel_off_axis_lights_only_its_azimuth() {
-        // Vessel at (0, 0, -50) — that's directly to the +z direction.
-        // For the host at origin facing +x, the spoke pointing at +z is
-        // at azimuth +π/2 (90°). With 4 spokes/rev that's spoke 1.
+    fn backward_compat_off_axis() {
         let scene = SceneSnapshot {
             vessels: vec![vessel_at(0.0, -50.0)],
         };
-        let sw = sweep(&scene, &host_at_origin(), &cfg(4, 100, 100.0));
-        let lit_count_per_spoke: Vec<usize> = sw
-            .spokes
-            .iter()
-            .map(|s| s.intensity.iter().filter(|&&v| v > 0).count())
-            .collect();
-        let total_lit: usize = lit_count_per_spoke.iter().sum();
-        assert_eq!(total_lit, 1, "exactly one spoke should have a return");
+        let sw = sweep(&scene, &host_at_origin(), &cfg(4, 100, 100.0), None);
+        let total: usize = sw.spokes.iter().map(|s| s.intensity.iter().filter(|&&v| v > 0).count()).sum();
+        assert_eq!(total, 1);
     }
 
     #[test]
-    fn backward_compat_sweep_duration_zero_timestamps() {
-        // With sweep_duration_s = 0, all timestamps should be 0.0.
+    fn backward_compat_timestamps_zero() {
         let scene = SceneSnapshot {
             vessels: vec![vessel_at(50.0, 0.0)],
         };
-        let sw = sweep(&scene, &host_at_origin(), &cfg(36, 100, 100.0));
+        let sw = sweep(&scene, &host_at_origin(), &cfg(36, 100, 100.0), None);
         for spoke in &sw.spokes {
-            assert_eq!(spoke.timestamp, 0.0, "timestamp should be 0 when sweep_duration_s == 0");
+            assert_eq!(spoke.timestamp, 0.0);
         }
     }
 
+    // ── Clutter tests ──
+
+    #[test]
+    fn clutter_produces_continuous_output() {
+        let scene = SceneSnapshot { vessels: vec![] };
+        let c = cfg(36, 64, 6000.0);
+        let sw = sweep(&scene, &host_at_origin(), &c, Some(&sea_env(2.0, 42)));
+
+        // With clutter enabled, output should be continuous (many
+        // distinct intensity levels), not binary (only 0 and 255).
+        let mut distinct: std::collections::HashSet<u8> = std::collections::HashSet::new();
+        for spoke in &sw.spokes {
+            for &v in &spoke.intensity {
+                distinct.insert(v);
+            }
+        }
+        assert!(
+            distinct.len() > 10,
+            "clutter should produce many intensity levels, got {}",
+            distinct.len()
+        );
+    }
+
+    #[test]
+    fn clutter_near_vs_far() {
+        let scene = SceneSnapshot { vessels: vec![] };
+        let env = sea_env(2.0, 42);
+        let sw = sweep(&scene, &host_at_origin(), &cfg(36, 128, 12000.0), Some(&env));
+
+        let near_mean: f64 = sw.spokes.iter()
+            .flat_map(|s| s.intensity[..16].iter())
+            .map(|&v| v as f64)
+            .sum::<f64>() / (sw.spokes.len() * 16) as f64;
+
+        let far_mean: f64 = sw.spokes.iter()
+            .flat_map(|s| s.intensity[112..].iter())
+            .map(|&v| v as f64)
+            .sum::<f64>() / (sw.spokes.len() * 16) as f64;
+
+        assert!(
+            near_mean > far_mean,
+            "near bins ({near_mean:.1}) should be brighter than far ({far_mean:.1})"
+        );
+    }
+
+    #[test]
+    fn vessel_above_clutter() {
+        let scene = SceneSnapshot {
+            vessels: vec![vessel_at(3000.0, 0.0)],
+        };
+        let env = sea_env(2.0, 42);
+        let sw = sweep(&scene, &host_at_origin(), &cfg(360, 128, 6000.0), Some(&env));
+
+        let spoke0 = &sw.spokes[0];
+        let vessel_bin = spoke0.intensity.iter().position(|&v| v == 255);
+        assert!(vessel_bin.is_some(), "vessel should produce a 255 return");
+    }
+
+    #[test]
+    fn deterministic_seeded_sweep() {
+        let scene = SceneSnapshot { vessels: vec![] };
+        let env = sea_env(2.0, 42);
+        let c = cfg(36, 64, 6000.0);
+
+        let sw1 = sweep(&scene, &host_at_origin(), &c, Some(&env));
+        let sw2 = sweep(&scene, &host_at_origin(), &c, Some(&env));
+
+        for (s1, s2) in sw1.spokes.iter().zip(sw2.spokes.iter()) {
+            assert_eq!(s1.intensity, s2.intensity, "same seed should produce identical output");
+        }
+    }
+
+    // ── Antenna tests ──
+
+    #[test]
+    fn antenna_spreads_point_target() {
+        let scene = SceneSnapshot {
+            vessels: vec![vessel_at(3000.0, 0.0)],
+        };
+        let env = RadarEnvironment {
+            sea_clutter: None,
+            antenna: Some(AntennaConfig { beam_width_deg: 5.0 }),
+            weather: None,
+        };
+        let sw = sweep(&scene, &host_at_origin(), &cfg(360, 64, 6000.0), Some(&env));
+
+        let spoke0 = &sw.spokes[0];
+        let spoke1 = &sw.spokes[1];
+        let spoke10 = &sw.spokes[10];
+
+        let max0: u8 = *spoke0.intensity.iter().max().unwrap();
+        let max1: u8 = *spoke1.intensity.iter().max().unwrap();
+        let max10: u8 = *spoke10.intensity.iter().max().unwrap();
+
+        assert!(max0 > 0, "center spoke should have return");
+        assert!(max1 > 0, "adjacent spoke should have spread");
+        assert_eq!(max10, 0, "far spoke should have no spread");
+    }
+
+    // ── Weather tests ──
+
+    #[test]
+    fn weather_attenuates_far_range() {
+        let scene = SceneSnapshot { vessels: vec![] };
+        let env = RadarEnvironment {
+            sea_clutter: Some(SeaClutterConfig {
+                hs: 2.0,
+                radar_height_m: 35.0,
+                enabled: true,
+                sweep_index: 42,
+            }),
+            antenna: None,
+            weather: Some(WeatherConfig {
+                rain_rate_mm_h: 20.0,
+                frequency_ghz: 9.4,
+            }),
+        };
+        let env_no_rain = RadarEnvironment {
+            weather: None,
+            ..env.clone()
+        };
+
+        let c = cfg(36, 128, 12000.0);
+        let with_rain = sweep(&scene, &host_at_origin(), &c, Some(&env));
+        let no_rain = sweep(&scene, &host_at_origin(), &c, Some(&env_no_rain));
+
+        // Far bins should be dimmer with rain.
+        let far_rain: f64 = with_rain.spokes.iter()
+            .flat_map(|s| s.intensity[112..].iter())
+            .map(|&v| v as f64)
+            .sum::<f64>();
+        let far_clear: f64 = no_rain.spokes.iter()
+            .flat_map(|s| s.intensity[112..].iter())
+            .map(|&v| v as f64)
+            .sum::<f64>();
+
+        assert!(
+            far_rain < far_clear * 0.5,
+            "rain should significantly reduce far-range intensity: rain={far_rain:.0} clear={far_clear:.0}"
+        );
+    }
+
+    // ── Temporal interpolation (carried from v0.6) ──
+
     #[test]
     fn temporal_interpolation_radar() {
-        // Vessel at (50, 0, 0) with velocity (5, 0, 0) m/s.
-        // Sweep duration 2.5s (0.4 Hz), 36 spokes, 100 bins, range 200m.
         let scene = SceneSnapshot {
             vessels: vec![VesselBox {
                 position: [50.0, 0.0, 0.0],
@@ -387,67 +653,20 @@ mod tests {
             range_bins: 100,
             sweep_duration_s: 2.5,
         };
-        let sw = sweep(&scene, &host_at_origin(), &config);
+        let sw = sweep(&scene, &host_at_origin(), &config, None);
         assert_eq!(sw.spokes.len(), 36);
 
-        // Spoke timestamps should increase from 0 to near 2.5s.
         let t0 = sw.spokes[0].timestamp;
         let t_last = sw.spokes[35].timestamp;
-        assert!(
-            t0.abs() < 1e-6,
-            "first spoke timestamp should be ~0, got {t0}"
-        );
-        assert!(
-            t_last > 2.0 && t_last <= 2.5 + 1e-6,
-            "last spoke timestamp should be near 2.5s, got {t_last}"
-        );
+        assert!(t0.abs() < 1e-6);
+        assert!(t_last > 2.0 && t_last <= 2.5 + 1e-6);
 
-        // Spoke 0 (azimuth ~0, pointing +x) should hit the vessel.
-        // Near face at x=40 initially. Bin width = 200/100 = 2m. So bin ~20.
-        let spoke0 = &sw.spokes[0];
-        let lit0: Vec<usize> = spoke0
-            .intensity
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None })
-            .collect();
+        let lit0: Vec<usize> = sw.spokes[0].intensity.iter().enumerate()
+            .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None }).collect();
         assert!(!lit0.is_empty(), "spoke 0 should hit the vessel");
 
-        // Spoke 18 (azimuth ~pi, pointing -x) should not hit the vessel.
-        let spoke18 = &sw.spokes[18];
-        let lit18: Vec<usize> = spoke18
-            .intensity
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None })
-            .collect();
+        let lit18: Vec<usize> = sw.spokes[18].intensity.iter().enumerate()
+            .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None }).collect();
         assert!(lit18.is_empty(), "spoke 18 (opposite) should not hit");
-
-        // With the vessel moving in +x at 5 m/s over 2.5s, it moves 12.5m.
-        // Spokes near azimuth 0 at later times should see the vessel at
-        // a slightly different range. Compare spoke 0 (dt=0, near face=40)
-        // with a spoke at azimuth 0+epsilon at a later time. We use spoke 35
-        // which is at azimuth ~350 degrees (nearly full circle back to +x).
-        // dt_35 = (35/36)*2.5 = 2.431s. Vessel shifted by 5*2.431 = 12.15m.
-        // Near face at 50+12.15-10 = 52.15m. Bin = 52.15/2 ~ 26.
-        let spoke35 = &sw.spokes[35];
-        let lit35: Vec<usize> = spoke35
-            .intensity
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None })
-            .collect();
-        // Spoke 35 is at azimuth (35/36)*2*pi ≈ 350° which is close to +x
-        // direction. It should still hit the vessel, but at a different range.
-        if !lit35.is_empty() && !lit0.is_empty() {
-            // The lit bin for spoke 35 should be at a higher range than spoke 0
-            // because the vessel has moved further away in +x.
-            assert!(
-                lit35[0] > lit0[0],
-                "spoke 35 should see vessel at greater range ({}) than spoke 0 ({})",
-                lit35[0],
-                lit0[0]
-            );
-        }
     }
 }

@@ -1,10 +1,5 @@
 import * as THREE from "three";
-
-export interface VesselDimensions {
-  length: number;
-  beam: number;
-  draft: number;
-}
+import type { VesselDimensions } from "./dsl.js";
 
 export interface AssetEntry {
   dimensions: VesselDimensions;

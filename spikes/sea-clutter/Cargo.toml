@@ -1,0 +1,10 @@
+[package]
+name = "sea-clutter-spike"
+version = "0.0.0"
+edition = "2021"
+
+[[bin]]
+name = "sea-clutter-spike"
+path = "src/main.rs"
+
+[dependencies]
