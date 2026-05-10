@@ -2,9 +2,9 @@
 
 **Closed:** 2026-04-29 (third milestone closed in the same intensive
 session as v0.1 and v0.2).
-**Companion:** `docs/plan.md` (v0.3 section + new env-modelling
-cross-cutting thread), `docs/v01_retrospective.md`,
-`docs/v02_retrospective.md`, `docs/bino_design_vision.md`.
+**Companion:** `docs/internal/plan.md` (v0.3 section + new env-modelling
+cross-cutting thread), `docs/internal/v01-retrospective.md`,
+`docs/internal/v02-retrospective.md`, `docs/internal/design-vision.md`.
 
 This is the paper trail for v0.3 — Rust enters the codebase. What
 landed, where the plan was wrong, the toolchain surprises, the

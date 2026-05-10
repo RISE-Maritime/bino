@@ -1,6 +1,6 @@
 # Bino — implementation plan
 
-Companion to `docs/bino_design_vision.md`. The vision is the *what* and
+Companion to `docs/internal/design-vision.md`. The vision is the *what* and
 *why*; this is the *in what order* and *what's risky*. Updated as we go.
 
 **Status anchor (2026-05-10):** v0.1 through v1.0 all closed. Bino
@@ -24,7 +24,7 @@ both renderers), and only then thicken any one layer.
 
 ## v0.1 — End-to-end skeleton ✅ CLOSED 2026-04-29
 
-Closed-state paper trail in `docs/v01_retrospective.md`. The task list
+Closed-state paper trail in `docs/internal/v01-retrospective.md`. The task list
 below is preserved for reference; all 16 tasks shipped, with the
 specific deviations and decisions captured in the retrospective.
 
@@ -150,7 +150,7 @@ are independent of each other once core lands.
 
 ## v0.2 — Sensor publishing ✅ CLOSED 2026-04-29
 
-Closed-state paper trail in `docs/v02_retrospective.md`. The task list
+Closed-state paper trail in `docs/internal/v02-retrospective.md`. The task list
 below is preserved for reference; 10 of 11 tasks shipped (stretch #9
 deferred to v0.3). Spike outcomes resolved on Day 0 of v0.2 work and
 materially simplified the rest of the plan — see retrospective.
@@ -354,7 +354,7 @@ independent of node publishing; the live e2e (#10) caps the milestone.
 
 ## v0.3 — Marine radar v0 ✅ CLOSED 2026-04-29
 
-Closed-state paper trail in `docs/v03_retrospective.md`. The full
+Closed-state paper trail in `docs/internal/v03-retrospective.md`. The full
 task list below is preserved for reference; all 10 numbered tasks
 shipped. Spike outcomes resolved on Day 0 of v0.3 and the radar work
 itself was meaningfully smaller because the unknowns had been
@@ -524,7 +524,7 @@ early.
 
 Closed-state paper trail: v0.4a acceptance met at commit cf80089;
 v0.4b acceptance met at this commit. Lidar architecture decision
-recorded in `docs/adr-001-lidar-kernel-architecture.md`.
+recorded in `docs/adr/001-lidar-kernel.md`.
 
 Largest scope of any milestone so far. **Split into v0.4a (visuals +
 environment DSL) and v0.4b (perf: lidar Rust port + WebGPU eval)**;
@@ -632,7 +632,7 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
     GL needs 4 render passes for 360°, WASM traces rays natively.
     At OS2 128×1024: GL 3.5× faster (4.9 ms vs 17 ms), but WASM
     still within 10 Hz budget. Architecture decision: keep WASM.
-    Full rationale in `docs/adr-001-lidar-kernel-architecture.md`.
+    Full rationale in `docs/adr/001-lidar-kernel.md`.
 12. ~~**WebGPU evaluation per S15.**~~ ✅ Closed as deferred per
     `spikes/webgpu-eval/results.md`. Revisit trigger: a sensor
     needing GPU compute, or production on hardware-GPU hosts.

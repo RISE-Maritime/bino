@@ -2,8 +2,8 @@
 
 **Closed:** 2026-04-29 (same calendar day as v0.1, same intensive
 work session).
-**Companion:** `docs/plan.md` (v0.2 section), `docs/v01_retrospective.md`,
-`docs/bino_design_vision.md`.
+**Companion:** `docs/internal/plan.md` (v0.2 section), `docs/internal/v01-retrospective.md`,
+`docs/internal/design-vision.md`.
 
 This is the paper trail for v0.2: what landed, where the plan was
 wrong, the surprises (mostly happy), the architectural decisions that

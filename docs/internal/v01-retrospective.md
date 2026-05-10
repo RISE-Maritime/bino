@@ -2,8 +2,8 @@
 
 **Closed:** 2026-04-29.
 **Span:** ~2 days, including the headless-render spike.
-**Companion:** `docs/plan.md` (the plan we set out to deliver),
-`docs/bino_design_vision.md` (the goalposts).
+**Companion:** `docs/internal/plan.md` (the plan we set out to deliver),
+`docs/internal/design-vision.md` (the goalposts).
 
 This is the paper trail for v0.1: what landed, where the plan was wrong,
 the bugs we shook out, the decisions taken in flight, and the new risks
