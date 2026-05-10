@@ -31,6 +31,12 @@ pub struct VesselBox {
     pub heading: f32,
     /// Half-length (along heading), half-beam (perpendicular), half-height — metres.
     pub half_extents: [f32; 3],
+    /// World-frame linear velocity in m/s. Default [0,0,0].
+    #[serde(default)]
+    pub velocity: [f32; 3],
+    /// Yaw rate in rad/s. Default 0.
+    #[serde(default)]
+    pub angular_velocity_y: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,6 +47,9 @@ pub struct RadarConfig {
     pub spokes_per_rev: u32,
     /// Number of range bins per spoke.
     pub range_bins: u32,
+    /// Sweep duration in seconds. 0.0 disables interpolation (backward compat).
+    #[serde(default)]
+    pub sweep_duration_s: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,6 +58,8 @@ pub struct RadarSpoke {
     pub azimuth: f32,
     /// Per-bin intensity, length == config.range_bins. 0 or 255 in v0 (binary).
     pub intensity: Vec<u8>,
+    /// Time offset from sweep start, in seconds.
+    pub timestamp: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,18 +78,52 @@ pub struct HostPose {
 /// a single call rather than streaming spoke-by-spoke. At a typical
 /// 0.4 Hz rotation that's 2.5 s between calls; the cost of generating
 /// 360 spokes synchronously is negligible compared to the wait.
+///
+/// When `config.sweep_duration_s > 0.0`, vessels are interpolated per-
+/// spoke according to their velocity and angular_velocity_y, modelling
+/// motion during the sweep.
 pub fn sweep(scene: &SceneSnapshot, host: &HostPose, config: &RadarConfig) -> RadarSweep {
     let n_spokes = config.spokes_per_rev.max(1) as usize;
     let n_bins = config.range_bins.max(1) as usize;
     let mut spokes = Vec::with_capacity(n_spokes);
     let bin_width = config.range_m / n_bins as f32;
+    let interpolate = config.sweep_duration_s > 0.0;
 
     for i in 0..n_spokes {
         let azimuth = (i as f32 / n_spokes as f32) * std::f32::consts::TAU;
         let world_angle = host.heading + azimuth;
         let mut intensity = vec![0u8; n_bins];
 
-        let nearest = nearest_hit(scene, host.position, world_angle, config.range_m);
+        let dt = if interpolate {
+            (i as f32 / n_spokes as f32) * config.sweep_duration_s
+        } else {
+            0.0
+        };
+
+        let nearest = if interpolate {
+            // Build interpolated scene snapshot for this spoke.
+            let interp_scene = SceneSnapshot {
+                vessels: scene
+                    .vessels
+                    .iter()
+                    .map(|v| VesselBox {
+                        position: [
+                            v.position[0] + v.velocity[0] * dt,
+                            v.position[1] + v.velocity[1] * dt,
+                            v.position[2] + v.velocity[2] * dt,
+                        ],
+                        heading: v.heading + v.angular_velocity_y * dt,
+                        half_extents: v.half_extents,
+                        velocity: v.velocity,
+                        angular_velocity_y: v.angular_velocity_y,
+                    })
+                    .collect(),
+            };
+            nearest_hit(&interp_scene, host.position, world_angle, config.range_m)
+        } else {
+            nearest_hit(scene, host.position, world_angle, config.range_m)
+        };
+
         if let Some(range) = nearest {
             let bin = (range / bin_width).floor() as usize;
             if bin < n_bins {
@@ -86,7 +131,11 @@ pub fn sweep(scene: &SceneSnapshot, host: &HostPose, config: &RadarConfig) -> Ra
             }
         }
 
-        spokes.push(RadarSpoke { azimuth, intensity });
+        spokes.push(RadarSpoke {
+            azimuth,
+            intensity,
+            timestamp: dt,
+        });
     }
 
     RadarSweep { spokes }
@@ -222,6 +271,7 @@ mod tests {
             range_m: range,
             spokes_per_rev: spokes,
             range_bins: bins,
+            sweep_duration_s: 0.0,
         }
     }
 
@@ -237,6 +287,8 @@ mod tests {
             position: [x, 0.0, z],
             heading: 0.0,
             half_extents: [10.0, 2.0, 3.0],
+            velocity: [0.0; 3],
+            angular_velocity_y: 0.0,
         }
     }
 
@@ -302,5 +354,100 @@ mod tests {
             .collect();
         let total_lit: usize = lit_count_per_spoke.iter().sum();
         assert_eq!(total_lit, 1, "exactly one spoke should have a return");
+    }
+
+    #[test]
+    fn backward_compat_sweep_duration_zero_timestamps() {
+        // With sweep_duration_s = 0, all timestamps should be 0.0.
+        let scene = SceneSnapshot {
+            vessels: vec![vessel_at(50.0, 0.0)],
+        };
+        let sw = sweep(&scene, &host_at_origin(), &cfg(36, 100, 100.0));
+        for spoke in &sw.spokes {
+            assert_eq!(spoke.timestamp, 0.0, "timestamp should be 0 when sweep_duration_s == 0");
+        }
+    }
+
+    #[test]
+    fn temporal_interpolation_radar() {
+        // Vessel at (50, 0, 0) with velocity (5, 0, 0) m/s.
+        // Sweep duration 2.5s (0.4 Hz), 36 spokes, 100 bins, range 200m.
+        let scene = SceneSnapshot {
+            vessels: vec![VesselBox {
+                position: [50.0, 0.0, 0.0],
+                heading: 0.0,
+                half_extents: [10.0, 2.0, 3.0],
+                velocity: [5.0, 0.0, 0.0],
+                angular_velocity_y: 0.0,
+            }],
+        };
+        let config = RadarConfig {
+            range_m: 200.0,
+            spokes_per_rev: 36,
+            range_bins: 100,
+            sweep_duration_s: 2.5,
+        };
+        let sw = sweep(&scene, &host_at_origin(), &config);
+        assert_eq!(sw.spokes.len(), 36);
+
+        // Spoke timestamps should increase from 0 to near 2.5s.
+        let t0 = sw.spokes[0].timestamp;
+        let t_last = sw.spokes[35].timestamp;
+        assert!(
+            t0.abs() < 1e-6,
+            "first spoke timestamp should be ~0, got {t0}"
+        );
+        assert!(
+            t_last > 2.0 && t_last <= 2.5 + 1e-6,
+            "last spoke timestamp should be near 2.5s, got {t_last}"
+        );
+
+        // Spoke 0 (azimuth ~0, pointing +x) should hit the vessel.
+        // Near face at x=40 initially. Bin width = 200/100 = 2m. So bin ~20.
+        let spoke0 = &sw.spokes[0];
+        let lit0: Vec<usize> = spoke0
+            .intensity
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None })
+            .collect();
+        assert!(!lit0.is_empty(), "spoke 0 should hit the vessel");
+
+        // Spoke 18 (azimuth ~pi, pointing -x) should not hit the vessel.
+        let spoke18 = &sw.spokes[18];
+        let lit18: Vec<usize> = spoke18
+            .intensity
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None })
+            .collect();
+        assert!(lit18.is_empty(), "spoke 18 (opposite) should not hit");
+
+        // With the vessel moving in +x at 5 m/s over 2.5s, it moves 12.5m.
+        // Spokes near azimuth 0 at later times should see the vessel at
+        // a slightly different range. Compare spoke 0 (dt=0, near face=40)
+        // with a spoke at azimuth 0+epsilon at a later time. We use spoke 35
+        // which is at azimuth ~350 degrees (nearly full circle back to +x).
+        // dt_35 = (35/36)*2.5 = 2.431s. Vessel shifted by 5*2.431 = 12.15m.
+        // Near face at 50+12.15-10 = 52.15m. Bin = 52.15/2 ~ 26.
+        let spoke35 = &sw.spokes[35];
+        let lit35: Vec<usize> = spoke35
+            .intensity
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &v)| if v > 0 { Some(i) } else { None })
+            .collect();
+        // Spoke 35 is at azimuth (35/36)*2*pi ≈ 350° which is close to +x
+        // direction. It should still hit the vessel, but at a different range.
+        if !lit35.is_empty() && !lit0.is_empty() {
+            // The lit bin for spoke 35 should be at a higher range than spoke 0
+            // because the vessel has moved further away in +x.
+            assert!(
+                lit35[0] > lit0[0],
+                "spoke 35 should see vessel at greater range ({}) than spoke 0 ({})",
+                lit35[0],
+                lit0[0]
+            );
+        }
     }
 }

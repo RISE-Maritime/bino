@@ -3,14 +3,13 @@
 Companion to `docs/bino_design_vision.md`. The vision is the *what* and
 *why*; this is the *in what order* and *what's risky*. Updated as we go.
 
-**Status anchor (2026-04-29):** v0.1 + v0.2 + v0.3 all closed —
-`docs/v01_retrospective.md`, `docs/v02_retrospective.md`,
-`docs/v03_retrospective.md`. Bino now runs camera + lidar + **radar**
-end-to-end, publishing on canonical Keelson topics. The radar is a
-Rust kernel in `kernels/radar/` (cdylib + rlib), exposed via
-wasm-bindgen for in-process use and as a native crate for offline
-log-analysis. Browser viewer shows a 2D PPI panel + max-range ring
-overlay. **Next up: v0.4 — Terrain, sea, perf pass.**
+**Status anchor (2026-05-10):** v0.1 + v0.2 + v0.3 + v0.4 + v0.5 +
+v0.6 all closed. Bino runs camera + lidar + radar end-to-end with
+inject/replace rendering modes, stepped clock, strict determinism
+(renderer config locking), intra-sweep temporal modeling, and DSL
+extensions for phase offsets and exposure times. **Next up: v1.0 —
+Marine radar v1 (sea-clutter model, antenna pattern, weather
+attenuation).**
 
 ---
 
@@ -730,7 +729,14 @@ resistance; procedural-from-principal-dimensions is the long answer.
 
 ---
 
-## v0.6 — Inject & inject-all modes
+## v0.6 — Inject & inject-all modes ✅ CLOSED 2026-05-10
+
+Closed-state paper trail: rendering mode discrimination in `buildScene`,
+frame-index-driven `SteppedClock` + deterministic runner, intra-sweep
+temporal modeling (velocity-interpolated ray-cast in Rust lidar + radar
+kernels, camera exposure timestamps), renderer config locking for strict
+mode, DSL extensions (`phase_offset_s`, `exposure_time_s`), compile-time
+validation. FMI3 external clock deferred to a later milestone.
 
 - Object-only rendering path (skip terrain, skip sea — entity render
   pass only). The scene compiler already discriminates by `modes`.

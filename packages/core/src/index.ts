@@ -20,3 +20,4 @@ export * from "./sea.js";
 export * from "./sky.js";
 export * from "./zenoh.js";
 export * from "./keelson.js";
+export * from "./velocity.js";

@@ -18,6 +18,9 @@ export interface LidarKernelWasmOptions {
   fov_h_deg?: number | undefined;
   /** Horizontal sample count. Defaults to config.channels (square grid). */
   azimuths?: number | undefined;
+  /** Sweep duration for intra-sweep temporal interpolation.
+   *  Defaults to 1 / config.rate_hz. */
+  sweepDuration_s?: number | undefined;
 }
 
 export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
@@ -32,6 +35,7 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
     fov_v_deg: fov,
     fov_h_deg: opts.fov_h_deg ?? fov,
     range_m: config.range_m,
+    sweep_duration_s: opts.sweepDuration_s ?? (1 / config.rate_hz),
   };
 
   const tmpVec = new THREE.Vector3();
@@ -49,6 +53,8 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
           center: [tmpVec.x, tmpVec.y, tmpVec.z],
           rotation: colMajorToRowMajor3x3(m),
           half_extents: [...PLACEHOLDER_HALF_EXTENTS],
+          velocity: child.userData.velocity ?? [0, 0, 0],
+          angular_velocity_y: child.userData.angularVelocityY ?? 0,
         });
       }
 
@@ -59,13 +65,16 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
         { vessels },
         { origin: [tmpVec.x, tmpVec.y, tmpVec.z], rotation: colMajorToRowMajor3x3(sm) },
         wasmConfig,
-      ) as { points: number[] | Float32Array; count: number };
+      ) as { points: number[] | Float32Array; count: number; timestamps?: number[] | Float32Array };
 
       const points =
         result.points instanceof Float32Array
           ? result.points
           : new Float32Array(result.points);
-      return { points, count: result.count, time };
+      const timestamps = result.timestamps
+        ? (result.timestamps instanceof Float32Array ? result.timestamps : new Float32Array(result.timestamps))
+        : undefined;
+      return { points, count: result.count, time, ...(timestamps ? { timestamps } : {}) };
     },
     dispose() {},
   };
@@ -75,6 +84,8 @@ interface VesselObb {
   center: [number, number, number];
   rotation: number[];
   half_extents: [number, number, number];
+  velocity?: [number, number, number];
+  angular_velocity_y?: number;
 }
 
 function colMajorToRowMajor3x3(m: ArrayLike<number>): number[] {

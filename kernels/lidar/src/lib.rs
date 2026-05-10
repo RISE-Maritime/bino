@@ -109,6 +109,12 @@ pub struct VesselObb {
     pub center: [f32; 3],
     pub rotation: [f32; 9],
     pub half_extents: [f32; 3],
+    /// World-frame linear velocity in m/s. Default [0,0,0].
+    #[serde(default)]
+    pub velocity: [f32; 3],
+    /// Yaw rate in rad/s. Default 0.
+    #[serde(default)]
+    pub angular_velocity_y: f32,
 }
 
 /// Per-frame scene state. The terrain BVH is built and held separately
@@ -137,6 +143,10 @@ pub struct LidarConfig {
     pub fov_v_deg: f32,
     pub fov_h_deg: f32,
     pub range_m: f32,
+    /// Sweep duration in seconds (1/rate_hz). 0.0 disables interpolation
+    /// for backward compatibility.
+    #[serde(default)]
+    pub sweep_duration_s: f32,
 }
 
 /// Output frame — XYZ interleaved in sensor-local frame, packed densely
@@ -145,6 +155,9 @@ pub struct LidarConfig {
 pub struct LidarFrame {
     pub points: Vec<f32>,
     pub count: u32,
+    /// Per-hit timestamp: time offset from sweep start, in seconds.
+    /// Length equals `count`. Empty when `sweep_duration_s == 0.0`.
+    pub timestamps: Vec<f32>,
 }
 
 /// Pre-built terrain BVH owned by the JS-side kernel between sweeps.
@@ -187,9 +200,32 @@ fn vessel_world_aabb(v: &VesselObb) -> Aabb {
     }
 }
 
+/// Apply a yaw delta (rotation around Y axis) to an existing row-major
+/// 3x3 rotation matrix, returning the composed result.
+fn apply_yaw_delta(rotation: &[f32; 9], yaw_delta: f32) -> [f32; 9] {
+    let (sin_y, cos_y) = yaw_delta.sin_cos();
+    // Yaw rotation matrix around Y: Ry = [[cos,0,sin],[0,1,0],[-sin,0,cos]]
+    // Result = Ry * R (row-major multiply)
+    [
+        cos_y * rotation[0] + sin_y * rotation[6],
+        cos_y * rotation[1] + sin_y * rotation[7],
+        cos_y * rotation[2] + sin_y * rotation[8],
+        rotation[3],
+        rotation[4],
+        rotation[5],
+        -sin_y * rotation[0] + cos_y * rotation[6],
+        -sin_y * rotation[1] + cos_y * rotation[7],
+        -sin_y * rotation[2] + cos_y * rotation[8],
+    ]
+}
+
 /// Run one full lidar sweep. Generates `channels × azimuths` rays in
 /// sensor-local frame, transforms to world, queries terrain + vessel
 /// trees, packs hits as XYZ points back in sensor-local frame.
+///
+/// When `config.sweep_duration_s > 0.0`, vessels are interpolated per-
+/// azimuth column according to their velocity and angular_velocity_y,
+/// modelling motion during the sweep.
 pub fn sweep(
     terrain: &TerrainBvh,
     scene: &SceneSnapshot,
@@ -199,14 +235,22 @@ pub fn sweep(
     let chans = config.channels.max(1) as usize;
     let azis = config.azimuths.max(1) as usize;
     let mut points: Vec<f32> = Vec::with_capacity(chans * azis * 3);
+    let mut timestamps: Vec<f32> = Vec::new();
 
-    // Skip vessel-BVH allocation entirely on terrain-only scenes.
-    let vessel_bvh = if scene.vessels.is_empty() {
-        None
-    } else {
+    let interpolate = config.sweep_duration_s > 0.0 && !scene.vessels.is_empty();
+
+    // When not interpolating, build one static vessel BVH for the whole
+    // sweep — identical to the pre-S16 path.
+    let static_vessel_bvh = if !interpolate && !scene.vessels.is_empty() {
         let aabbs: Vec<Aabb> = scene.vessels.iter().map(vessel_world_aabb).collect();
         Some(Bvh::build(&aabbs))
+    } else {
+        None
     };
+
+    if interpolate {
+        timestamps.reserve(chans * azis);
+    }
 
     let fov_v = config.fov_v_deg.to_radians();
     let fov_h = config.fov_h_deg.to_radians();
@@ -237,24 +281,77 @@ pub fn sweep(
             // Tightening max_t to the terrain hit lets the vessel BVH
             // prune subtrees that lie behind the terrain plane.
             let upper = t_terrain.unwrap_or(config.range_m);
-            let t_vessel = vessel_bvh.as_ref().and_then(|bvh| {
-                bvh.nearest_hit(&ray, upper, |idx, ray, best| {
-                    let v = &scene.vessels[idx as usize];
-                    ray_obb(ray, v.center, &v.rotation, v.half_extents, best)
-                })
-            });
-            let t = t_vessel.or(t_terrain);
 
-            if let Some(t) = t {
-                points.push(t * local_dir[0]);
-                points.push(t * local_dir[1]);
-                points.push(t * local_dir[2]);
+            if interpolate {
+                // --- Per-azimuth interpolated vessel positions ---
+                let t_frac = a as f32 / azis as f32;
+                let dt = t_frac * config.sweep_duration_s;
+
+                // Build interpolated vessels for this azimuth column.
+                let interp_vessels: Vec<VesselObb> = scene
+                    .vessels
+                    .iter()
+                    .map(|v| {
+                        let center = [
+                            v.center[0] + v.velocity[0] * dt,
+                            v.center[1] + v.velocity[1] * dt,
+                            v.center[2] + v.velocity[2] * dt,
+                        ];
+                        let rotation = if v.angular_velocity_y != 0.0 {
+                            apply_yaw_delta(&v.rotation, v.angular_velocity_y * dt)
+                        } else {
+                            v.rotation
+                        };
+                        VesselObb {
+                            center,
+                            rotation,
+                            half_extents: v.half_extents,
+                            velocity: v.velocity,
+                            angular_velocity_y: v.angular_velocity_y,
+                        }
+                    })
+                    .collect();
+
+                let aabbs: Vec<Aabb> = interp_vessels.iter().map(vessel_world_aabb).collect();
+                let bvh = Bvh::build(&aabbs);
+
+                let t_vessel = bvh.nearest_hit(&ray, upper, |idx, ray, best| {
+                    let v = &interp_vessels[idx as usize];
+                    ray_obb(ray, v.center, &v.rotation, v.half_extents, best)
+                });
+                let t = t_vessel.or(t_terrain);
+
+                if let Some(t) = t {
+                    points.push(t * local_dir[0]);
+                    points.push(t * local_dir[1]);
+                    points.push(t * local_dir[2]);
+                    timestamps.push(dt);
+                }
+            } else {
+                // --- Static path (no interpolation) ---
+                let t_vessel = static_vessel_bvh.as_ref().and_then(|bvh| {
+                    bvh.nearest_hit(&ray, upper, |idx, ray, best| {
+                        let v = &scene.vessels[idx as usize];
+                        ray_obb(ray, v.center, &v.rotation, v.half_extents, best)
+                    })
+                });
+                let t = t_vessel.or(t_terrain);
+
+                if let Some(t) = t {
+                    points.push(t * local_dir[0]);
+                    points.push(t * local_dir[1]);
+                    points.push(t * local_dir[2]);
+                }
             }
         }
     }
 
     let count = (points.len() / 3) as u32;
-    LidarFrame { points, count }
+    LidarFrame {
+        points,
+        count,
+        timestamps,
+    }
 }
 
 // --- WASM bindings ------------------------------------------------
@@ -322,6 +419,7 @@ mod tests {
             fov_v_deg: fov_v,
             fov_h_deg: fov_h,
             range_m: range,
+            sweep_duration_s: 0.0,
         }
     }
 
@@ -329,6 +427,16 @@ mod tests {
         SensorPose {
             origin: [0.0, 0.0, 0.0],
             rotation: identity_rotation(),
+        }
+    }
+
+    fn vessel_obb(center: [f32; 3], half_extents: [f32; 3]) -> VesselObb {
+        VesselObb {
+            center,
+            rotation: identity_rotation(),
+            half_extents,
+            velocity: [0.0; 3],
+            angular_velocity_y: 0.0,
         }
     }
 
@@ -343,6 +451,7 @@ mod tests {
         );
         assert_eq!(frame.count, 0);
         assert!(frame.points.is_empty());
+        assert!(frame.timestamps.is_empty());
     }
 
     #[test]
@@ -351,11 +460,7 @@ mod tests {
         // ahead) with a 10m half-length box. Expect the centre-most
         // ray to hit the near face at z ≈ -40.
         let scene = SceneSnapshot {
-            vessels: vec![VesselObb {
-                center: [0.0, 0.0, -50.0],
-                rotation: identity_rotation(),
-                half_extents: [10.0, 5.0, 10.0],
-            }],
+            vessels: vec![vessel_obb([0.0, 0.0, -50.0], [10.0, 5.0, 10.0])],
         };
         let frame = sweep(
             &empty_terrain(),
@@ -378,11 +483,7 @@ mod tests {
     #[test]
     fn vessel_outside_range_produces_no_points() {
         let scene = SceneSnapshot {
-            vessels: vec![VesselObb {
-                center: [0.0, 0.0, -500.0],
-                rotation: identity_rotation(),
-                half_extents: [10.0, 5.0, 10.0],
-            }],
+            vessels: vec![vessel_obb([0.0, 0.0, -500.0], [10.0, 5.0, 10.0])],
         };
         let frame = sweep(
             &empty_terrain(),
@@ -398,11 +499,7 @@ mod tests {
         // Vessel directly to the +x side (90° off forward). With 10°
         // horizontal FOV, no ray reaches it.
         let scene = SceneSnapshot {
-            vessels: vec![VesselObb {
-                center: [50.0, 0.0, 0.0],
-                rotation: identity_rotation(),
-                half_extents: [5.0, 5.0, 5.0],
-            }],
+            vessels: vec![vessel_obb([50.0, 0.0, 0.0], [5.0, 5.0, 5.0])],
         };
         let frame = sweep(
             &empty_terrain(),
@@ -462,11 +559,7 @@ mod tests {
         }];
         let terrain = TerrainBvh::build(triangles);
         let scene = SceneSnapshot {
-            vessels: vec![VesselObb {
-                center: [0.0, -5.0, 0.0],
-                rotation: identity_rotation(),
-                half_extents: [2.0, 1.0, 2.0],
-            }],
+            vessels: vec![vessel_obb([0.0, -5.0, 0.0], [2.0, 1.0, 2.0])],
         };
         let pitch_down: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0];
         let sensor = SensorPose {
@@ -482,6 +575,120 @@ mod tests {
         assert!(
             (nearest - 4.0).abs() < 0.5,
             "expected nearest hit at vessel top (y=-4 → 4m), got {nearest}"
+        );
+    }
+
+    #[test]
+    fn backward_compat_sweep_duration_zero() {
+        // With sweep_duration_s = 0, results should be identical to the
+        // pre-S16 static path: same hit count, no timestamps.
+        let scene = SceneSnapshot {
+            vessels: vec![vessel_obb([0.0, 0.0, -50.0], [10.0, 5.0, 10.0])],
+        };
+        let frame = sweep(
+            &empty_terrain(),
+            &scene,
+            &sensor_at_origin(),
+            &cfg(16, 16, 30.0, 30.0, 200.0),
+        );
+        assert!(frame.count > 0, "expected hits on a centred 10m box");
+        assert!(
+            frame.timestamps.is_empty(),
+            "timestamps should be empty when sweep_duration_s == 0"
+        );
+        // Verify near-z is still correct.
+        let near_z = frame
+            .points
+            .chunks_exact(3)
+            .map(|p| p[2].abs())
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            (near_z - 40.0).abs() < 2.0,
+            "expected near hit at z~40, got {near_z}"
+        );
+    }
+
+    #[test]
+    fn temporal_interpolation_shifts_vessel() {
+        // Vessel at (0, 0, -50) moving at (10, 0, 0) m/s.
+        // Sweep duration 0.1s (10 Hz). 1 channel, 8 azimuths, fov_h = 10 deg.
+        // With sensor at origin looking down -z:
+        // - Azimuth 0 (t_frac=0/8=0): vessel at (0, 0, -50) — centred
+        // - Azimuth 7 (t_frac=7/8): vessel at (10*0.0875=0.875m in +x, 0, -50)
+        //
+        // The hit x-coords at later azimuths should reflect the vessel
+        // shifting rightward.
+        let scene = SceneSnapshot {
+            vessels: vec![VesselObb {
+                center: [0.0, 0.0, -50.0],
+                rotation: identity_rotation(),
+                half_extents: [10.0, 5.0, 10.0],
+                velocity: [10.0, 0.0, 0.0],
+                angular_velocity_y: 0.0,
+            }],
+        };
+        let mut config = cfg(1, 8, 0.0, 10.0, 200.0);
+        config.sweep_duration_s = 0.1;
+
+        let frame = sweep(&empty_terrain(), &scene, &sensor_at_origin(), &config);
+        assert!(frame.count > 0, "expected hits");
+        assert_eq!(
+            frame.timestamps.len(),
+            frame.count as usize,
+            "one timestamp per hit"
+        );
+
+        // Timestamps should span from 0 up to near sweep_duration_s.
+        let t_min = frame.timestamps.iter().cloned().fold(f32::INFINITY, f32::min);
+        let t_max = frame
+            .timestamps
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(t_min < 0.001, "first timestamp should be near 0, got {t_min}");
+        assert!(
+            t_max > 0.05,
+            "last timestamp should be > 0.05s, got {t_max}"
+        );
+        assert!(
+            t_max <= config.sweep_duration_s + 1e-6,
+            "timestamp should not exceed sweep_duration_s"
+        );
+
+        // The hit points' x-coordinates should show the vessel's lateral
+        // shift. Group hits by their timestamp — earlier hits should have
+        // x closer to 0, later hits should be shifted toward +x.
+        let hit_points: Vec<[f32; 3]> = frame
+            .points
+            .chunks_exact(3)
+            .map(|c| [c[0], c[1], c[2]])
+            .collect();
+
+        // Find the x of the first-timestamp hit and last-timestamp hit.
+        let first_idx = frame
+            .timestamps
+            .iter()
+            .enumerate()
+            .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
+        let last_idx = frame
+            .timestamps
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap()
+            .0;
+
+        let x_first = hit_points[first_idx][0];
+        let x_last = hit_points[last_idx][0];
+        // The vessel shifts +x over time, so hits at later azimuths
+        // should reflect a more positive x position on the vessel face.
+        // The difference should be roughly 10 m/s * 0.1s * 7/8 ~ 0.875m.
+        // We just check the sign/direction — x_last should be more positive.
+        assert!(
+            x_last > x_first,
+            "later-azimuth hit x ({x_last}) should be > earlier ({x_first}) due to +x velocity"
         );
     }
 

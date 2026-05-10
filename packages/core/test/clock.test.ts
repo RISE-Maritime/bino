@@ -34,6 +34,30 @@ describe("SteppedClock", () => {
     clock.set(100);
     expect(clock.now()).toBe(100);
   });
+
+  it("frameIndex increments with step()", () => {
+    const clock = new SteppedClock();
+    clock.step(0.1);
+    clock.step(0.1);
+    clock.step(0.1);
+    expect(clock.frameIndex).toBe(3);
+  });
+
+  it("frameIndex does not increment with set()", () => {
+    const clock = new SteppedClock();
+    clock.step(0.1);
+    clock.set(5.0);
+    expect(clock.frameIndex).toBe(1);
+  });
+
+  it("reset() zeroes both time and frameIndex", () => {
+    const clock = new SteppedClock();
+    clock.step(0.1);
+    clock.step(0.2);
+    clock.reset();
+    expect(clock.now()).toBe(0);
+    expect(clock.frameIndex).toBe(0);
+  });
 });
 
 describe("createClock", () => {

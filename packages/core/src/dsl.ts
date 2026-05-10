@@ -32,6 +32,8 @@ export const CameraSensor = z.object({
   fov_deg: z.number().positive().max(180),
   resolution: z.tuple([z.number().int().positive(), z.number().int().positive()]),
   rate_hz: z.number().positive(),
+  phase_offset_s: z.number().default(0),
+  exposure_time_s: z.number().nonnegative().default(0),
   /** Override the Keelson-derived publish topic. When set, the
    *  publisher uses this exact string instead of
    *  construct_pubSub_key(...). Real deployments may want non-Keelson
@@ -47,6 +49,7 @@ export const LidarSensor = z.object({
   channels: z.number().int().positive(),
   range_m: z.number().positive(),
   rate_hz: z.number().positive(),
+  phase_offset_s: z.number().default(0),
   fov_h_deg: z.number().positive().max(360).default(360),
   azimuths: z.number().int().positive().optional(),
   publish_topic_override: z.string().min(1).optional(),
@@ -60,6 +63,7 @@ export const RadarSensor = z.object({
   range_m: z.number().positive(),
   /** Antenna rotation rate; one full sweep is published per rotation. */
   rotation_rate_hz: z.number().positive(),
+  phase_offset_s: z.number().default(0),
   beam_width_deg: z.number().positive().max(360),
   spokes_per_rev: z.number().int().positive(),
   range_bins: z.number().int().positive(),

@@ -40,6 +40,18 @@ const minimal = {
   modes: { rendering: "replace", clock: "wall", determinism: "relaxed" },
 };
 
+const injectScenario = {
+  ...minimal,
+  name: "inject-smoke",
+  modes: { rendering: "inject" as const, clock: "wall" as const, determinism: "relaxed" as const },
+};
+
+const injectAllScenario = {
+  ...minimal,
+  name: "inject-all-smoke",
+  modes: { rendering: "inject_all" as const, clock: "wall" as const, determinism: "relaxed" as const },
+};
+
 describe("buildScene", () => {
   it("returns a Scene plus an entity Map keyed by vessel id", () => {
     const compiled = compileScenario(minimal);
@@ -82,5 +94,54 @@ describe("buildScene", () => {
     const { scene, entities } = buildScene(compileScenario(minimal));
     expect(scene.children).toContain(entities.get("ego"));
     expect(scene.children).toContain(entities.get("ferry"));
+  });
+
+  it("inject mode produces entities only", () => {
+    const compiled = compileScenario(injectScenario);
+    const built = buildScene(compiled);
+    expect(built.sky).toBeUndefined();
+    expect(built.sea).toBeUndefined();
+    expect(built.terrain).toBeUndefined();
+
+    // Scene should contain only fallback lights + vessel groups
+    const nonLightChildren = built.scene.children.filter(
+      (c) => !(c instanceof THREE.Light),
+    );
+    expect(nonLightChildren.length).toBe(2); // ego + ferry
+    expect(built.entities.size).toBe(2);
+    expect(built.entities.get("ego")).toBeDefined();
+    expect(built.entities.get("ferry")).toBeDefined();
+
+    // Fallback ambient lighting should still be present
+    const lights = built.scene.children.filter((c) => c instanceof THREE.Light);
+    expect(lights.some((l) => l instanceof THREE.AmbientLight)).toBe(true);
+    expect(lights.some((l) => l instanceof THREE.DirectionalLight)).toBe(true);
+  });
+
+  it("inject_all mode produces full scene like replace", () => {
+    const compiled = compileScenario(injectAllScenario);
+    const built = buildScene(compiled);
+    // inject_all should behave like replace — sky and sea present
+    expect(built.sky).toBeDefined();
+    expect(built.sea).toBeDefined();
+  });
+
+  it("inject mode ignores explicit terrain opt", () => {
+    const compiled = compileScenario(injectScenario);
+    // Pass terrain data — inject mode should still suppress it
+    const fakeTerrain = {
+      coastline: [],
+      bathymetry: {
+        bbox: [10.1, 54.3, 10.2, 54.4] as [number, number, number, number],
+        heights: new Float32Array([-10, -20, -15, -25]),
+        width: 2,
+        height: 2,
+        cellSizeM: 50,
+      },
+    };
+    const built = buildScene(compiled, { terrain: fakeTerrain });
+    expect(built.terrain).toBeUndefined();
+    expect(built.sky).toBeUndefined();
+    expect(built.sea).toBeUndefined();
   });
 });

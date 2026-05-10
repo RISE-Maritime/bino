@@ -49,7 +49,11 @@ export interface NodeService {
 
 export function createNodeService(opts: NodeServiceOptions): NodeService {
   const { width, height } = pickContextSize(opts);
-  const handle = createHeadlessRenderer(width, height);
+  const handle = createHeadlessRenderer(
+    width,
+    height,
+    opts.scenario.modes.determinism === "strict",
+  );
   try {
     return buildSceneFromScenario(opts, handle);
   } catch (err) {
@@ -84,6 +88,7 @@ function buildSceneFromScenario(
             sensorNode,
             config: sensor,
           }),
+          phaseOffset_s: sensor.phase_offset_s,
         });
         sensorMeta.push({
           sensorId,
@@ -104,6 +109,7 @@ function buildSceneFromScenario(
             config: sensor,
             terrain: built.terrain,
           }),
+          phaseOffset_s: sensor.phase_offset_s,
         });
         sensorMeta.push({
           sensorId,
@@ -123,6 +129,7 @@ function buildSceneFromScenario(
             sensorNode,
             config: sensor,
           }),
+          phaseOffset_s: sensor.phase_offset_s,
         });
         sensorMeta.push({
           sensorId,
@@ -139,11 +146,22 @@ function buildSceneFromScenario(
   }
 
   const clock = createClock(scenario.modes.clock);
+
+  if (
+    scenario.modes.determinism === "strict" &&
+    scenario.modes.clock !== "stepped"
+  ) {
+    throw new Error(
+      `strict determinism requires stepped clock (got '${scenario.modes.clock}')`,
+    );
+  }
+
   const runner = new BinoRunner({
     scene: built.scene,
     entities: built.entities,
     kernels: scheduled,
     clock,
+    deterministic: scenario.modes.determinism === "strict",
     ...(built.sea
       ? {
           onTick: (t) => {

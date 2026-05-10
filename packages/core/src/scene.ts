@@ -35,15 +35,22 @@ export interface BuildSceneOptions {
 export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}): BuiltScene {
   const scene = new THREE.Scene();
 
+  // Derive effective flags: inject mode forces entities-only (no sky,
+  // sea, or terrain) regardless of opts.
+  const inject = compiled.modes.rendering === "inject";
+  const addSky = !inject && opts.sky !== false;
+  const addSea = !inject && opts.sea !== false;
+  const addTerrain = !inject && !!opts.terrain;
+
   let skyHandle: SkyHandle | undefined;
-  if (opts.sky !== false) {
+  if (addSky) {
     skyHandle = createSky(compiled.environment, compiled.anchor);
     scene.add(skyHandle.sky);
     scene.add(skyHandle.sun);
     scene.add(skyHandle.ambient);
   } else {
     // Fallback: the v0.1 default lighting kept for tests / sky=false
-    // callers.
+    // callers, and for inject mode so entities are still visible.
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
     const sun = new THREE.DirectionalLight(0xffffff, 1.0);
     sun.position.set(50, 100, 50);
@@ -51,13 +58,13 @@ export function buildScene(compiled: CompiledScene, opts: BuildSceneOptions = {}
   }
 
   let terrainGroup: THREE.Group | undefined;
-  if (opts.terrain) {
-    terrainGroup = buildTerrainMesh(opts.terrain, compiled.anchor);
+  if (addTerrain) {
+    terrainGroup = buildTerrainMesh(opts.terrain!, compiled.anchor);
     scene.add(terrainGroup);
   }
 
   let seaHandle: SeaSurfaceHandle | undefined;
-  if (opts.sea !== false) {
+  if (addSea) {
     // Wave plane stays small + dense so per-segment wave resolution
     // is good near the viewer.
     seaHandle = createSeaSurface(compiled.environment);

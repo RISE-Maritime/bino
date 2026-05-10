@@ -1,0 +1,79 @@
+# v0.6 inject-mode scenario — strict determinism, no terrain.
+#
+# Exercises:
+#   - modes.rendering = inject (entities only, no sky/sea/terrain)
+#   - modes.clock = stepped (frame-index-driven SteppedClock)
+#   - modes.determinism = strict (renderer config locking)
+#   - phase_offset_s on all sensors
+#   - vessel dimensions override
+#   - two vessels: ego (instrumented) + ghost_target (passive)
+#
+# bino-node scenarios/v06_inject.yaml
+
+scenario:
+  name: v06_inject
+  anchor:
+    lat: 57.685
+    lon: 11.84
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 0.5
+      peak_period: 4.0
+      direction_deg: 220
+      spectrum: pierson_moskowitz
+    wind:
+      speed: 4.0
+      direction_deg: 230
+    time_of_day: "14:00"
+    visibility_m: 15000
+
+  # No terrain block — inject mode renders entities only
+
+  vessels:
+    - id: ego
+      model: cargo_90m
+      dimensions:
+        length: 90
+        beam: 16
+        draft: 5
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: bow_camera
+          type: camera
+          mount: { x: 45, y: 0, z: 16 }
+          fov_deg: 90
+          resolution: [640, 480]
+          rate_hz: 10
+          phase_offset_s: 0.0
+        - id: main_lidar
+          type: lidar
+          mount: { x: 45, y: 0, z: 16 }
+          channels: 16
+          range_m: 200
+          rate_hz: 10
+          phase_offset_s: 0.025
+        - id: nav_radar
+          type: radar_marine
+          mount: { x: 0, y: 0, z: 30 }
+          range_m: 4000
+          rotation_rate_hz: 0.4
+          beam_width_deg: 1.5
+          spokes_per_rev: 360
+          range_bins: 256
+          phase_offset_s: 0.0
+
+    - id: ghost_target
+      model: tanker_120m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ghost_target/pubsub/frame_transform/sim
+      sensors: []
+
+  modes:
+    rendering: inject
+    clock: stepped
+    determinism: strict

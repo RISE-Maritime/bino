@@ -102,4 +102,57 @@ describe("Scenario schema", () => {
       expect(lidar.fov_h_deg).toBe(360);
     }
   });
+
+  it("defaults phase_offset_s to 0 for all sensor types", () => {
+    const result = Scenario.parse(validScenario);
+    const camera = result.vessels[0]!.sensors[0]!;
+    const lidar = result.vessels[0]!.sensors[1]!;
+    expect(camera.type).toBe("camera");
+    expect(lidar.type).toBe("lidar");
+    if (camera.type === "camera") {
+      expect(camera.phase_offset_s).toBe(0);
+    }
+    if (lidar.type === "lidar") {
+      expect(lidar.phase_offset_s).toBe(0);
+    }
+  });
+
+  it("parses phase_offset_s when specified", () => {
+    const withOffset = structuredClone(validScenario);
+    (withOffset.vessels[0]!.sensors[0]! as Record<string, unknown>).phase_offset_s = 0.05;
+    (withOffset.vessels[0]!.sensors[1]! as Record<string, unknown>).phase_offset_s = 0.1;
+    const result = Scenario.parse(withOffset);
+    const camera = result.vessels[0]!.sensors[0]!;
+    const lidar = result.vessels[0]!.sensors[1]!;
+    if (camera.type === "camera") {
+      expect(camera.phase_offset_s).toBe(0.05);
+    }
+    if (lidar.type === "lidar") {
+      expect(lidar.phase_offset_s).toBe(0.1);
+    }
+  });
+
+  it("defaults exposure_time_s to 0 for camera", () => {
+    const result = Scenario.parse(validScenario);
+    const camera = result.vessels[0]!.sensors[0]!;
+    if (camera.type === "camera") {
+      expect(camera.exposure_time_s).toBe(0);
+    }
+  });
+
+  it("parses exposure_time_s when specified", () => {
+    const withExposure = structuredClone(validScenario);
+    (withExposure.vessels[0]!.sensors[0]! as Record<string, unknown>).exposure_time_s = 0.001;
+    const result = Scenario.parse(withExposure);
+    const camera = result.vessels[0]!.sensors[0]!;
+    if (camera.type === "camera") {
+      expect(camera.exposure_time_s).toBe(0.001);
+    }
+  });
+
+  it("rejects negative exposure_time_s", () => {
+    const bad = structuredClone(validScenario);
+    (bad.vessels[0]!.sensors[0]! as Record<string, unknown>).exposure_time_s = -0.001;
+    expect(() => Scenario.parse(bad)).toThrow();
+  });
 });

@@ -1,0 +1,81 @@
+# v0.6 strict-determinism scenario — replace mode with terrain.
+#
+# Exercises:
+#   - modes.rendering = replace (full scene with terrain)
+#   - modes.clock = stepped (frame-index-driven SteppedClock)
+#   - modes.determinism = strict (renderer config locking)
+#   - phase_offset_s on all sensors
+#   - exposure_time_s on camera
+#   - terrain with landmask + seamarks (buildings off)
+#   - two vessels: ego (instrumented) + traffic (passive)
+#
+# bino-node scenarios/v06_strict.yaml
+
+scenario:
+  name: v06_strict
+  anchor:
+    lat: 54.32
+    lon: 10.15
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 1.0
+      peak_period: 5.5
+      direction_deg: 270
+      spectrum: pierson_moskowitz
+    wind:
+      speed: 7.0
+      direction_deg: 280
+    time_of_day: "10:00"
+    visibility_m: 8000
+
+  terrain:
+    bbox: [10.10, 54.28, 10.20, 54.36]
+    landmask: true
+    buildings: false
+    seamarks: true
+
+  vessels:
+    - id: ego
+      model: ferry_60m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: bridge_camera
+          type: camera
+          mount: { x: 15, y: 0, z: 14 }
+          fov_deg: 120
+          resolution: [640, 480]
+          rate_hz: 10
+          phase_offset_s: 0.0
+          exposure_time_s: 0.01
+        - id: nav_lidar
+          type: lidar
+          mount: { x: 15, y: 0, z: 14 }
+          channels: 32
+          range_m: 300
+          rate_hz: 10
+          phase_offset_s: 0.05
+        - id: nav_radar
+          type: radar_marine
+          mount: { x: 0, y: 0, z: 20 }
+          range_m: 6000
+          rotation_rate_hz: 0.4
+          beam_width_deg: 1.2
+          spokes_per_rev: 360
+          range_bins: 256
+          phase_offset_s: 0.1
+
+    - id: traffic
+      model: cargo_90m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/traffic/pubsub/frame_transform/sim
+      sensors: []
+
+  modes:
+    rendering: replace
+    clock: stepped
+    determinism: strict

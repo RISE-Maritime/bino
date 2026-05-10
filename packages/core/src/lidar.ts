@@ -9,6 +9,9 @@ export interface LidarFrame {
   points: Float32Array;
   count: number;
   time: number;
+  /** Per-point intra-sweep timestamps (seconds). Present when the
+   *  kernel supports temporal interpolation. */
+  timestamps?: Float32Array;
 }
 
 export interface LidarKernel {

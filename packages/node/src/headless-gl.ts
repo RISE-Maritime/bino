@@ -35,7 +35,11 @@ function ensureAnimationFrameStubs(): void {
   }
 }
 
-export function createHeadlessRenderer(width: number, height: number): HeadlessRendererHandle {
+export function createHeadlessRenderer(
+  width: number,
+  height: number,
+  strict?: boolean,
+): HeadlessRendererHandle {
   ensureAnimationFrameStubs();
   const createGL = require("@kmamal/gl") as (
     w: number,
@@ -58,6 +62,11 @@ export function createHeadlessRenderer(width: number, height: number): HeadlessR
   });
   renderer.setSize(width, height, false);
   renderer.setPixelRatio(1);
+
+  if (strict) {
+    renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    console.log("[bino] strict determinism: renderer locked to LinearSRGB, no MSAA");
+  }
 
   return {
     renderer,

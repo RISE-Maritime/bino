@@ -16,14 +16,28 @@ export class WallClock implements Clock {
 
 export class SteppedClock implements Clock {
   private t = 0;
+  private _frameIndex = 0;
+
   now(): number {
     return this.t;
   }
+
+  get frameIndex(): number {
+    return this._frameIndex;
+  }
+
   step(dt: number): void {
     this.t += dt;
+    this._frameIndex++;
   }
+
   set(t: number): void {
     this.t = t;
+  }
+
+  reset(): void {
+    this.t = 0;
+    this._frameIndex = 0;
   }
 }
 

@@ -5,6 +5,7 @@ import type { RadarSensor } from "./dsl.js";
 export interface RadarSpoke {
   azimuth: number;
   intensity: Uint8Array;
+  timestamp: number;
 }
 
 export interface RadarFrame {
@@ -21,12 +22,17 @@ export interface RadarKernelOptions {
   scene: THREE.Scene;
   sensorNode: THREE.Object3D;
   config: RadarSensor;
+  /** Sweep duration for intra-sweep temporal interpolation.
+   *  Defaults to 1 / config.rotation_rate_hz. */
+  sweepDuration_s?: number;
 }
 
 interface VesselBox {
   position: [number, number, number];
   heading: number;
   half_extents: [number, number, number];
+  velocity?: [number, number, number];
+  angular_velocity_y?: number;
 }
 
 const DEFAULT_HALF_EXTENTS: [number, number, number] = [10, 2, 3];
@@ -55,6 +61,8 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
           position: [tmpVec.x, tmpVec.y, tmpVec.z],
           heading: tmpEuler.y,
           half_extents: DEFAULT_HALF_EXTENTS,
+          velocity: child.userData.velocity ?? [0, 0, 0],
+          angular_velocity_y: child.userData.angularVelocityY ?? 0,
         });
       }
 
@@ -72,8 +80,9 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
           range_m: config.range_m,
           spokes_per_rev: config.spokes_per_rev,
           range_bins: config.range_bins,
+          sweep_duration_s: opts.sweepDuration_s ?? (1 / config.rotation_rate_hz),
         },
-      ) as { spokes: Array<{ azimuth: number; intensity: number[] | Uint8Array }> };
+      ) as { spokes: Array<{ azimuth: number; intensity: number[] | Uint8Array; timestamp?: number }> };
 
       const spokes: RadarSpoke[] = result.spokes.map((s) => ({
         azimuth: s.azimuth,
@@ -81,6 +90,7 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
           s.intensity instanceof Uint8Array
             ? s.intensity
             : new Uint8Array(s.intensity),
+        timestamp: s.timestamp ?? 0,
       }));
       return { spokes, time };
     },
