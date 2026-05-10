@@ -152,8 +152,8 @@ export function createSeaSurface(
 
   const uniforms = {
     uTime: { value: 0 },
-    uSeaColor: { value: new THREE.Color(0x0c4060) },
-    uSkyColor: { value: new THREE.Color(0xb6d4e8) },
+    uSeaColor: { value: new THREE.Color(0x091e3a) },
+    uSkyColor: { value: new THREE.Color(0xc0d8ec) },
     uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
     uAmplitude: { value: new Float32Array(N_WAVES) },
     uWavelength: { value: new Float32Array(N_WAVES) },

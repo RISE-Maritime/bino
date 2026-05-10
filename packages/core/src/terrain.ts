@@ -283,15 +283,12 @@ function buildSeabedMesh(grid: BathymetryGrid, anchor: Anchor): THREE.Mesh {
   return mesh;
 }
 
-/** Bathymetry depth → vertex colour ramp. Land uses sand→grass,
- *  underwater uses shallow-teal→deep-navy. Reads cleanly at distance
- *  with a single mesh standing in for both regimes. */
 function depthToColor(h: number): [number, number, number] {
   if (h >= 0) {
     const t = Math.min(1, h / 60);
     return [0.85 - 0.30 * t, 0.78 - 0.10 * t, 0.55 - 0.20 * t];
   }
   const t = Math.min(1, -h / 20);
-  return [0.20 - 0.16 * t, 0.42 - 0.30 * t, 0.55 - 0.30 * t];
+  return [0.04 + 0.02 * (1 - t), 0.10 + 0.02 * (1 - t), 0.23 + 0.05 * (1 - t)];
 }
 

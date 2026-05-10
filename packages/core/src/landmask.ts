@@ -276,9 +276,9 @@ export function assemblePolygons(
   }));
   sorted.sort((a, b) => a.entryParam - b.entryParam);
 
-  // Connect chains: walk CW from each chain's exit to the next chain's
-  // entry. The land polygon is: chain₁ points → CW walk → chain₂ points
-  // → CW walk → ... → back to chain₁ entry.
+  // Connect chains: walk CCW from each chain's exit to the next
+  // chain's entry (land is on the LEFT of OSM coastline direction,
+  // so the land-side arc is the counter-clockwise one).
   const used = new Set<number>();
   for (let startIdx = 0; startIdx < sorted.length; startIdx++) {
     if (used.has(startIdx)) continue;
@@ -290,7 +290,7 @@ export function assemblePolygons(
       ring.push(...entry.chain.points);
       const nextIdx = (idx + 1) % sorted.length;
       const nextEntry = sorted[nextIdx]!;
-      const cornerPts = walkPerimeterCW(entry.exitParam, nextEntry.entryParam, r);
+      const cornerPts = walkPerimeterCW(nextEntry.entryParam, entry.exitParam, r).reverse();
       ring.push(...cornerPts);
       idx = nextIdx;
     } while (idx !== startIdx);

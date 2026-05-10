@@ -149,6 +149,17 @@ describe("assemblePolygons", () => {
     expect(polygons).toHaveLength(1);
     // The polygon should be closed (ring)
     expect(polygons[0]!.ring.length).toBeGreaterThanOrEqual(4);
+    // Land is on the left (north side) — polygon must include NE and
+    // NW corners, NOT SE/SW corners.
+    const ring = polygons[0]!.ring;
+    const hasNE = ring.some(([lon, lat]) => Math.abs(lon - 10.2) < 1e-6 && Math.abs(lat - 54.2) < 1e-6);
+    const hasNW = ring.some(([lon, lat]) => Math.abs(lon - 10.0) < 1e-6 && Math.abs(lat - 54.2) < 1e-6);
+    const hasSE = ring.some(([lon, lat]) => Math.abs(lon - 10.2) < 1e-6 && Math.abs(lat - 54.0) < 1e-6);
+    const hasSW = ring.some(([lon, lat]) => Math.abs(lon - 10.0) < 1e-6 && Math.abs(lat - 54.0) < 1e-6);
+    expect(hasNE).toBe(true);
+    expect(hasNW).toBe(true);
+    expect(hasSE).toBe(false);
+    expect(hasSW).toBe(false);
   });
 
   it("returns empty when no coastline chains are provided", () => {

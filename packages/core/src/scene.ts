@@ -103,7 +103,7 @@ function buildHorizonOcean(terrain: TerrainData): THREE.Mesh {
   const geom = new THREE.PlaneGeometry(size, size, 1, 1);
   geom.rotateX(-Math.PI / 2);
   const mat = new THREE.MeshStandardMaterial({
-    color: 0x143850,
+    color: 0x0c1e3c,
     roughness: 0.7,
   });
   const mesh = new THREE.Mesh(geom, mat);
