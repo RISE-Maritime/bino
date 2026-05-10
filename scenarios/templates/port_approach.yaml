@@ -1,0 +1,78 @@
+# Template: Port approach — buildings, seamarks, traffic vessels.
+# Anchor: Gothenburg outer port approach.
+
+scenario:
+  name: port_approach
+  anchor:
+    lat: 57.6850
+    lon: 11.8400
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 0.8
+      peak_period: 5.0
+      direction_deg: 250
+      spectrum: pierson_moskowitz
+    wind:
+      speed: 6.0
+      direction_deg: 260
+    time_of_day: "14:00"
+    visibility_m: 12000
+
+  terrain:
+    bbox: [11.75, 57.65, 11.90, 57.72]
+    landmask: true
+    buildings: true
+    seamarks: true
+
+  vessels:
+    - id: ego
+      model: cargo_90m
+      dimensions:
+        length: 90
+        beam: 16
+        draft: 5
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: bow_camera
+          type: camera
+          mount: { x: 45, y: 0, z: 16 }
+          fov_deg: 90
+          resolution: [640, 480]
+          rate_hz: 10
+        - id: main_lidar
+          type: lidar
+          mount: { x: 45, y: 0, z: 16 }
+          channels: 32
+          range_m: 200
+          rate_hz: 10
+        - id: main_radar
+          type: radar_marine
+          mount: { x: 0, y: 0, z: 30 }
+          range_m: 6000
+          rotation_rate_hz: 0.4
+          beam_width_deg: 1.2
+          spokes_per_rev: 360
+          range_bins: 256
+
+    - id: traffic_1
+      model: tanker_120m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/traffic_1/pubsub/frame_transform/sim
+      sensors: []
+
+    - id: traffic_2
+      model: ferry_60m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/traffic_2/pubsub/frame_transform/sim
+      sensors: []
+
+  modes:
+    rendering: replace
+    clock: wall
+    determinism: relaxed

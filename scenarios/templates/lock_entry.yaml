@@ -1,0 +1,69 @@
+# Template: Lock entry — narrow channel, dense seamarks.
+# Anchor: Kiel Canal Brunsbüttel lock entrance.
+
+scenario:
+  name: lock_entry
+  anchor:
+    lat: 53.8900
+    lon: 9.1400
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 0.2
+      peak_period: 2.5
+      direction_deg: 270
+      spectrum: pierson_moskowitz
+    wind:
+      speed: 5.0
+      direction_deg: 280
+    time_of_day: "08:00"
+    visibility_m: 6000
+
+  terrain:
+    bbox: [9.10, 53.87, 9.18, 53.91]
+    landmask: true
+    buildings: true
+    seamarks: true
+
+  vessels:
+    - id: ego
+      model: cargo_90m
+      dimensions:
+        length: 85
+        beam: 12
+        draft: 4.5
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: bow_camera
+          type: camera
+          mount: { x: 42, y: 0, z: 14 }
+          fov_deg: 90
+          resolution: [640, 480]
+          rate_hz: 10
+        - id: stern_camera
+          type: camera
+          mount: { x: -42, y: 0, z: 14 }
+          fov_deg: 90
+          resolution: [640, 480]
+          rate_hz: 5
+        - id: main_lidar
+          type: lidar
+          mount: { x: 0, y: 0, z: 16 }
+          channels: 16
+          range_m: 100
+          rate_hz: 10
+
+    - id: oncoming
+      model: cargo_90m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/oncoming/pubsub/frame_transform/sim
+      sensors: []
+
+  modes:
+    rendering: replace
+    clock: wall
+    determinism: relaxed

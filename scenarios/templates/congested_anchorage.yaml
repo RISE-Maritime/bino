@@ -1,0 +1,89 @@
+# Template: Congested anchorage — many vessels at anchor, minimal land.
+# Anchor: Singapore Strait western anchorage.
+
+scenario:
+  name: congested_anchorage
+  anchor:
+    lat: 1.2200
+    lon: 103.7500
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 0.3
+      peak_period: 3.0
+      direction_deg: 135
+      spectrum: pierson_moskowitz
+    wind:
+      speed: 3.0
+      direction_deg: 140
+    time_of_day: "16:00"
+    visibility_m: 10000
+
+  terrain:
+    bbox: [103.70, 1.18, 103.80, 1.26]
+    landmask: true
+    buildings: false
+    seamarks: true
+
+  vessels:
+    - id: ego
+      model: tanker_120m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: bridge_camera
+          type: camera
+          mount: { x: 0, y: 0, z: 28 }
+          fov_deg: 90
+          resolution: [640, 480]
+          rate_hz: 10
+        - id: nav_radar
+          type: radar_marine
+          mount: { x: 0, y: 0, z: 35 }
+          range_m: 8000
+          rotation_rate_hz: 0.4
+          beam_width_deg: 1.0
+          spokes_per_rev: 720
+          range_bins: 512
+
+    - id: anchor_1
+      model: tanker_120m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/anchor_1/pubsub/frame_transform/sim
+      sensors: []
+
+    - id: anchor_2
+      model: cargo_90m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/anchor_2/pubsub/frame_transform/sim
+      sensors: []
+
+    - id: anchor_3
+      model: tanker_120m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/anchor_3/pubsub/frame_transform/sim
+      sensors: []
+
+    - id: anchor_4
+      model: cargo_90m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/anchor_4/pubsub/frame_transform/sim
+      sensors: []
+
+    - id: anchor_5
+      model: ferry_60m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/anchor_5/pubsub/frame_transform/sim
+      sensors: []
+
+  modes:
+    rendering: replace
+    clock: wall
+    determinism: relaxed

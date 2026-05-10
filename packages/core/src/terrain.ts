@@ -2,6 +2,10 @@ import * as THREE from "three";
 import { fromArrayBuffer } from "geotiff";
 import type { Anchor, Bbox } from "./dsl.js";
 import { geodeticToEnu } from "./geo.js";
+import { buildLandmaskMesh } from "./landmask.js";
+import { buildBuildingsMesh } from "./buildings.js";
+import { buildSeamarksMesh } from "./seamarks.js";
+import { loadBuildings, loadSeamarks, type BuildingData, type SeamarkData } from "./overpass.js";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const GMRT_URL = "https://www.gmrt.org/services/GridServer";
@@ -192,40 +196,50 @@ export async function loadBathymetry(bbox: Bbox, gridResM = 50): Promise<Bathyme
 export interface TerrainData {
   coastline: CoastlineChain[];
   bathymetry: BathymetryGrid;
+  buildings?: BuildingData[];
+  seamarks?: SeamarkData[];
 }
 
 /** Async preparation step the service/viewer runs before
  *  buildScene. Keeps compileScenario sync and isolates network /
  *  filesystem effects from the pure compile path. */
-export async function prepareTerrain(bbox: Bbox): Promise<TerrainData> {
-  const [coastline, bathymetry] = await Promise.all([
-    loadCoastline(bbox),
-    loadBathymetry(bbox),
-  ]);
-  return { coastline, bathymetry };
+export interface PrepareTerrainOptions {
+  buildings?: boolean;
+  seamarks?: boolean;
 }
 
-/**
- * Build a Three.js Group containing a single bathymetry-driven
- * terrain mesh: positive heights become coloured landmass, negative
- * heights become coloured seabed.
- *
- * Note for v0.4a finish: the OSM coastline is loaded and exposed on
- * `TerrainData.coastline` for downstream consumers (v0.5 asset
- * pipeline will use it for buildings + seamarks placement), but is
- * not rendered. An earlier attempt overlaid OSM as a coloured
- * outline; the OSM↔GMRT sub-cell-width disagreement made the line
- * visibly drift from the bathymetry's zero-isobath. Filled landmass
- * polygons from OSM (the architecturally cleaner fix) need bbox-
- * edge-clipping of the open coastline chains to determine the
- * land-side correctly — that's deferred to v0.5 along with the
- * asset pipeline. Until then, bathymetry is the single visible
- * authority for the coast.
- */
+export async function prepareTerrain(
+  bbox: Bbox,
+  opts: PrepareTerrainOptions = {},
+): Promise<TerrainData> {
+  const fetchBuildings = opts.buildings !== false;
+  const fetchSeamarks = opts.seamarks !== false;
+  const [coastline, bathymetry, buildings, seamarks] = await Promise.all([
+    loadCoastline(bbox),
+    loadBathymetry(bbox),
+    fetchBuildings ? loadBuildings(bbox).catch(() => [] as BuildingData[]) : ([] as BuildingData[]),
+    fetchSeamarks ? loadSeamarks(bbox).catch(() => [] as SeamarkData[]) : ([] as SeamarkData[]),
+  ]);
+  return { coastline, bathymetry, buildings, seamarks };
+}
+
+/** Build terrain group: seabed mesh + landmask + buildings + seamarks. */
 export function buildTerrainMesh(terrain: TerrainData, anchor: Anchor): THREE.Group {
   const group = new THREE.Group();
   group.name = "terrain";
   group.add(buildSeabedMesh(terrain.bathymetry, anchor));
+  if (terrain.coastline.length > 0) {
+    const landmask = buildLandmaskMesh(terrain.coastline, terrain.bathymetry.bbox, anchor);
+    if (landmask.children.length > 0) group.add(landmask);
+  }
+  if (terrain.buildings && terrain.buildings.length > 0) {
+    const buildings = buildBuildingsMesh(terrain.buildings, anchor);
+    if (buildings.children.length > 0) group.add(buildings);
+  }
+  if (terrain.seamarks && terrain.seamarks.length > 0) {
+    const seamarks = buildSeamarksMesh(terrain.seamarks, anchor);
+    if (seamarks.children.length > 0) group.add(seamarks);
+  }
   return group;
 }
 

@@ -47,6 +47,8 @@ export const LidarSensor = z.object({
   channels: z.number().int().positive(),
   range_m: z.number().positive(),
   rate_hz: z.number().positive(),
+  fov_h_deg: z.number().positive().max(360).default(360),
+  azimuths: z.number().int().positive().optional(),
   publish_topic_override: z.string().min(1).optional(),
 });
 export type LidarSensor = z.infer<typeof LidarSensor>;
@@ -68,11 +70,19 @@ export type RadarSensor = z.infer<typeof RadarSensor>;
 export const Sensor = z.discriminatedUnion("type", [CameraSensor, LidarSensor, RadarSensor]);
 export type Sensor = z.infer<typeof Sensor>;
 
+export const VesselDimensions = z.object({
+  length: z.number().positive(),
+  beam: z.number().positive(),
+  draft: z.number().positive(),
+});
+export type VesselDimensions = z.infer<typeof VesselDimensions>;
+
 export const Vessel = z.object({
   id: z.string().min(1),
   model: z.string().min(1),
   pose_source: PoseSource,
   sensors: z.array(Sensor).default([]),
+  dimensions: VesselDimensions.optional(),
 });
 export type Vessel = z.infer<typeof Vessel>;
 
@@ -128,6 +138,9 @@ export type Bbox = z.infer<typeof Bbox>;
  *  both sources; per-source bbox / source overrides are v0.5+. */
 export const Terrain = z.object({
   bbox: Bbox,
+  landmask: z.boolean().default(true),
+  buildings: z.boolean().default(true),
+  seamarks: z.boolean().default(true),
 });
 export type Terrain = z.infer<typeof Terrain>;
 

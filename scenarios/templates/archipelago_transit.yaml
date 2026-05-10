@@ -1,0 +1,54 @@
+# Template: Archipelago transit — multi-island coastline, scattered seamarks.
+# Anchor: Stockholm southern archipelago.
+
+scenario:
+  name: archipelago_transit
+  anchor:
+    lat: 59.2700
+    lon: 18.5500
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 0.4
+      peak_period: 3.5
+      direction_deg: 180
+      spectrum: pierson_moskowitz
+    wind:
+      speed: 4.0
+      direction_deg: 190
+    time_of_day: "10:00"
+    visibility_m: 15000
+
+  terrain:
+    bbox: [18.45, 59.22, 18.65, 59.32]
+    landmask: true
+    buildings: false
+    seamarks: true
+
+  vessels:
+    - id: ego
+      model: ferry_60m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: bridge_camera
+          type: camera
+          mount: { x: 15, y: 0, z: 14 }
+          fov_deg: 120
+          resolution: [1280, 720]
+          rate_hz: 10
+        - id: nav_radar
+          type: radar_marine
+          mount: { x: 0, y: 0, z: 20 }
+          range_m: 3000
+          rotation_rate_hz: 0.5
+          beam_width_deg: 1.5
+          spokes_per_rev: 360
+          range_bins: 128
+
+  modes:
+    rendering: replace
+    clock: wall
+    determinism: relaxed

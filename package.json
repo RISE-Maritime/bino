@@ -12,7 +12,8 @@
     "kernels:test": "cd kernels && cargo test --release",
     "build": "pnpm kernels:build && pnpm -r build",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "validate:scenarios": "cd packages/node && npx vitest run test/scenarios.test.ts"
   },
   "packageManager": "pnpm@9.15.0"
 }

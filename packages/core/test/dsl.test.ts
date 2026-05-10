@@ -54,4 +54,52 @@ describe("Scenario schema", () => {
     (bad.vessels[0]!.sensors[0] as { type: string }).type = "sonar";
     expect(() => Scenario.parse(bad)).toThrow();
   });
+
+  it("accepts terrain with landmask/buildings/seamarks flags", () => {
+    const withTerrain = {
+      ...validScenario,
+      terrain: { bbox: [10.0, 54.0, 10.2, 54.2], landmask: true, buildings: false, seamarks: true },
+    };
+    const result = Scenario.parse(withTerrain);
+    expect(result.terrain!.buildings).toBe(false);
+    expect(result.terrain!.seamarks).toBe(true);
+    expect(result.terrain!.landmask).toBe(true);
+  });
+
+  it("defaults terrain flags to true", () => {
+    const withTerrain = { ...validScenario, terrain: { bbox: [10.0, 54.0, 10.2, 54.2] } };
+    const result = Scenario.parse(withTerrain);
+    expect(result.terrain!.buildings).toBe(true);
+    expect(result.terrain!.seamarks).toBe(true);
+    expect(result.terrain!.landmask).toBe(true);
+  });
+
+  it("accepts vessel with dimensions override", () => {
+    const withDims = structuredClone(validScenario);
+    withDims.vessels[0]!.dimensions = { length: 130, beam: 22, draft: 7 };
+    const result = Scenario.parse(withDims);
+    expect(result.vessels[0]!.dimensions!.length).toBe(130);
+  });
+
+  it("accepts lidar with fov_h_deg and azimuths", () => {
+    const withFov = structuredClone(validScenario);
+    const lidar = withFov.vessels[0]!.sensors[1]! as Record<string, unknown>;
+    lidar.fov_h_deg = 360;
+    lidar.azimuths = 512;
+    const result = Scenario.parse(withFov);
+    const parsedLidar = result.vessels[0]!.sensors[1]!;
+    expect(parsedLidar.type).toBe("lidar");
+    if (parsedLidar.type === "lidar") {
+      expect(parsedLidar.fov_h_deg).toBe(360);
+      expect(parsedLidar.azimuths).toBe(512);
+    }
+  });
+
+  it("defaults lidar fov_h_deg to 360", () => {
+    const result = Scenario.parse(validScenario);
+    const lidar = result.vessels[0]!.sensors[1]!;
+    if (lidar.type === "lidar") {
+      expect(lidar.fov_h_deg).toBe(360);
+    }
+  });
 });

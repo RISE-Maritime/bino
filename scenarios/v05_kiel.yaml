@@ -1,0 +1,77 @@
+# v0.5 Kiel approach scenario — full v0.5 features.
+#
+# Exercises:
+#   - environment.sea_state (Pierson-Moskowitz)
+#   - environment.wind, time_of_day, visibility_m
+#   - terrain.bbox with landmask, buildings, seamarks
+#   - all three sensor types (camera + lidar + radar)
+#   - parametric hull models (tanker_120m, ferry_60m)
+#   - vessel dimensions override
+#
+# bino-node scenarios/v05_kiel.yaml --zenoh ws/127.0.0.1:10000
+
+scenario:
+  name: v05_kiel
+  anchor:
+    lat: 54.3700
+    lon: 10.1850
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 1.2
+      peak_period: 6.5
+      direction_deg: 215
+      spectrum: pierson_moskowitz
+    wind:
+      speed: 8.5
+      direction_deg: 220
+    time_of_day: "20:30"
+    visibility_m: 8000
+
+  terrain:
+    bbox: [10.05, 54.28, 10.25, 54.38]
+    landmask: true
+    buildings: true
+    seamarks: true
+
+  vessels:
+    - id: ego
+      model: tanker_120m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: bow_camera
+          type: camera
+          mount: { x: 60, y: 0, z: 18 }
+          fov_deg: 90
+          resolution: [640, 480]
+          rate_hz: 10
+        - id: main_lidar
+          type: lidar
+          mount: { x: 60, y: 0, z: 18 }
+          channels: 32
+          range_m: 200
+          rate_hz: 10
+          fov_h_deg: 360
+        - id: main_radar
+          type: radar_marine
+          mount: { x: 0, y: 0, z: 35 }
+          range_m: 4000
+          rotation_rate_hz: 0.4
+          beam_width_deg: 1.2
+          spokes_per_rev: 360
+          range_bins: 256
+
+    - id: ferry
+      model: ferry_60m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ferry/pubsub/frame_transform/sim
+      sensors: []
+
+  modes:
+    rendering: replace
+    clock: wall
+    determinism: relaxed
