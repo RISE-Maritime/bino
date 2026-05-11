@@ -48,27 +48,15 @@ export function poseTopicKey(naming: KeelsonNaming, vesselId: string): string {
   );
 }
 
-export function cameraTopicKey(
-  naming: KeelsonNaming,
-  vesselId: string,
-  sensorId: string,
-): string {
+export function cameraTopicKey(naming: KeelsonNaming, vesselId: string, sensorId: string): string {
   return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_IMAGE_RAW, sensorId);
 }
 
-export function lidarTopicKey(
-  naming: KeelsonNaming,
-  vesselId: string,
-  sensorId: string,
-): string {
+export function lidarTopicKey(naming: KeelsonNaming, vesselId: string, sensorId: string): string {
   return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_POINT_CLOUD, sensorId);
 }
 
-export function radarTopicKey(
-  naming: KeelsonNaming,
-  vesselId: string,
-  sensorId: string,
-): string {
+export function radarTopicKey(naming: KeelsonNaming, vesselId: string, sensorId: string): string {
   return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_RADAR_SWEEP, sensorId);
 }
 
@@ -206,11 +194,7 @@ export function encodePointCloud(
   sensorId: string,
   naming: KeelsonNaming = DEFAULT_NAMING,
 ): EncodedTopic {
-  const data = new Uint8Array(
-    frame.points.buffer,
-    frame.points.byteOffset,
-    frame.count * 3 * 4,
-  );
+  const data = new Uint8Array(frame.points.buffer, frame.points.byteOffset, frame.count * 3 * 4);
   const pc = {
     timestamp: secondsToDate(frame.time),
     frameId: `${vesselId}/${sensorId}`,
@@ -291,9 +275,7 @@ export function decodeRadarSweepEnvelope(bytes: Uint8Array): DecodedRadarSweep |
       azimuth: s.azimuth ?? 0,
       intensity: s.data ?? new Uint8Array(0),
     })),
-    time: first?.timestamp
-      ? dateToSeconds(first.timestamp)
-      : dateToSeconds(env.enclosedAt),
+    time: first?.timestamp ? dateToSeconds(first.timestamp) : dateToSeconds(env.enclosedAt),
     frameId: first?.frameId ?? "",
   };
 }

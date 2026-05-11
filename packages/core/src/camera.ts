@@ -36,7 +36,8 @@ export interface CameraKernelOptions {
 }
 
 export function createCameraKernel(opts: CameraKernelOptions): CameraKernel {
-  const exposureTime: number = (opts.config as Record<string, unknown>).exposure_time_s as number ?? 0;
+  const exposureTime: number =
+    ((opts.config as Record<string, unknown>).exposure_time_s as number) ?? 0;
   const [width, height] = opts.config.resolution;
   const camera = new THREE.PerspectiveCamera(
     opts.config.fov_deg,
@@ -65,7 +66,10 @@ export function createCameraKernel(opts: CameraKernelOptions): CameraKernel {
       opts.renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
       opts.renderer.setRenderTarget(null);
       return {
-        pixels, width, height, time,
+        pixels,
+        width,
+        height,
+        time,
         exposure_start: exposureTime > 0 ? time - exposureTime / 2 : time,
         exposure_end: exposureTime > 0 ? time + exposureTime / 2 : time,
       };

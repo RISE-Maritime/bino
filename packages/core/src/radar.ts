@@ -79,7 +79,12 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
 
       // Update sweep index for deterministic clutter seeding.
       const currentEnv = envConfig
-        ? { ...envConfig, sea_clutter: envConfig.sea_clutter ? { ...envConfig.sea_clutter, sweep_index: sweepIndex } : undefined }
+        ? {
+            ...envConfig,
+            sea_clutter: envConfig.sea_clutter
+              ? { ...envConfig.sea_clutter, sweep_index: sweepIndex }
+              : undefined,
+          }
         : undefined;
       sweepIndex++;
 
@@ -93,17 +98,16 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
           range_m: config.range_m,
           spokes_per_rev: config.spokes_per_rev,
           range_bins: config.range_bins,
-          sweep_duration_s: opts.sweepDuration_s ?? (1 / config.rotation_rate_hz),
+          sweep_duration_s: opts.sweepDuration_s ?? 1 / config.rotation_rate_hz,
         },
         currentEnv,
-      ) as { spokes: Array<{ azimuth: number; intensity: number[] | Uint8Array; timestamp?: number }> };
+      ) as {
+        spokes: Array<{ azimuth: number; intensity: number[] | Uint8Array; timestamp?: number }>;
+      };
 
       const spokes: RadarSpoke[] = result.spokes.map((s) => ({
         azimuth: s.azimuth,
-        intensity:
-          s.intensity instanceof Uint8Array
-            ? s.intensity
-            : new Uint8Array(s.intensity),
+        intensity: s.intensity instanceof Uint8Array ? s.intensity : new Uint8Array(s.intensity),
         timestamp: s.timestamp ?? 0,
       }));
       return { spokes, time };

@@ -37,17 +37,18 @@ is cleared even without it.
 A single shared scene defined in `shared/scene.mjs`, used identically
 by all four candidates:
 
-| component                                                          | tris      | notes                                  |
-|--------------------------------------------------------------------|-----------|----------------------------------------|
+| component                                                         | tris      | notes                                                                  |
+| ----------------------------------------------------------------- | --------- | ---------------------------------------------------------------------- |
 | `PlaneGeometry(60,60,256,256)` w/ procedural checkerboard texture | 131,072   | `MeshStandardMaterial`, `RGBAFormat` `DataTexture`, real fragment work |
-| `TorusKnotGeometry(2.2, 0.65, 200, 28)`                            | ~22,400   | hero geometry, `MeshStandardMaterial`  |
-| `InstancedMesh(BoxGeometry, 200)`                                  | 2,400     | orbiting field, animated per-frame     |
-| **total**                                                          | **~155k** | well above the "few thousand triangles" floor in PLAN.md |
+| `TorusKnotGeometry(2.2, 0.65, 200, 28)`                           | ~22,400   | hero geometry, `MeshStandardMaterial`                                  |
+| `InstancedMesh(BoxGeometry, 200)`                                 | 2,400     | orbiting field, animated per-frame                                     |
+| **total**                                                         | **~155k** | well above the "few thousand triangles" floor in PLAN.md               |
 
 Lighting: one `AmbientLight` + one `DirectionalLight`. Animation
 updates the knot rotation and the 200 cube transforms each frame.
 
 Per-frame work for every candidate:
+
 1. `step(t)` — animate the scene (CPU work).
 2. **Color pass:** render to a `WebGLRenderTarget(RGBA8, depthBuffer)`.
 3. **Depth pass:** swap in a `MeshDepthMaterial` with
@@ -68,24 +69,24 @@ rendering (no GPU access — see the GPU section below).
 
 ### Inside `bino-spike-headless` Docker container (`out/docker/summary.json`)
 
-| candidate     | OK | FPS   | per-frame | render | readColor | readDepth | renderer                                                  |
-|---------------|----|-------|-----------|--------|-----------|-----------|-----------------------------------------------------------|
-| `headless-gl` | ✓  | 41.4  | 24.2 ms   | 19.1   | 4.2       | 0.85      | ANGLE / WebGL 1 / stack-gl 8.1.6                          |
-| `@kmamal/gl`  | ✓  | 42.9  | 23.3 ms   | 18.3   | 4.2       | 0.79      | ANGLE / WebGL 1 / stack-gl 9.1.0                          |
-| `chromium`    | ✓  | 17.9  | 55.7 ms   | 0.3¹   | 50.7      | 4.7       | Chromium / **WebGL 2** / ANGLE→Vulkan→llvmpipe (Mesa 25)  |
-| `webgpu`      | ✓² | 49.2  | 20.3 ms   | 1.4    | 18.9      |  —³       | Dawn / Mesa Lavapipe (LLVM 20)                            |
+| candidate     | OK  | FPS  | per-frame | render | readColor | readDepth | renderer                                                 |
+| ------------- | --- | ---- | --------- | ------ | --------- | --------- | -------------------------------------------------------- |
+| `headless-gl` | ✓   | 41.4 | 24.2 ms   | 19.1   | 4.2       | 0.85      | ANGLE / WebGL 1 / stack-gl 8.1.6                         |
+| `@kmamal/gl`  | ✓   | 42.9 | 23.3 ms   | 18.3   | 4.2       | 0.79      | ANGLE / WebGL 1 / stack-gl 9.1.0                         |
+| `chromium`    | ✓   | 17.9 | 55.7 ms   | 0.3¹   | 50.7      | 4.7       | Chromium / **WebGL 2** / ANGLE→Vulkan→llvmpipe (Mesa 25) |
+| `webgpu`      | ✓²  | 49.2 | 20.3 ms   | 1.4    | 18.9      | —³        | Dawn / Mesa Lavapipe (LLVM 20)                           |
 
 (All times in ms. Container = `nvidia/cuda:13.0.3-runtime-ubuntu24.04`,
 no `--gpus` available in this dind sandbox.)
 
 ### On the devcontainer host (`out/summary.json`)
 
-| candidate     | OK | FPS   | per-frame | render | readColor | readDepth | renderer                                                  |
-|---------------|----|-------|-----------|--------|-----------|-----------|-----------------------------------------------------------|
-| `headless-gl` | ✓  | 41.0  | 24.4 ms   | 19.8   | 3.9       | 0.6       | ANGLE / WebGL 1 / stack-gl 8.1.6                          |
-| `@kmamal/gl`  | ✓  | 41.4  | 24.2 ms   | 19.6   | 3.9       | 0.5       | ANGLE / WebGL 1 / stack-gl 9.1.0                          |
-| `chromium`    | ✓  | 17.3  | 57.9 ms   | 0.3¹   | 52.5      | 5.1       | Chromium / **WebGL 1** / ANGLE→Vulkan→llvmpipe (Mesa 22)  |
-| `webgpu`      | ✗⁴ |  —    |   —       |   —    |  —        |  —        | Dawn dlopen failed (libstdc++ on Bookworm)                |
+| candidate     | OK  | FPS  | per-frame | render | readColor | readDepth | renderer                                                 |
+| ------------- | --- | ---- | --------- | ------ | --------- | --------- | -------------------------------------------------------- |
+| `headless-gl` | ✓   | 41.0 | 24.4 ms   | 19.8   | 3.9       | 0.6       | ANGLE / WebGL 1 / stack-gl 8.1.6                         |
+| `@kmamal/gl`  | ✓   | 41.4 | 24.2 ms   | 19.6   | 3.9       | 0.5       | ANGLE / WebGL 1 / stack-gl 9.1.0                         |
+| `chromium`    | ✓   | 17.3 | 57.9 ms   | 0.3¹   | 52.5      | 5.1       | Chromium / **WebGL 1** / ANGLE→Vulkan→llvmpipe (Mesa 22) |
+| `webgpu`      | ✗⁴  | —    | —         | —      | —         | —         | Dawn dlopen failed (libstdc++ on Bookworm)               |
 
 **Notes on the tables:**
 
@@ -126,13 +127,13 @@ ground-truth oracle for the Node service.
 
 ## Acceptance criteria — pass/fail
 
-| criterion                                                              | status |
-|------------------------------------------------------------------------|--------|
-| non-trivial scene (few thousand triangles, textured plane, lighting)   | ✓ ~155k tris, lit, textured |
-| RGBA framebuffer readback (camera proxy)                               | ✓ all four working candidates |
-| depth readback (lidar proxy — per-pixel range extractable)             | ✓ for gl-based + Chromium via `MeshDepthMaterial(RGBADepthPacking)`; gap for WebGPU on r160 |
-| ≥10 Hz at 1920×1080 on a typical workstation GPU                       | ✓ even on software (17–49 FPS); hardware will be much higher |
-| public-base Docker image, no manual driver wrangling                   | ✓ `docker/Dockerfile` (`nvidia/cuda:13.0.3-runtime-ubuntu24.04`) |
+| criterion                                                            | status                                                                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| non-trivial scene (few thousand triangles, textured plane, lighting) | ✓ ~155k tris, lit, textured                                                                 |
+| RGBA framebuffer readback (camera proxy)                             | ✓ all four working candidates                                                               |
+| depth readback (lidar proxy — per-pixel range extractable)           | ✓ for gl-based + Chromium via `MeshDepthMaterial(RGBADepthPacking)`; gap for WebGPU on r160 |
+| ≥10 Hz at 1920×1080 on a typical workstation GPU                     | ✓ even on software (17–49 FPS); hardware will be much higher                                |
+| public-base Docker image, no manual driver wrangling                 | ✓ `docker/Dockerfile` (`nvidia/cuda:13.0.3-runtime-ubuntu24.04`)                            |
 
 ## Recommendation
 
@@ -154,6 +155,7 @@ throughput in software, the `webgpu` npm package's Dawn binding is
 solid (the only adapter visible was Lavapipe but on a real GPU it
 would resolve to NVIDIA's Vulkan ICD), and Three.js's WebGPU pipeline
 is Three's strategic direction. The reasons not to do it now:
+
 - Three r160's WebGPU pipeline can't consume classic
   `MeshDepthMaterial` — we need r170+ to get
   `MeshDepthNodeMaterial`.
@@ -222,6 +224,7 @@ For `headless-gl`, `glReadPixels` of an 8.3 MB buffer takes ~4 ms (16%
 of frame time). For Chromium it takes ~50 ms. For WebGPU, ~19 ms. On
 hardware the GPU sync cost dominates. For sustained 30 Hz camera
 output at 1080p we should consider:
+
 - PBO async readback (WebGL2 only — see WebGL1 caveat above), which
   lets us overlap readback with rendering.
 - WebGPU `mappedAtCreation` buffers, which are async by design.
@@ -298,12 +301,12 @@ Windows NVIDIA driver.
 
 State of the pieces in this devcontainer:
 
-| component       | where                                          | present? |
-|-----------------|------------------------------------------------|----------|
-| `/dev/dxg`      | kernel passthrough, exposed by `--gpus=all`    | ✓        |
-| `libdxcore.so`  | `/usr/lib/x86_64-linux-gnu/libdxcore.so`       | ✓ pre-staged in `mcr.microsoft.com/devcontainers/...` base (no dpkg owner) |
-| `d3d12_dri.so`  | `/usr/lib/x86_64-linux-gnu/dri/d3d12_dri.so`   | ✓ shipped in Bookworm `libgl1-mesa-dri` 22.3 |
-| `libd3d12.so`   | normally `/usr/lib/wsl/lib/libd3d12.so`        | **✗ missing** |
+| component      | where                                        | present?                                                                   |
+| -------------- | -------------------------------------------- | -------------------------------------------------------------------------- |
+| `/dev/dxg`     | kernel passthrough, exposed by `--gpus=all`  | ✓                                                                          |
+| `libdxcore.so` | `/usr/lib/x86_64-linux-gnu/libdxcore.so`     | ✓ pre-staged in `mcr.microsoft.com/devcontainers/...` base (no dpkg owner) |
+| `d3d12_dri.so` | `/usr/lib/x86_64-linux-gnu/dri/d3d12_dri.so` | ✓ shipped in Bookworm `libgl1-mesa-dri` 22.3                               |
+| `libd3d12.so`  | normally `/usr/lib/wsl/lib/libd3d12.so`      | **✗ missing**                                                              |
 
 `libd3d12.so` is the closing piece. **It is not in any Linux apt
 repo** (verified against Debian bookworm, Ubuntu jammy/noble, and
@@ -334,6 +337,7 @@ re-running `node run-all.mjs` will produce hardware numbers — expect
 several × the software FPS reported above.
 
 Caveats:
+
 - The bind-mount only works if the WSL2 distro running Docker has
   `/usr/lib/wsl/lib/` populated. Standard Ubuntu/Debian WSL distros
   do; minimal Docker Desktop WSL backends may not — verify on the
@@ -373,6 +377,7 @@ docker run --rm --gpus all \
 
 Per-candidate output drops in `out/` (host) or `out/docker/`
 (container):
+
 - `headless-gl.json`, `kmamal-gl.json`, `chromium.json`, `webgpu.json`
 - `summary.json` (aggregated table from `run-all.mjs`)
 - `headless-gl-color.ppm`, `headless-gl-depth.ppm`,

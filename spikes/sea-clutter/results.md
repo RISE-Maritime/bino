@@ -19,12 +19,12 @@ Gamma texture — is the right default. Findings:
 
 ### Statistical comparison (100K samples, grazing ≈ 1.7°)
 
-| Hs  | K-mean  | K-p99   | W-mean  | W-p99   | R-mean  | R-p99   |
-|-----|---------|---------|---------|---------|---------|---------|
-| 0.3 | 0.0003  | 0.0009  | 0.0004  | 0.0005  | 0.0003  | 0.0008  |
-| 1.0 | 0.0006  | 0.0016  | 0.0007  | 0.0011  | 0.0006  | 0.0015  |
-| 2.0 | 0.0009  | 0.0023  | 0.0009  | 0.0016  | 0.0009  | 0.0022  |
-| 4.0 | 0.0013  | 0.0034  | 0.0013  | 0.0026  | 0.0013  | 0.0031  |
+| Hs  | K-mean | K-p99  | W-mean | W-p99  | R-mean | R-p99  |
+| --- | ------ | ------ | ------ | ------ | ------ | ------ |
+| 0.3 | 0.0003 | 0.0009 | 0.0004 | 0.0005 | 0.0003 | 0.0008 |
+| 1.0 | 0.0006 | 0.0016 | 0.0007 | 0.0011 | 0.0006 | 0.0015 |
+| 2.0 | 0.0009 | 0.0023 | 0.0009 | 0.0016 | 0.0009 | 0.0022 |
+| 4.0 | 0.0013 | 0.0034 | 0.0013 | 0.0026 | 0.0013 | 0.0031 |
 
 - **K has the heaviest tail** (p99/mean ≈ 2.6× at Hs=4), matching
   the "spiky clutter" phenomenology real perception systems must
@@ -41,7 +41,7 @@ Gamma texture — is the right default. Findings:
 - **Rayleigh stays as the receiver-noise floor.** Every bin gets
   thermal noise (Rayleigh); sea clutter from the K-distribution
   adds on top. The v1.0 kernel should model both: `intensity =
-  max(vessel_return, clutter_k + noise_rayleigh)`.
+max(vessel_return, clutter_k + noise_rayleigh)`.
 
 ### Mean σ₀ model
 
@@ -88,6 +88,7 @@ up to 12 km, the flat-earth grazing angle is atan(35/r) ≈ 0.003–
 model's stochastic variation swamps this signal.
 
 **Per-cell wave sampling would matter if:**
+
 - Radar height were much lower (e.g., 5 m on a small craft)
 - Sea state were extreme (Hs > 5 m)
 - We modelled wave-crest shadowing (far-range bins masked by
@@ -106,6 +107,7 @@ for the clutter distribution.
 Kernel owns Gerstner + clutter internally.**
 
 Reasons:
+
 1. **Native crate stays self-contained.** The `bino-radar` crate is
    designed to work standalone for offline log analysis. If clutter
    depends on a JS-provided height buffer, the native path breaks.

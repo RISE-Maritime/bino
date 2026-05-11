@@ -20,10 +20,10 @@ as production-quality code from day one. Lift to
 ## Numbers
 
 | sea state | Hs (m) | period (s) | render (ms) | unique colours |
-|-----------|-------:|-----------:|------------:|---------------:|
-| calm      |   0.3 |     4.0   |        54¹  |             18 |
-| moderate  |   1.5 |     6.0   |        18   |             50 |
-| heavy     |   3.5 |     9.0   |        17   |             48 |
+| --------- | -----: | ---------: | ----------: | -------------: |
+| calm      |    0.3 |        4.0 |         54¹ |             18 |
+| moderate  |    1.5 |        6.0 |          18 |             50 |
+| heavy     |    3.5 |        9.0 |          17 |             48 |
 
 ¹ first frame includes shader compile (~36 ms one-shot cost).
 
@@ -38,10 +38,10 @@ as production-quality code from day one. Lift to
   `componentsFor({significant_wave_height, peak_period, direction_deg})`.
   Matches the DSL `environment.sea_state` shape from the design
   vision YAML. Component count is hard-coded in the shader (`const
-  int N_WAVES = 4;`); growing it later is a recompile, not a
+int N_WAVES = 4;`); growing it later is a recompile, not a
   refactor.
-- **Vertex displacement + analytic normals.** Per *GPU Gems 1
-  Chapter 1* (Mark Finch). The math is well-documented and
+- **Vertex displacement + analytic normals.** Per _GPU Gems 1
+  Chapter 1_ (Mark Finch). The math is well-documented and
   portable; the implementation in `sea.mjs:VERT` is direct from the
   formula. No normal map, no fancy specular — just per-fragment
   lighting from the displaced normal. Foam, refractions, caustics
@@ -88,18 +88,19 @@ as production-quality code from day one. Lift to
 
 ## Acceptance vs the spike plan
 
-| criterion | result |
-|-----------|--------|
-| Working `THREE.ShaderMaterial` | ✓ — `sea.mjs` |
-| Compiles + renders against `@kmamal/gl` | ✓ |
-| Output non-zero, varies | ✓ — 18-50 unique colours |
-| PPM dumps for visual sanity | ✓ — calm/moderate/heavy |
-| Sea-state setter API | ✓ — `componentsFor()` |
+| criterion                               | result                   |
+| --------------------------------------- | ------------------------ |
+| Working `THREE.ShaderMaterial`          | ✓ — `sea.mjs`            |
+| Compiles + renders against `@kmamal/gl` | ✓                        |
+| Output non-zero, varies                 | ✓ — 18-50 unique colours |
+| PPM dumps for visual sanity             | ✓ — calm/moderate/heavy  |
+| Sea-state setter API                    | ✓ — `componentsFor()`    |
 
 ## What v0.4a #6 looks like
 
 `@bino/core/src/sea.ts` exports `buildSeaSurface(scenarioEnv,
 {plane: {width, height, segments}}) → THREE.Mesh`. Internally:
+
 1. Compute components via `componentsFor(scenarioEnv.sea_state)`.
 2. Build a `THREE.ShaderMaterial` (the spike's `buildSeaMaterial`).
 3. Wrap it in a `THREE.Mesh` with a `PlaneGeometry`.

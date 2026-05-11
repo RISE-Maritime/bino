@@ -14,9 +14,9 @@ architectural decisions, and the new risks for v0.4.
 
 ## Acceptance — did v0.3 deliver?
 
-**Yes, fully.** v0.3's headline goal was *PPI-style radar from a
+**Yes, fully.** v0.3's headline goal was _PPI-style radar from a
 geometry-of-returns kernel, Rust from the start, exposed as both a
-WASM module and a native crate, with a viewer PPI overlay*. All four
+WASM module and a native crate, with a viewer PPI overlay_. All four
 clauses shipped.
 
 What's automated and verified:
@@ -28,7 +28,7 @@ What's automated and verified:
   `spokes_per_rev=90` per sweep.
 - **Native cargo test** in `kernels/radar/`: 4 tests covering empty
   scene, on-axis hit, off-axis hit, out-of-range filtering. `cargo
-  test --release` green.
+test --release` green.
 - **WASM integration tests** in `@bino/core`: 4 vitest tests load the
   built `.wasm` and exercise `createRadarKernel` against real Three.js
   scene graphs. Confirms the JS↔WASM marshalling for SceneSnapshot /
@@ -37,7 +37,7 @@ What's automated and verified:
   bottom-right corner; updates live as ferry traverses the radar
   field. Visually verified.
 - **Live full-duplex CLI**: `bino-node scenarios/v01_smoke.yaml --zenoh
-  ws://...` runs all three sensors, publishes camera/lidar/radar on
+ws://...` runs all three sensors, publishes camera/lidar/radar on
   canonical Keelson topics. Verified live with consumer probes.
 
 Test totals at close: 58 in `@bino/core` (incl. 4 radar-WASM + 1 radar
@@ -56,12 +56,12 @@ All four pre-v0.3 spikes resolved on Day 0 of v0.3 work. The radar
 work itself was meaningfully smaller because all the unknowns had
 been settled up front.
 
-| spike | outcome |
-|-------|---------|
-| **S7 — Rust toolchain** | ✅ `wasm-bindgen` + cargo direct, no `wasm-pack`. `cdylib + rlib` crate-type lets one crate target both native and `wasm32-unknown-unknown`. `wasm-bindgen-cli` pinned to `0.2.120` to match the crate. Lock-step pinning is the only real gotcha. |
-| **S8 — Memory model** | ✅ Copy-each-frame via `serde-wasm-bindgen`. Per-frame payload is ~150 KB worst case; the marshalling cost is negligible compared to the 2.5 s between sweeps at 0.4 Hz. SharedArrayBuffer's COOP/COEP infrastructure isn't worth taking on for radar. |
-| **S9 — Keelson radar schema** | ✅ `radar_spoke: keelson.RadarSpoke` and `radar_sweep: keelson.RadarSweep` already shipped. `@rise-maritime/keelson-js@0.5.0` already includes the generated payload classes at `dist/payloads/RadarReading.{js,d.ts}`. Same encode/decode pattern as v0.2's image_raw / point_cloud. |
-| **S10 — Native+wasm dual-target tests** | ✅ Resolved in line with the kernel work itself. `cargo test --release` runs the native path; `pnpm test` in `@bino/core` runs the WASM path through vitest+vite-plugin-wasm. Both green at close. |
+| spike                                   | outcome                                                                                                                                                                                                                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **S7 — Rust toolchain**                 | ✅ `wasm-bindgen` + cargo direct, no `wasm-pack`. `cdylib + rlib` crate-type lets one crate target both native and `wasm32-unknown-unknown`. `wasm-bindgen-cli` pinned to `0.2.120` to match the crate. Lock-step pinning is the only real gotcha.                                    |
+| **S8 — Memory model**                   | ✅ Copy-each-frame via `serde-wasm-bindgen`. Per-frame payload is ~150 KB worst case; the marshalling cost is negligible compared to the 2.5 s between sweeps at 0.4 Hz. SharedArrayBuffer's COOP/COEP infrastructure isn't worth taking on for radar.                                |
+| **S9 — Keelson radar schema**           | ✅ `radar_spoke: keelson.RadarSpoke` and `radar_sweep: keelson.RadarSweep` already shipped. `@rise-maritime/keelson-js@0.5.0` already includes the generated payload classes at `dist/payloads/RadarReading.{js,d.ts}`. Same encode/decode pattern as v0.2's image_raw / point_cloud. |
+| **S10 — Native+wasm dual-target tests** | ✅ Resolved in line with the kernel work itself. `cargo test --release` runs the native path; `pnpm test` in `@bino/core` runs the WASM path through vitest+vite-plugin-wasm. Both green at close.                                                                                    |
 
 ---
 
@@ -70,17 +70,17 @@ been settled up front.
 10 of 10 numbered v0.3 tasks shipped (the plan tracked them as 17
 sub-items grouped into 10 task-tracker entries). Per-task:
 
-| section | landed? | notes |
-|---------|---------|-------|
-| 1 — Cargo workspace skeleton | ✅ | `kernels/Cargo.toml` + `kernels/radar/`. Single source, two targets. `rust-toolchain.toml` pins 1.95 + wasm32. |
-| 2 — pnpm `kernels:build` script | ✅ | Plain `cd kernels && cargo build --target wasm32 && wasm-bindgen --target bundler ...`. No `wasm-pack`. Output to `packages/core/wasm/` (sibling to src/dist) so the same relative import works in both source and built code. |
-| 3-5 — SceneSnapshot, RadarConfig, geometry-of-returns | ✅ | Per-spoke ray-bbox intersection in the horizontal plane, slab method. Binary intensity (255 or 0) per range bin. ASVSim simplifications loud in the doc-comment header. |
-| 6-7 — `step()` + native unit tests | ✅ | `pub fn sweep(scene, host, config) -> RadarSweep`. WASM entry is a separate `#[cfg(target_arch = "wasm32")]` shim doing serde marshalling. 4 native tests. |
-| 8-9 — WASM loader + vitest integration | ✅ | `createRadarKernel` matches the camera/lidar pattern. WASM module instance is shared across all radar kernels (module-scoped). 4 vitest integration tests passing the kernel real Three.js scene graphs. |
-| 10-11 — RadarSensor DSL + radar_sweep encoder | ✅ | DSL field is `rotation_rate_hz`, not `rate_hz` — domain-specific naming kept visible in scenarios. `encodeRadarSweep` / `decodeRadarSweepEnvelope` follow the v0.2 pattern. |
-| 12-13 — Service + scenario integration | ✅ | Service maps `sensor.rotation_rate_hz` → `ScheduledKernel.rate_hz` for the runner. `v01_smoke.yaml` gains a masthead radar. |
-| 14-15 — PPI overlay + radar wedge | ✅, **but not as planned**: see "Decisions in flight" — the 3D overlay is a max-range ring (LineLoop), not a beam-width wedge. At 1.2° beam width a wedge would be invisible at the third-person camera distance. Honest deviation. |
-| 16-17 — e2e + manual viewer demo | ✅ | e2e adds radar consumer alongside camera/lidar; ran live against the local zenoh-router and confirmed radar arrived at the expected cadence. |
+| section                                               | landed?                                                                                                                                                                                                                             | notes                                                                                                                                                                                                                          |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1 — Cargo workspace skeleton                          | ✅                                                                                                                                                                                                                                  | `kernels/Cargo.toml` + `kernels/radar/`. Single source, two targets. `rust-toolchain.toml` pins 1.95 + wasm32.                                                                                                                 |
+| 2 — pnpm `kernels:build` script                       | ✅                                                                                                                                                                                                                                  | Plain `cd kernels && cargo build --target wasm32 && wasm-bindgen --target bundler ...`. No `wasm-pack`. Output to `packages/core/wasm/` (sibling to src/dist) so the same relative import works in both source and built code. |
+| 3-5 — SceneSnapshot, RadarConfig, geometry-of-returns | ✅                                                                                                                                                                                                                                  | Per-spoke ray-bbox intersection in the horizontal plane, slab method. Binary intensity (255 or 0) per range bin. ASVSim simplifications loud in the doc-comment header.                                                        |
+| 6-7 — `step()` + native unit tests                    | ✅                                                                                                                                                                                                                                  | `pub fn sweep(scene, host, config) -> RadarSweep`. WASM entry is a separate `#[cfg(target_arch = "wasm32")]` shim doing serde marshalling. 4 native tests.                                                                     |
+| 8-9 — WASM loader + vitest integration                | ✅                                                                                                                                                                                                                                  | `createRadarKernel` matches the camera/lidar pattern. WASM module instance is shared across all radar kernels (module-scoped). 4 vitest integration tests passing the kernel real Three.js scene graphs.                       |
+| 10-11 — RadarSensor DSL + radar_sweep encoder         | ✅                                                                                                                                                                                                                                  | DSL field is `rotation_rate_hz`, not `rate_hz` — domain-specific naming kept visible in scenarios. `encodeRadarSweep` / `decodeRadarSweepEnvelope` follow the v0.2 pattern.                                                    |
+| 12-13 — Service + scenario integration                | ✅                                                                                                                                                                                                                                  | Service maps `sensor.rotation_rate_hz` → `ScheduledKernel.rate_hz` for the runner. `v01_smoke.yaml` gains a masthead radar.                                                                                                    |
+| 14-15 — PPI overlay + radar wedge                     | ✅, **but not as planned**: see "Decisions in flight" — the 3D overlay is a max-range ring (LineLoop), not a beam-width wedge. At 1.2° beam width a wedge would be invisible at the third-person camera distance. Honest deviation. |
+| 16-17 — e2e + manual viewer demo                      | ✅                                                                                                                                                                                                                                  | e2e adds radar consumer alongside camera/lidar; ran live against the local zenoh-router and confirmed radar arrived at the expected cadence.                                                                                   |
 
 ---
 
@@ -93,10 +93,10 @@ sub-items grouped into 10 task-tracker entries). Per-task:
   built-resolved (production) paths point to the same artifacts.
 - **3D radar overlay is a max-range ring, not a beam-width wedge.**
   Plan said "wedge frustum-style overlay (a wedge showing beam width
-  + range)." With `beam_width_deg=1.2`, a 1.2° wedge at 2 km is a
-  thin sliver invisible against the third-person camera at ~100 m
-  distance. The max-range LineLoop conveys "this radar reaches this
-  far"; the actual sweep is in the PPI panel where it's visible.
+  - range)." With `beam_width_deg=1.2`, a 1.2° wedge at 2 km is a
+    thin sliver invisible against the third-person camera at ~100 m
+    distance. The max-range LineLoop conveys "this radar reaches this
+    far"; the actual sweep is in the PPI panel where it's visible.
 - **PPI is canvas2d, not a Three.js texture.** Plan listed both
   options. canvas2d is cheaper per frame and the PPI is conventionally
   2D anyway. Texture-based PPI (compositable into the 3D scene) is a
@@ -106,7 +106,7 @@ sub-items grouped into 10 task-tracker entries). Per-task:
   kernels. Lifecycle matters less than for camera/lidar.
 - **DSL field naming inconsistency: `rotation_rate_hz` for radar,
   `rate_hz` for camera/lidar.** Kept domain-specific name visible in
-  scenarios because radar's "rate" *is* its antenna rotation rate.
+  scenarios because radar's "rate" _is_ its antenna rotation rate.
   Camera/lidar `rate_hz` is generic. Service.ts bridges. Document
   the inconsistency rather than hide it.
 - **Native crate name `bino-radar` matches future crates.io

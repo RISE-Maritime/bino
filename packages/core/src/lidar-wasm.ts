@@ -35,7 +35,7 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
     fov_v_deg: fov,
     fov_h_deg: opts.fov_h_deg ?? fov,
     range_m: config.range_m,
-    sweep_duration_s: opts.sweepDuration_s ?? (1 / config.rate_hz),
+    sweep_duration_s: opts.sweepDuration_s ?? 1 / config.rate_hz,
   };
 
   const tmpVec = new THREE.Vector3();
@@ -68,11 +68,11 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
       ) as { points: number[] | Float32Array; count: number; timestamps?: number[] | Float32Array };
 
       const points =
-        result.points instanceof Float32Array
-          ? result.points
-          : new Float32Array(result.points);
+        result.points instanceof Float32Array ? result.points : new Float32Array(result.points);
       const timestamps = result.timestamps
-        ? (result.timestamps instanceof Float32Array ? result.timestamps : new Float32Array(result.timestamps))
+        ? result.timestamps instanceof Float32Array
+          ? result.timestamps
+          : new Float32Array(result.timestamps)
         : undefined;
       return { points, count: result.count, time, ...(timestamps ? { timestamps } : {}) };
     },

@@ -57,7 +57,9 @@ async function main(): Promise<void> {
 
   let terrain: TerrainData | undefined;
   if (scene.terrain) {
-    stdout.write(`terrain: fetching coastline + bathymetry for ${JSON.stringify(scene.terrain.bbox)}…\n`);
+    stdout.write(
+      `terrain: fetching coastline + bathymetry for ${JSON.stringify(scene.terrain.bbox)}…\n`,
+    );
     const t0 = performance.now();
     terrain = await prepareTerrain(scene.terrain.bbox);
     stdout.write(
@@ -75,7 +77,9 @@ async function main(): Promise<void> {
       session: zenohSession,
       vessels: zenohVessels(scene),
     });
-    stdout.write(`zenoh: connected to ${parsed.zenoh}, ${zenohVessels(scene).length} subscription(s)\n`);
+    stdout.write(
+      `zenoh: connected to ${parsed.zenoh}, ${zenohVessels(scene).length} subscription(s)\n`,
+    );
   } else {
     stream = new MemoryPoseStream();
     stdout.write("zenoh: no --zenoh endpoint, running without pose updates\n");

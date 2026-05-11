@@ -5,15 +5,6 @@ import { geodeticToEnu } from "./geo.js";
 
 type Point = [number, number]; // [lon, lat]
 
-// ─── Bbox edge enumeration (clockwise: top → right → bottom → left) ─
-
-const enum Edge {
-  Top = 0,
-  Right = 1,
-  Bottom = 2,
-  Left = 3,
-}
-
 interface BboxRect {
   west: number;
   south: number;
@@ -52,25 +43,15 @@ function inside(p: Point, r: BboxRect): boolean {
 }
 
 function clampToBbox(p: Point, r: BboxRect): Point {
-  return [
-    Math.max(r.west, Math.min(r.east, p[0])),
-    Math.max(r.south, Math.min(r.north, p[1])),
-  ];
+  return [Math.max(r.west, Math.min(r.east, p[0])), Math.max(r.south, Math.min(r.north, p[1]))];
 }
 
-function intersectSegmentBbox(
-  a: Point,
-  b: Point,
-  r: BboxRect,
-): Point | null {
+function intersectSegmentBbox(a: Point, b: Point, r: BboxRect): Point | null {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   let tMin = 0;
   let tMax = 1;
 
-  const edges: [number, number, number, number][] = [
-    [-dx, a[0] - r.west, dx, r.east - a[0]], // left / right
-  ];
   // Use parametric clipping (Liang-Barsky)
   const check = (p: number, q: number): boolean => {
     if (Math.abs(p) < 1e-12) return q >= -1e-12;
@@ -169,14 +150,8 @@ export function clipChainToBbox(chain: CoastlineChain, bbox: Bbox): ClippedChain
       valid = check(-dy, prev[1] - r.south) && valid;
       valid = check(dy, r.north - prev[1]) && valid;
       if (valid && tMin < tMax) {
-        const entry: Point = clampToBbox(
-          [prev[0] + tMin * dx, prev[1] + tMin * dy],
-          r,
-        );
-        const exit: Point = clampToBbox(
-          [prev[0] + tMax * dx, prev[1] + tMax * dy],
-          r,
-        );
+        const entry: Point = clampToBbox([prev[0] + tMin * dx, prev[1] + tMin * dy], r);
+        const exit: Point = clampToBbox([prev[0] + tMax * dx, prev[1] + tMax * dy], r);
         result.push({
           points: [entry, exit],
           entryOnBbox: true,
@@ -210,18 +185,10 @@ function bboxCorners(r: BboxRect): Point[] {
   ];
 }
 
-function cornerParam(i: number): number {
-  return i; // 0=NW, 1=NE, 2=SE, 3=SW
-}
-
-function walkPerimeterCW(
-  fromParam: number,
-  toParam: number,
-  r: BboxRect,
-): Point[] {
+function walkPerimeterCW(fromParam: number, toParam: number, r: BboxRect): Point[] {
   const corners = bboxCorners(r);
   const pts: Point[] = [];
-  let t = fromParam;
+  const t = fromParam;
   const target = toParam <= fromParam ? toParam + 4 : toParam;
   for (let ci = Math.ceil(t); ci < target; ci++) {
     const idx = ci % 4;
@@ -234,10 +201,7 @@ export interface LandPolygon {
   ring: Point[];
 }
 
-export function assemblePolygons(
-  chains: CoastlineChain[],
-  bbox: Bbox,
-): LandPolygon[] {
+export function assemblePolygons(chains: CoastlineChain[], bbox: Bbox): LandPolygon[] {
   const r = toBboxRect(bbox);
   const clipped: ClippedChain[] = [];
   for (const chain of chains) {
@@ -339,8 +303,8 @@ function polygonToMesh(
 ): THREE.Mesh | null {
   if (polygon.ring.length < 3) return null;
 
-  const enuPoints: Array<{ e: number; n: number }> = polygon.ring.map(
-    ([lon, lat]) => geodeticToEnu({ lat, lon, height: 0 }, anchor),
+  const enuPoints: Array<{ e: number; n: number }> = polygon.ring.map(([lon, lat]) =>
+    geodeticToEnu({ lat, lon, height: 0 }, anchor),
   );
 
   const shape = new THREE.Shape();

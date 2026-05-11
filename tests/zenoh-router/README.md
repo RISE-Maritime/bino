@@ -13,11 +13,11 @@ docker compose -f tests/zenoh-router/docker-compose.yml up -d
 
 Endpoints (all bound to `127.0.0.1` only):
 
-| port  | what                              |
-|-------|-----------------------------------|
-| 10000 | remote-api WebSocket (zenoh-ts)   |
-| 8000  | REST plugin (`curl` for debug)    |
-| 7447  | zenoh peer protocol (TCP)         |
+| port  | what                            |
+| ----- | ------------------------------- |
+| 10000 | remote-api WebSocket (zenoh-ts) |
+| 8000  | REST plugin (`curl` for debug)  |
+| 7447  | zenoh peer protocol (TCP)       |
 
 Verify:
 
@@ -40,7 +40,7 @@ Viewer:
 http://localhost:5173/?zenoh=ws/127.0.0.1:10000
 ```
 
-(zenoh-ts accepts `ws/host:port` in canon form *or* the URL-style
+(zenoh-ts accepts `ws/host:port` in canon form _or_ the URL-style
 `ws://host:port` — both work.)
 
 ## Tear it down

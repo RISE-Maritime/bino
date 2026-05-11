@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  decodeCameraEnvelope,
-  decodePointCloudEnvelope,
-  DEFAULT_NAMING,
-} from "@bino/core";
+import { decodeCameraEnvelope, decodePointCloudEnvelope, DEFAULT_NAMING } from "@bino/core";
 import { createSensorPublisher, type SensorMeta } from "../src/publisher.js";
 import type { FrameEvent } from "../src/runner.js";
 

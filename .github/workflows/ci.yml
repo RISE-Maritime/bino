@@ -1,0 +1,86 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-format:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    needs: [kernels]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-kernels
+          path: packages/core/wasm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  test:
+    name: Test (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    needs: [kernels]
+    strategy:
+      matrix:
+        package: [core, node]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-kernels
+          path: packages/core/wasm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bino/${{ matrix.package }} test
+
+  kernels:
+    name: Rust Kernels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: kernels
+      - run: cargo install wasm-bindgen-cli@0.2.120
+      - run: cd kernels && cargo test --release
+      - run: pnpm kernels:build
+        env:
+          PATH: ${{ env.HOME }}/.cargo/bin:${{ env.PATH }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm-kernels
+          path: packages/core/wasm/
+          retention-days: 1

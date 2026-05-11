@@ -148,13 +148,8 @@ function buildSceneFromScenario(
 
   const clock = createClock(scenario.modes.clock);
 
-  if (
-    scenario.modes.determinism === "strict" &&
-    scenario.modes.clock !== "stepped"
-  ) {
-    throw new Error(
-      `strict determinism requires stepped clock (got '${scenario.modes.clock}')`,
-    );
+  if (scenario.modes.determinism === "strict" && scenario.modes.clock !== "stepped") {
+    throw new Error(`strict determinism requires stepped clock (got '${scenario.modes.clock}')`);
   }
 
   const runner = new BinoRunner({
@@ -206,4 +201,3 @@ function pickContextSize(opts: NodeServiceOptions): { width: number; height: num
   }
   return { width: w, height: h };
 }
-

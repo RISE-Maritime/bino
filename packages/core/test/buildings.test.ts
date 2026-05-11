@@ -3,16 +3,16 @@ import * as THREE from "three";
 import { buildBuildingsMesh } from "../src/buildings.js";
 import type { BuildingData } from "../src/overpass.js";
 
-const ANCHOR = { lat: 54.10, lon: 10.10, height: 0 };
+const ANCHOR = { lat: 54.1, lon: 10.1, height: 0 };
 
 function fakeBuilding(levels = 3): BuildingData {
   return {
     polygon: [
-      [10.10, 54.10],
-      [10.101, 54.10],
+      [10.1, 54.1],
+      [10.101, 54.1],
       [10.101, 54.101],
-      [10.10, 54.101],
-      [10.10, 54.10],
+      [10.1, 54.101],
+      [10.1, 54.1],
     ],
     heightM: levels * 3,
     tags: { building: "yes", "building:levels": String(levels) },
@@ -63,7 +63,8 @@ describe("buildBuildingsMesh", () => {
     expect(group.children).toHaveLength(1);
     const mesh = group.children[0] as THREE.Mesh;
     const singleGroup = buildBuildingsMesh([b1], ANCHOR);
-    const singleVerts = (singleGroup.children[0] as THREE.Mesh).geometry.attributes["position"]!.count;
+    const singleVerts = (singleGroup.children[0] as THREE.Mesh).geometry.attributes["position"]!
+      .count;
     const mergedVerts = mesh.geometry.attributes["position"]!.count;
     expect(mergedVerts).toBeGreaterThan(singleVerts);
   });

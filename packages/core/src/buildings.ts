@@ -68,17 +68,14 @@ function mergeGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeomet
   if (geometries.length === 1) return geometries[0]!.clone();
 
   let totalVerts = 0;
-  let totalIndices = 0;
   for (const g of geometries) {
     totalVerts += g.attributes["position"]!.count;
-    totalIndices += g.index ? g.index.count : 0;
   }
 
   const positions = new Float32Array(totalVerts * 3);
   const normals = new Float32Array(totalVerts * 3);
   const indices: number[] = [];
   let vertOffset = 0;
-  let idxOffset = 0;
 
   for (const g of geometries) {
     const pos = g.attributes["position"]!;

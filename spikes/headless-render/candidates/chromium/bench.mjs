@@ -42,7 +42,10 @@ const STATIC_FILES = {
 function startServer() {
   const server = createServer((req, res) => {
     const f = STATIC_FILES[req.url];
-    if (!f) { res.writeHead(404).end("not found"); return; }
+    if (!f) {
+      res.writeHead(404).end("not found");
+      return;
+    }
     try {
       const body = readFileSync(f.path);
       res.writeHead(200, { "content-type": f.type, "content-length": body.length });
@@ -105,15 +108,21 @@ async function main() {
   );
 
   console.log(`\n=== chromium :: ${result.width}x${result.height} ===`);
-  console.log(`  frames=${result.frames}  total=${result.totalMs.toFixed(1)}ms  fps=${result.fps.toFixed(2)}  per-frame=${result.perFrameMs.toFixed(2)}ms`);
+  console.log(
+    `  frames=${result.frames}  total=${result.totalMs.toFixed(1)}ms  fps=${result.fps.toFixed(2)}  per-frame=${result.perFrameMs.toFixed(2)}ms`,
+  );
   for (const k of ["step", "render", "readColor", "readDepth"]) {
     const s = result.stage[k];
-    console.log(`  ${k.padEnd(10)} avg=${s.avg.toFixed(2)}ms  p50=${s.p50.toFixed(2)}  p95=${s.p95.toFixed(2)}`);
+    console.log(
+      `  ${k.padEnd(10)} avg=${s.avg.toFixed(2)}ms  p50=${s.p50.toFixed(2)}  p95=${s.p95.toFixed(2)}`,
+    );
   }
   console.log(`  glVersion=${result.glVersion}`);
   console.log(`  glRenderer=${result.glRenderer}`);
   console.log(`  glVendor=${result.glVendor}`);
-  console.log(`  sanity colorBytes=${result.sanity.colorBytes}  hash=${result.sanity.colorHash}  nonZero=${result.sanity.colorNonZero}`);
+  console.log(
+    `  sanity colorBytes=${result.sanity.colorBytes}  hash=${result.sanity.colorHash}  nonZero=${result.sanity.colorNonZero}`,
+  );
   console.log(`  depthStrip: ${JSON.stringify(result.depthStrip)}`);
 
   // Screenshot the canvas as a sanity image.
@@ -121,12 +130,19 @@ async function main() {
   await page.locator("#canvas").screenshot({ path: pngPath });
   console.log(`[chromium] wrote ${pngPath}`);
 
-  writeFileSync(join(outDir, "chromium.json"), JSON.stringify({
-    candidate: "chromium",
-    ok: true,
-    ...result,
-    launchArgs,
-  }, null, 2));
+  writeFileSync(
+    join(outDir, "chromium.json"),
+    JSON.stringify(
+      {
+        candidate: "chromium",
+        ok: true,
+        ...result,
+        launchArgs,
+      },
+      null,
+      2,
+    ),
+  );
 
   await browser.close();
   server.close();
@@ -134,11 +150,18 @@ async function main() {
 
 main().catch((e) => {
   console.error(`[chromium] crashed: ${e.stack || e.message || e}`);
-  writeFileSync(join(outDir, "chromium.json"), JSON.stringify({
-    candidate: "chromium",
-    ok: false,
-    reason: e.message || String(e),
-    stack: e.stack,
-  }, null, 2));
+  writeFileSync(
+    join(outDir, "chromium.json"),
+    JSON.stringify(
+      {
+        candidate: "chromium",
+        ok: false,
+        reason: e.message || String(e),
+        stack: e.stack,
+      },
+      null,
+      2,
+    ),
+  );
   process.exit(1);
 });

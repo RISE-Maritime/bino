@@ -75,7 +75,8 @@ change in `loadBathymetry`.
 ```ts
 function sampleToGrid(
   raster: Float32Array,
-  rasterW: number, rasterH: number,
+  rasterW: number,
+  rasterH: number,
   bbox: BBox,
   gridResM: number,
 ): { heights: Float32Array; gridW: number; gridH: number } {
@@ -119,9 +120,9 @@ approaches raster resolution.
 
 ## Acceptance vs the spike plan
 
-| criterion | result |
-|-----------|--------|
-| Working fetch of Kiel bathymetry | ✓ — GMRT |
-| `geotiff.js` reads it | ✓ |
-| Stats reported | ✓ |
-| PPM dump for visual sanity | ✓ — `out/kiel-bathymetry.ppm` |
+| criterion                        | result                        |
+| -------------------------------- | ----------------------------- |
+| Working fetch of Kiel bathymetry | ✓ — GMRT                      |
+| `geotiff.js` reads it            | ✓                             |
+| Stats reported                   | ✓                             |
+| PPM dump for visual sanity       | ✓ — `out/kiel-bathymetry.ppm` |

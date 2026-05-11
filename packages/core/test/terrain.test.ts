@@ -12,18 +12,18 @@ describe("parseCoastlineElements", () => {
   it("stitches two ways sharing an endpoint into a single chain", () => {
     // Way 1: A → B; Way 2: B → C. Stitched: A → B → C.
     const elements = [
-      { type: "node" as const, id: 1, lat: 54.30, lon: 10.10 },
+      { type: "node" as const, id: 1, lat: 54.3, lon: 10.1 },
       { type: "node" as const, id: 2, lat: 54.32, lon: 10.15 },
-      { type: "node" as const, id: 3, lat: 54.34, lon: 10.20 },
+      { type: "node" as const, id: 3, lat: 54.34, lon: 10.2 },
       { type: "way" as const, id: 100, nodes: [1, 2] },
       { type: "way" as const, id: 101, nodes: [2, 3] },
     ];
     const chains = parseCoastlineElements(elements);
     expect(chains).toHaveLength(1);
     expect(chains[0]!.points).toEqual([
-      [10.10, 54.30],
+      [10.1, 54.3],
       [10.15, 54.32],
-      [10.20, 54.34],
+      [10.2, 54.34],
     ]);
     expect(chains[0]!.closed).toBe(false);
   });
@@ -64,14 +64,20 @@ describe("parseCoastlineElements", () => {
 
 describe("buildTerrainMesh", () => {
   const KIEL = { lat: 54.32, lon: 10.14, height: 0 };
-  const bbox = [10.10, 54.30, 10.18, 54.34] as const;
+  const bbox = [10.1, 54.3, 10.18, 54.34] as const;
 
   function fakeGrid(): BathymetryGrid {
     const w = 4;
     const h = 4;
     const heights = new Float32Array(w * h);
     for (let i = 0; i < heights.length; i++) heights[i] = -10 + i; // ramp
-    return { heights, width: w, height: h, bbox: [...bbox] as [number, number, number, number], cellSizeM: 50 };
+    return {
+      heights,
+      width: w,
+      height: h,
+      bbox: [...bbox] as [number, number, number, number],
+      cellSizeM: 50,
+    };
   }
 
   function fakeCoastline(): CoastlineChain[] {
@@ -143,7 +149,11 @@ describe("buildTerrainMesh", () => {
         name: "no-terrain",
         anchor: KIEL,
         vessels: [],
-        modes: { rendering: "replace" as const, clock: "wall" as const, determinism: "relaxed" as const },
+        modes: {
+          rendering: "replace" as const,
+          clock: "wall" as const,
+          determinism: "relaxed" as const,
+        },
         environment: { time_of_day: "12:00", visibility_m: 20000 },
       };
       // Bypass compileScenario's vessel-min validation for this

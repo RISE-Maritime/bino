@@ -40,13 +40,13 @@ path needs a real WebGL context (one we'd have to wire from
 
 ## What changed since v0.1's WebGPU evaluation
 
-| concern | v0.1 (r160) | v0.4 (r184) |
-|---------|-------------|-------------|
-| `webgpu` npm GLIBCXX issue | ✗ blocked | ✓ resolved |
-| `MeshDepthMaterial(RGBADepthPacking)` support | ✗ rejected | ? not reachable |
-| Vulkan runtime required | yes | yes |
-| Camera-frame readback API | `readRenderTargetPixels` | `readRenderTargetPixelsAsync` (renamed) |
-| Polyfill burden in Node | self/window/canvas/raf/cancelraf | self/window/canvas/raf/cancelraf + `document.createElementNS` |
+| concern                                       | v0.1 (r160)                      | v0.4 (r184)                                                   |
+| --------------------------------------------- | -------------------------------- | ------------------------------------------------------------- |
+| `webgpu` npm GLIBCXX issue                    | ✗ blocked                        | ✓ resolved                                                    |
+| `MeshDepthMaterial(RGBADepthPacking)` support | ✗ rejected                       | ? not reachable                                               |
+| Vulkan runtime required                       | yes                              | yes                                                           |
+| Camera-frame readback API                     | `readRenderTargetPixels`         | `readRenderTargetPixelsAsync` (renamed)                       |
+| Polyfill burden in Node                       | self/window/canvas/raf/cancelraf | self/window/canvas/raf/cancelraf + `document.createElementNS` |
 
 The ergonomic surface improved a little (cleaner error messages,
 async readback). The fundamental setup required to actually run is
@@ -57,27 +57,31 @@ software-Vulkan fallback, which would itself need installing).
 
 v0.1's plan called for v0.4 to evaluate WebGPU because at that
 point we expected:
+
 - Lidar (v0.4) needing GPU compute for ray-casting.
 - Camera rendering being on the critical path.
 
 What actually happened:
+
 - v0.3 took the lidar/radar in a **completely different
   direction** — Rust+WASM kernels with copy-each-frame marshalling.
   Lidar's BVH ray-cast (v0.4b #9) needs zero GPU.
 - Camera rendering at 1080p10 has been comfortable on
   software-rendered `@kmamal/gl` since v0.1; it's not a bottleneck.
 
-So the *actual* benefits of moving to WebGPU at v0.4 are:
+So the _actual_ benefits of moving to WebGPU at v0.4 are:
+
 - Slightly faster camera rendering on hardware GPU.
 - Marginally simpler shader authoring (WGSL > GLSL).
 - Future-proofing.
 
-The *actual* costs are:
+The _actual_ costs are:
+
 - Vulkan + Dawn runtime in production Docker.
 - Parallel polyfill maintenance.
 - Diverging from the headless-render spike's blessed path.
 - Browser viewer would need its own WebGPU setup (and `vite-plugin-wasm`
-  + `vite-plugin-top-level-await` already pull weight).
+  - `vite-plugin-top-level-await` already pull weight).
 
 The math doesn't justify it for v0.4. **The WASM kernel path is
 strictly the same architectural decision a WebGPU-compute lidar
@@ -86,11 +90,11 @@ serves Bino, native CLI tools, and any future wasm-host.
 
 ## Acceptance vs the spike plan
 
-| criterion | result |
-|-----------|--------|
+| criterion                            | result                 |
+| ------------------------------------ | ---------------------- |
 | Working WebGPU camera-render in Node | ✗ — Vulkan unavailable |
-| Working depth-pass equivalent | ✗ — couldn't reach |
-| Yes/defer verdict | ✓ — **defer** |
+| Working depth-pass equivalent        | ✗ — couldn't reach     |
+| Yes/defer verdict                    | ✓ — **defer**          |
 
 ## Concrete recommendation for v0.4b #12
 

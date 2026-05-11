@@ -48,8 +48,6 @@ export function createClock(kind: Modes["clock"]): Clock {
     case "stepped":
       return new SteppedClock();
     case "external_fmi":
-      throw new Error(
-        "external_fmi clock not yet supported (v0.1); use 'wall' or 'stepped'",
-      );
+      throw new Error("external_fmi clock not yet supported (v0.1); use 'wall' or 'stepped'");
   }
 }

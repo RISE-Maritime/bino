@@ -47,8 +47,20 @@ export function componentsFor({
 
   return [
     { amplitude: A * 1.0, wavelength: peakWavelength, dirX: dx, dirZ: dz, steepness: 0.5 },
-    { amplitude: A * 0.6, wavelength: peakWavelength * 0.5, dirX: dx * 0.92 + -dz * 0.39, dirZ: dz * 0.92 + dx * 0.39, steepness: 0.4 },
-    { amplitude: A * 0.4, wavelength: peakWavelength * 0.25, dirX: dx * 0.71 + -dz * 0.71, dirZ: dz * 0.71 + dx * 0.71, steepness: 0.3 },
+    {
+      amplitude: A * 0.6,
+      wavelength: peakWavelength * 0.5,
+      dirX: dx * 0.92 + -dz * 0.39,
+      dirZ: dz * 0.92 + dx * 0.39,
+      steepness: 0.4,
+    },
+    {
+      amplitude: A * 0.4,
+      wavelength: peakWavelength * 0.25,
+      dirX: dx * 0.71 + -dz * 0.71,
+      dirZ: dz * 0.71 + dx * 0.71,
+      steepness: 0.3,
+    },
     { amplitude: A * 0.3, wavelength: peakWavelength * 0.7, dirX: -dz, dirZ: dx, steepness: 0.2 },
   ];
 }
@@ -156,10 +168,9 @@ export function buildSeaMaterial(initialComponents) {
     uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
     uAmplitude: { value: new Float32Array(4) },
     uWavelength: { value: new Float32Array(4) },
-    uDirection: { value: [
-      new THREE.Vector2(), new THREE.Vector2(),
-      new THREE.Vector2(), new THREE.Vector2(),
-    ] },
+    uDirection: {
+      value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()],
+    },
     uSteepness: { value: new Float32Array(4) },
   };
   setSeaComponents(uniforms, initialComponents);

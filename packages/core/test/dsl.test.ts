@@ -155,4 +155,44 @@ describe("Scenario schema", () => {
     (bad.vessels[0]!.sensors[0]! as Record<string, unknown>).exposure_time_s = -0.001;
     expect(() => Scenario.parse(bad)).toThrow();
   });
+
+  it("rejects duplicate sensor ids within a vessel", () => {
+    const bad = structuredClone(validScenario);
+    bad.vessels[0]!.sensors[1] = {
+      ...bad.vessels[0]!.sensors[0]!,
+      type: "lidar",
+      channels: 32,
+      range_m: 200,
+      rate_hz: 10,
+    };
+    (bad.vessels[0]!.sensors[1] as Record<string, unknown>).id = bad.vessels[0]!.sensors[0]!.id;
+    expect(() => Scenario.parse(bad)).toThrow(/duplicate sensor id/);
+  });
+
+  it("rejects duplicate vessel ids", () => {
+    const bad = structuredClone(validScenario);
+    bad.vessels.push({ ...bad.vessels[0]! });
+    expect(() => Scenario.parse(bad)).toThrow(/duplicate vessel id/);
+  });
+
+  it("allows same sensor id on different vessels", () => {
+    const multi = structuredClone(validScenario);
+    multi.vessels.push({
+      id: "target",
+      model: "cargo_90m",
+      pose_source: { type: "zenoh", topic: "target/pose" },
+      sensors: [
+        {
+          id: "bow_camera",
+          type: "camera",
+          mount: { x: 40, y: 0, z: 14 },
+          fov_deg: 90,
+          resolution: [1920, 1080],
+          rate_hz: 10,
+        },
+      ],
+    });
+    const result = Scenario.parse(multi);
+    expect(result.vessels).toHaveLength(2);
+  });
 });

@@ -26,18 +26,28 @@ if (!gl) throw new Error("@kmamal/gl: createGL returned null (no display?)");
 // way @bino/node does (see headless-gl.ts).
 const g = globalThis;
 if (typeof g.requestAnimationFrame !== "function") {
-  g.requestAnimationFrame = (cb) => { setImmediate(() => cb(performance.now())); return 0; };
+  g.requestAnimationFrame = (cb) => {
+    setImmediate(() => cb(performance.now()));
+    return 0;
+  };
 }
 if (typeof g.cancelAnimationFrame !== "function") g.cancelAnimationFrame = () => {};
 if (typeof g.self === "undefined") g.self = g;
 
 const canvas = {
-  width: W, height: H,
-  clientWidth: W, clientHeight: H,
+  width: W,
+  height: H,
+  clientWidth: W,
+  clientHeight: H,
   style: {},
-  addEventListener() {}, removeEventListener() {},
-  getContext() { return gl; },
-  getBoundingClientRect() { return { left: 0, top: 0, width: W, height: H }; },
+  addEventListener() {},
+  removeEventListener() {},
+  getContext() {
+    return gl;
+  },
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: W, height: H };
+  },
 };
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -102,7 +112,10 @@ for (const { label, state } of cases) {
       ppmPixels[dstIdx + 2] = buf[srcIdx + 2];
     }
   }
-  await writeFile(join(outDir, `sea-${label}.ppm`), Buffer.concat([Buffer.from(ppmHeader), ppmPixels]));
+  await writeFile(
+    join(outDir, `sea-${label}.ppm`),
+    Buffer.concat([Buffer.from(ppmHeader), ppmPixels]),
+  );
 
   scene.remove(sea);
   sea.geometry.dispose();
@@ -112,7 +125,9 @@ for (const { label, state } of cases) {
 await writeFile(join(outDir, "summary.json"), JSON.stringify(allStats, null, 2));
 console.log("\nrender stats per sea state:");
 for (const [k, v] of Object.entries(allStats)) {
-  console.log(`  ${k.padEnd(10)} render=${v.render_ms.toFixed(1)} ms  unique_colours=${v.unique_colours}  Hs=${v.state.significant_wave_height} m`);
+  console.log(
+    `  ${k.padEnd(10)} render=${v.render_ms.toFixed(1)} ms  unique_colours=${v.unique_colours}  Hs=${v.state.significant_wave_height} m`,
+  );
 }
 // Sensitivity check: non-calm sea states should produce more unique
 // colours than calm. (Moderate vs Heavy isn't strictly monotonic
@@ -122,23 +137,39 @@ for (const [k, v] of Object.entries(allStats)) {
 const ok =
   allStats.moderate.unique_colours > 2 * allStats.calm.unique_colours &&
   allStats.heavy.unique_colours > 2 * allStats.calm.unique_colours;
-console.log(ok
-  ? "[ok] shader sensitive to sea state — non-calm produces ≥2× the colour variation of calm"
-  : "[fail] sea-state sensitivity check failed");
+console.log(
+  ok
+    ? "[ok] shader sensitive to sea state — non-calm produces ≥2× the colour variation of calm"
+    : "[fail] sea-state sensitivity check failed",
+);
 if (!ok) process.exit(2);
 
 function analyse(b, w, h) {
   const seen = new Set();
-  let minR = 255, maxR = 0, minG = 255, maxG = 0, minB = 255, maxB = 0;
-  let sumR = 0, sumG = 0, sumB = 0;
+  let minR = 255,
+    maxR = 0,
+    minG = 255,
+    maxG = 0,
+    minB = 255,
+    maxB = 0;
+  let sumR = 0,
+    sumG = 0,
+    sumB = 0;
   const n = w * h;
   for (let i = 0; i < n; i++) {
-    const r = b[i * 4], g = b[i * 4 + 1], bl = b[i * 4 + 2];
+    const r = b[i * 4],
+      g = b[i * 4 + 1],
+      bl = b[i * 4 + 2];
     seen.add((r << 16) | (g << 8) | bl);
-    if (r < minR) minR = r; if (r > maxR) maxR = r;
-    if (g < minG) minG = g; if (g > maxG) maxG = g;
-    if (bl < minB) minB = bl; if (bl > maxB) maxB = bl;
-    sumR += r; sumG += g; sumB += bl;
+    if (r < minR) minR = r;
+    if (r > maxR) maxR = r;
+    if (g < minG) minG = g;
+    if (g > maxG) maxG = g;
+    if (bl < minB) minB = bl;
+    if (bl > maxB) maxB = bl;
+    sumR += r;
+    sumG += g;
+    sumB += bl;
   }
   return {
     unique_colours: seen.size,
@@ -147,4 +178,3 @@ function analyse(b, w, h) {
     B: { min: minB, max: maxB, mean: +(sumB / n).toFixed(1) },
   };
 }
-

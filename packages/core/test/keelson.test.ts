@@ -17,9 +17,7 @@ import type { LidarFrame } from "../src/lidar.js";
 
 describe("Keelson topic keys", () => {
   it("constructs frame_transform key for a vessel", () => {
-    expect(poseTopicKey(DEFAULT_NAMING, "ego")).toBe(
-      "bino/@v0/ego/pubsub/frame_transform/sim",
-    );
+    expect(poseTopicKey(DEFAULT_NAMING, "ego")).toBe("bino/@v0/ego/pubsub/frame_transform/sim");
   });
 
   it("constructs image_raw key for a sensor on a vessel", () => {

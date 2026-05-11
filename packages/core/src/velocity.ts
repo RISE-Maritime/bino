@@ -4,9 +4,17 @@ export interface VelocityEstimate {
 }
 
 export class VelocityTracker {
-  private prev = new Map<string, { pos: [number, number, number]; heading: number; time: number }>();
+  private prev = new Map<
+    string,
+    { pos: [number, number, number]; heading: number; time: number }
+  >();
 
-  update(id: string, pos: [number, number, number], heading: number, time: number): VelocityEstimate {
+  update(
+    id: string,
+    pos: [number, number, number],
+    heading: number,
+    time: number,
+  ): VelocityEstimate {
     const prev = this.prev.get(id);
     this.prev.set(id, { pos: [...pos], heading, time });
     if (!prev || time <= prev.time) {

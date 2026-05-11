@@ -5,7 +5,7 @@ import type { Scenario } from "@bino/core";
 // viewer's flat module so we can swap to a fetched YAML at v0.2.
 export const v01Scenario: Scenario = {
   name: "kiel_demo",
-  anchor: { lat: 54.3700, lon: 10.1850, height: 0 },
+  anchor: { lat: 54.37, lon: 10.185, height: 0 },
   vessels: [
     {
       id: "ego",
@@ -19,6 +19,8 @@ export const v01Scenario: Scenario = {
           fov_deg: 90,
           resolution: [640, 480],
           rate_hz: 10,
+          phase_offset_s: 0,
+          exposure_time_s: 0,
         },
         {
           id: "main_lidar",
@@ -27,6 +29,7 @@ export const v01Scenario: Scenario = {
           channels: 32,
           range_m: 200,
           rate_hz: 10,
+          phase_offset_s: 0,
           azimuths: 256,
           fov_h_deg: 360,
         },
@@ -36,6 +39,7 @@ export const v01Scenario: Scenario = {
           mount: { x: 0, y: 35, z: 0 },
           range_m: 2000,
           rotation_rate_hz: 0.4,
+          phase_offset_s: 0,
           beam_width_deg: 1.2,
           spokes_per_rev: 360,
           range_bins: 200,
@@ -58,12 +62,14 @@ export const v01Scenario: Scenario = {
       spectrum: "pierson_moskowitz",
     },
     wind: { speed: 8.5, direction_deg: 220 },
-    // Noon for the demo so the scene reads cleanly. The DSL supports
-    // any HH:MM; v04_kiel.yaml keeps the design-vision evening 20:30.
     time_of_day: "12:00",
     visibility_m: 8000,
+    rain_rate_mm_h: 0,
   },
   terrain: {
     bbox: [10.05, 54.28, 10.25, 54.38] as [number, number, number, number],
+    landmask: true,
+    buildings: true,
+    seamarks: true,
   },
 };

@@ -23,6 +23,7 @@ class FakeChannel {
       this.waiters.shift()!({ value: undefined as unknown as FakeSample, done: true });
   }
   [Symbol.asyncIterator](): AsyncIterableIterator<FakeSample> {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     return {
       next(): Promise<IteratorResult<FakeSample>> {
@@ -184,7 +185,8 @@ describe("createZenohPoseStream", () => {
       vessels: [{ vesselId: "ego", topic: "bino/@v0/ego/pubsub/frame_transform/sim" }],
     });
 
-    channels.get("bino/@v0/ego/pubsub/frame_transform/sim")!
+    channels
+      .get("bino/@v0/ego/pubsub/frame_transform/sim")!
       .push(bytesPayload(new Uint8Array([1, 2, 3]))); // garbage
     channels.get("bino/@v0/ego/pubsub/frame_transform/sim")!.push(
       bytesPayload(

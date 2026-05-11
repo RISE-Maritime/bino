@@ -9,7 +9,7 @@ Animated Gerstner wave synthesis via a custom GLSL ShaderMaterial. Based on GPU 
 Four superimposed Gerstner waves derived from `environment.sea_state`:
 
 - Peak wavelength: `L_peak = g * T^2 / (2*pi)` where T = peak_period, g = 9.81 m/s^2
-- Amplitude: `A = Hs / 4` (significant wave height ~ 4*sigma in standard ocean engineering convention)
+- Amplitude: `A = Hs / 4` (significant wave height ~ 4\*sigma in standard ocean engineering convention)
 - Four components at wavelengths L, 0.5L, 0.25L, 0.7L with decreasing amplitudes (1.0, 0.6, 0.4, 0.3 x A) and increasing directional spread
 
 ### Vertex displacement (GLSL)

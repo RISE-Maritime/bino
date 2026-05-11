@@ -44,7 +44,7 @@ shows the Kiel coastline traced cleanly across the bbox.
 The single chain is **open** — it enters and exits the bbox at the
 edges. That's expected: OSM coastline ways are oriented "land on
 left" but they don't form closed polygons by themselves; closing
-requires *clipping against the bbox edges* and then stitching the
+requires _clipping against the bbox edges_ and then stitching the
 edge-walks into the coastline endpoints to form a sea-vs-land
 boundary.
 
@@ -75,7 +75,7 @@ shaped lines on the water, not a weirdly-flat continent.
 
 - **Fetch:** Node 22 built-in `fetch`. **No HTTP client library
   needed.** Overpass requires `Content-Type:
-  application/x-www-form-urlencoded` + an explicit `Accept` header
+application/x-www-form-urlencoded` + an explicit `Accept` header
   (their server returns 406 if Accept is missing or doesn't match —
   this took two attempts to figure out). User-Agent is courteous,
   not strictly required.
@@ -114,12 +114,12 @@ For v0.4a #3, cache key = `sha256(bbox).hex` or the simple
 
 ## Acceptance vs the spike plan
 
-| criterion | result |
-|-----------|--------|
-| Working Overpass fetch for Kiel | ✓ |
-| Counts & response size | ✓ — 1474/9/147 KB |
-| Verdict on assembly | ✓ — outline-first for v0.4a, filled deferred |
-| SVG visualization | ✓ — `out/kiel-coastline.svg` |
+| criterion                       | result                                       |
+| ------------------------------- | -------------------------------------------- |
+| Working Overpass fetch for Kiel | ✓                                            |
+| Counts & response size          | ✓ — 1474/9/147 KB                            |
+| Verdict on assembly             | ✓ — outline-first for v0.4a, filled deferred |
+| SVG visualization               | ✓ — `out/kiel-coastline.svg`                 |
 
 ## What v0.4a #3 looks like in code
 

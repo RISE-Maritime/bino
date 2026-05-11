@@ -12,9 +12,9 @@ const outDir = join(here, "out");
 
 const CANDIDATES = [
   { name: "headless-gl", path: "candidates/headless-gl/bench.mjs" },
-  { name: "kmamal-gl",   path: "candidates/kmamal-gl/bench.mjs" },
-  { name: "chromium",    path: "candidates/chromium/bench.mjs" },
-  { name: "webgpu",      path: "candidates/webgpu/bench.mjs" },
+  { name: "kmamal-gl", path: "candidates/kmamal-gl/bench.mjs" },
+  { name: "chromium", path: "candidates/chromium/bench.mjs" },
+  { name: "webgpu", path: "candidates/webgpu/bench.mjs" },
 ];
 
 async function runOne(c) {
@@ -62,10 +62,14 @@ for (const c of CANDIDATES) {
 }
 
 const fmt = (n) => (n != null ? n.toFixed(2).padStart(8) : "    --  ");
-console.log(`${"name".padEnd(13)} ${"ok".padEnd(4)} ${"fps".padStart(8)} ${"frame_ms".padStart(8)} ${"render".padStart(8)} ${"rdColor".padStart(8)} ${"rdDepth".padStart(8)}  notes`);
+console.log(
+  `${"name".padEnd(13)} ${"ok".padEnd(4)} ${"fps".padStart(8)} ${"frame_ms".padStart(8)} ${"render".padStart(8)} ${"rdColor".padStart(8)} ${"rdDepth".padStart(8)}  notes`,
+);
 for (const r of rows) {
   const note = r.ok ? (r.glRenderer || "").slice(0, 60) : (r.reason || "").slice(0, 60);
-  console.log(`${r.name.padEnd(13)} ${(r.ok ? "Y" : "N").padEnd(4)} ${fmt(r.fps)} ${fmt(r.perFrameMs)} ${fmt(r.renderMs)} ${fmt(r.readColorMs)} ${fmt(r.readDepthMs)}  ${note}`);
+  console.log(
+    `${r.name.padEnd(13)} ${(r.ok ? "Y" : "N").padEnd(4)} ${fmt(r.fps)} ${fmt(r.perFrameMs)} ${fmt(r.renderMs)} ${fmt(r.readColorMs)} ${fmt(r.readDepthMs)}  ${note}`,
+  );
 }
 
 writeFileSync(join(outDir, "summary.json"), JSON.stringify(rows, null, 2));

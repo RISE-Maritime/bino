@@ -104,8 +104,8 @@ pnpm -C packages/viewer dev     # http://localhost:5173
 
 ### URL parameters
 
-| Parameter | Example | Effect |
-|-----------|---------|--------|
+| Parameter | Example                | Effect                                                   |
+| --------- | ---------------------- | -------------------------------------------------------- |
 | `zenoh`   | `ws://127.0.0.1:10000` | Connect to a Zenoh router for live poses and sensor data |
 
 ### Controls
@@ -147,13 +147,13 @@ Runs Zod validation against all `.yaml` files in `scenarios/` and
 
 ### Example scenarios
 
-| File | Purpose |
-|------|---------|
-| `v01_smoke.yaml` | Minimal smoke test |
-| `v04_kiel.yaml` | Full environment: sea state, terrain, camera + lidar + radar |
-| `v05_kiel.yaml` | Extended Kiel scenario |
-| `v06_inject.yaml` | Inject mode with strict determinism, no terrain |
-| `v06_strict.yaml` | Replace mode with strict determinism and terrain |
+| File              | Purpose                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `v01_smoke.yaml`  | Minimal smoke test                                           |
+| `v04_kiel.yaml`   | Full environment: sea state, terrain, camera + lidar + radar |
+| `v05_kiel.yaml`   | Extended Kiel scenario                                       |
+| `v06_inject.yaml` | Inject mode with strict determinism, no terrain              |
+| `v06_strict.yaml` | Replace mode with strict determinism and terrain             |
 
 ### Templates
 
@@ -185,18 +185,18 @@ required.
 
 ### Clock sources
 
-| Value | Behaviour |
-|-------|-----------|
-| `wall` | Real-time wall clock. Default for interactive use. |
-| `stepped` | Frame-index-driven clock. Deterministic; required for `strict` determinism. |
-| `external_fmi` | FMI3 master clock. Stub -- not yet implemented. |
+| Value          | Behaviour                                                                   |
+| -------------- | --------------------------------------------------------------------------- |
+| `wall`         | Real-time wall clock. Default for interactive use.                          |
+| `stepped`      | Frame-index-driven clock. Deterministic; required for `strict` determinism. |
+| `external_fmi` | FMI3 master clock. Stub -- not yet implemented.                             |
 
 ### Determinism levels
 
-| Value | Behaviour |
-|-------|-----------|
-| `strict` | Bit-for-bit reproducibility across runs. Requires `stepped` clock. Renderer config is locked (no MSAA, fixed precision). |
-| `relaxed` | No reproducibility guarantees. Suitable for live demos and development. |
+| Value     | Behaviour                                                                                                                |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `strict`  | Bit-for-bit reproducibility across runs. Requires `stepped` clock. Renderer config is locked (no MSAA, fixed precision). |
+| `relaxed` | No reproducibility guarantees. Suitable for live demos and development.                                                  |
 
 To set up a fully deterministic run, combine `clock: stepped` with
 `determinism: strict`. See `scenarios/v06_strict.yaml` for a working
@@ -219,11 +219,11 @@ changes.
 
 ### Subjects
 
-| Sensor | Subject | Schema |
-|--------|---------|--------|
-| Camera | `image_raw` | foxglove.RawImage |
-| Lidar  | `point_cloud` | foxglove.PointCloud |
-| Radar  | `radar_sweep` | keelson.RadarSweep |
+| Sensor       | Subject           | Schema                  |
+| ------------ | ----------------- | ----------------------- |
+| Camera       | `image_raw`       | foxglove.RawImage       |
+| Lidar        | `point_cloud`     | foxglove.PointCloud     |
+| Radar        | `radar_sweep`     | keelson.RadarSweep      |
 | Pose (input) | `frame_transform` | foxglove.FrameTransform |
 
 ### Zenoh router
@@ -237,11 +237,11 @@ docker compose -f tests/zenoh-router/docker-compose.yml up -d
 
 Endpoints (all bound to `127.0.0.1`):
 
-| Port | Protocol |
-|------|----------|
+| Port  | Protocol                                 |
+| ----- | ---------------------------------------- |
 | 10000 | WebSocket (remote-api, used by zenoh-ts) |
-| 7447 | Zenoh peer protocol (TCP) |
-| 8000 | REST plugin (useful for debugging) |
+| 7447  | Zenoh peer protocol (TCP)                |
+| 8000  | REST plugin (useful for debugging)       |
 
 Verify the router is running:
 

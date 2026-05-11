@@ -217,8 +217,18 @@ export async function prepareTerrain(
   const [coastline, bathymetry, buildings, seamarks] = await Promise.all([
     loadCoastline(bbox),
     loadBathymetry(bbox),
-    fetchBuildings ? loadBuildings(bbox).catch((e) => { console.warn("buildings fetch failed:", e); return [] as BuildingData[]; }) : ([] as BuildingData[]),
-    fetchSeamarks ? loadSeamarks(bbox).catch((e) => { console.warn("seamarks fetch failed:", e); return [] as SeamarkData[]; }) : ([] as SeamarkData[]),
+    fetchBuildings
+      ? loadBuildings(bbox).catch((e) => {
+          console.warn("buildings fetch failed:", e);
+          return [] as BuildingData[];
+        })
+      : ([] as BuildingData[]),
+    fetchSeamarks
+      ? loadSeamarks(bbox).catch((e) => {
+          console.warn("seamarks fetch failed:", e);
+          return [] as SeamarkData[];
+        })
+      : ([] as SeamarkData[]),
   ]);
   return { coastline, bathymetry, buildings, seamarks };
 }
@@ -286,9 +296,8 @@ function buildSeabedMesh(grid: BathymetryGrid, anchor: Anchor): THREE.Mesh {
 function depthToColor(h: number): [number, number, number] {
   if (h >= 0) {
     const t = Math.min(1, h / 60);
-    return [0.85 - 0.30 * t, 0.78 - 0.10 * t, 0.55 - 0.20 * t];
+    return [0.85 - 0.3 * t, 0.78 - 0.1 * t, 0.55 - 0.2 * t];
   }
   const t = Math.min(1, -h / 20);
-  return [0.04 + 0.02 * (1 - t), 0.10 + 0.02 * (1 - t), 0.23 + 0.05 * (1 - t)];
+  return [0.04 + 0.02 * (1 - t), 0.1 + 0.02 * (1 - t), 0.23 + 0.05 * (1 - t)];
 }
-

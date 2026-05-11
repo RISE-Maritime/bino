@@ -90,7 +90,8 @@ function makeCheckerTexture(size) {
     for (let x = 0; x < size; x++) {
       const i = (y * size + x) * 4;
       const cell = (((x >> 4) ^ (y >> 4)) & 1) === 1;
-      const dx = x - size / 2, dy = y - size / 2;
+      const dx = x - size / 2,
+        dy = y - size / 2;
       const r = Math.sqrt(dx * dx + dy * dy) / (size / 2);
       const v = cell ? 200 : 60;
       const tint = Math.max(0, 1 - r) * 60;

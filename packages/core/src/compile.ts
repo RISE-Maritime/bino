@@ -13,9 +13,7 @@ export function compileScenario(input: unknown): CompiledScene {
   const parsed = Scenario.parse(input);
 
   if (parsed.modes.determinism === "strict" && parsed.modes.clock !== "stepped") {
-    throw new Error(
-      `strict determinism requires stepped clock (got '${parsed.modes.clock}')`,
-    );
+    throw new Error(`strict determinism requires stepped clock (got '${parsed.modes.clock}')`);
   }
 
   if (parsed.modes.rendering === "inject" && parsed.modes.determinism !== "strict") {

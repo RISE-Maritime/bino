@@ -31,9 +31,7 @@ function buildSyntheticTerrain(): THREE.Group {
     const x = positions[i]!;
     const z = positions[i + 2]!;
     positions[i + 1] =
-      Math.sin(x * 0.002) * Math.cos(z * 0.003) * 15 +
-      Math.sin(x * 0.01 + z * 0.008) * 3 -
-      8;
+      Math.sin(x * 0.002) * Math.cos(z * 0.003) * 15 + Math.sin(x * 0.01 + z * 0.008) * 3 - 8;
   }
   geom.computeVertexNormals();
   const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color: 0x808080 }));
@@ -289,9 +287,7 @@ describe("lidar benchmark: GL depth-pass vs Rust ray-cast", () => {
       const first = CONFIGS[0]!;
       const w = wasmResults[first.label];
       if (w) {
-        console.log(
-          `  WASM ray-cast ${first.label}: p50=${fmtMs(w.p50)}ms  p95=${fmtMs(w.p95)}ms`,
-        );
+        console.log(`  WASM ray-cast ${first.label}: p50=${fmtMs(w.p50)}ms  p95=${fmtMs(w.p95)}ms`);
       }
       console.log(
         "  GL depth-pass: skipped (no GL context)." +

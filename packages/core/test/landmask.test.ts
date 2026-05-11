@@ -11,7 +11,7 @@ describe("clipChainToBbox", () => {
     const chain: CoastlineChain = {
       points: [
         [10.05, 54.05],
-        [10.10, 54.10],
+        [10.1, 54.1],
         [10.15, 54.15],
       ],
       closed: false,
@@ -26,8 +26,8 @@ describe("clipChainToBbox", () => {
   it("clips a chain that exits the bbox on the east edge", () => {
     const chain: CoastlineChain = {
       points: [
-        [10.10, 54.10],
-        [10.30, 54.10], // outside east
+        [10.1, 54.1],
+        [10.3, 54.1], // outside east
       ],
       closed: false,
     };
@@ -36,14 +36,14 @@ describe("clipChainToBbox", () => {
     expect(clipped[0]!.exitOnBbox).toBe(true);
     const last = clipped[0]!.points[clipped[0]!.points.length - 1]!;
     expect(last[0]).toBeCloseTo(10.2, 6); // clipped to east edge
-    expect(last[1]).toBeCloseTo(54.10, 6);
+    expect(last[1]).toBeCloseTo(54.1, 6);
   });
 
   it("clips a chain that enters from outside the bbox", () => {
     const chain: CoastlineChain = {
       points: [
-        [9.90, 54.10], // outside west
-        [10.10, 54.10],
+        [9.9, 54.1], // outside west
+        [10.1, 54.1],
       ],
       closed: false,
     };
@@ -55,17 +55,6 @@ describe("clipChainToBbox", () => {
   });
 
   it("produces two sub-chains when a chain exits and re-enters", () => {
-    const chain: CoastlineChain = {
-      points: [
-        [10.05, 54.10],
-        [10.25, 54.10], // exits east
-        [10.25, 54.15], // outside
-        [10.05, 54.15], // re-enters from east going west — but this enters from east
-      ],
-      closed: false,
-    };
-    // Actually this chain goes: inside → exits east → outside → comes back
-    // Let me construct it more carefully
     const chain2: CoastlineChain = {
       points: [
         [10.05, 54.05], // inside
@@ -98,8 +87,8 @@ describe("clipChainToBbox", () => {
   it("handles a segment that crosses the bbox without endpoints inside", () => {
     const chain: CoastlineChain = {
       points: [
-        [9.5, 54.10], // outside west
-        [10.5, 54.10], // outside east
+        [9.5, 54.1], // outside west
+        [10.5, 54.1], // outside east
       ],
       closed: false,
     };
@@ -119,7 +108,7 @@ describe("assemblePolygons", () => {
         points: [
           [10.08, 54.08],
           [10.12, 54.08],
-          [10.10, 54.12],
+          [10.1, 54.12],
           [10.08, 54.08],
         ],
         closed: true,
@@ -137,10 +126,10 @@ describe("assemblePolygons", () => {
     const chains: CoastlineChain[] = [
       {
         points: [
-          [9.8, 54.10], // outside west
-          [10.05, 54.10],
-          [10.15, 54.10],
-          [10.4, 54.10], // outside east
+          [9.8, 54.1], // outside west
+          [10.05, 54.1],
+          [10.15, 54.1],
+          [10.4, 54.1], // outside east
         ],
         closed: false,
       },
@@ -152,10 +141,18 @@ describe("assemblePolygons", () => {
     // Land is on the left (north side) — polygon must include NE and
     // NW corners, NOT SE/SW corners.
     const ring = polygons[0]!.ring;
-    const hasNE = ring.some(([lon, lat]) => Math.abs(lon - 10.2) < 1e-6 && Math.abs(lat - 54.2) < 1e-6);
-    const hasNW = ring.some(([lon, lat]) => Math.abs(lon - 10.0) < 1e-6 && Math.abs(lat - 54.2) < 1e-6);
-    const hasSE = ring.some(([lon, lat]) => Math.abs(lon - 10.2) < 1e-6 && Math.abs(lat - 54.0) < 1e-6);
-    const hasSW = ring.some(([lon, lat]) => Math.abs(lon - 10.0) < 1e-6 && Math.abs(lat - 54.0) < 1e-6);
+    const hasNE = ring.some(
+      ([lon, lat]) => Math.abs(lon - 10.2) < 1e-6 && Math.abs(lat - 54.2) < 1e-6,
+    );
+    const hasNW = ring.some(
+      ([lon, lat]) => Math.abs(lon - 10.0) < 1e-6 && Math.abs(lat - 54.2) < 1e-6,
+    );
+    const hasSE = ring.some(
+      ([lon, lat]) => Math.abs(lon - 10.2) < 1e-6 && Math.abs(lat - 54.0) < 1e-6,
+    );
+    const hasSW = ring.some(
+      ([lon, lat]) => Math.abs(lon - 10.0) < 1e-6 && Math.abs(lat - 54.0) < 1e-6,
+    );
     expect(hasNE).toBe(true);
     expect(hasNW).toBe(true);
     expect(hasSE).toBe(false);
@@ -190,7 +187,7 @@ describe("assemblePolygons", () => {
 });
 
 describe("buildLandmaskMesh", () => {
-  const ANCHOR = { lat: 54.10, lon: 10.10, height: 0 };
+  const ANCHOR = { lat: 54.1, lon: 10.1, height: 0 };
 
   it("returns a named group", () => {
     const chains: CoastlineChain[] = [];
@@ -205,7 +202,7 @@ describe("buildLandmaskMesh", () => {
         points: [
           [10.08, 54.08],
           [10.12, 54.08],
-          [10.10, 54.12],
+          [10.1, 54.12],
           [10.08, 54.08],
         ],
         closed: true,
@@ -224,7 +221,7 @@ describe("buildLandmaskMesh", () => {
         points: [
           [10.08, 54.08],
           [10.12, 54.08],
-          [10.10, 54.12],
+          [10.1, 54.12],
           [10.08, 54.08],
         ],
         closed: true,
@@ -239,8 +236,8 @@ describe("buildLandmaskMesh", () => {
     const chains: CoastlineChain[] = [
       {
         points: [
-          [9.8, 54.10],
-          [10.4, 54.10],
+          [9.8, 54.1],
+          [10.4, 54.1],
         ],
         closed: false,
       },

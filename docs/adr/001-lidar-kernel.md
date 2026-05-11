@@ -34,12 +34,12 @@ no GPU).
 
 ### 360° sweep comparison
 
-| Config | Rays | WASM p50 | GL p50 (4-face) | Winner |
-|---|---|---|---|---|
-| 32×360 (v04_kiel-class) | 11.5K | **1.1 ms** | 3.8 ms | WASM 3.5× |
-| 128×512 (OS2 standard) | 65K | 17.9 ms | **4.9 ms** | GL 3.6× |
-| 128×1024 (OS2 high-res) | 131K | 17.1 ms | **4.9 ms** | GL 3.5× |
-| 128×2048 (OS2 dense) | 262K | 15.9 ms | **5.3 ms** | GL 3.0× |
+| Config                  | Rays  | WASM p50   | GL p50 (4-face) | Winner    |
+| ----------------------- | ----- | ---------- | --------------- | --------- |
+| 32×360 (v04_kiel-class) | 11.5K | **1.1 ms** | 3.8 ms          | WASM 3.5× |
+| 128×512 (OS2 standard)  | 65K   | 17.9 ms    | **4.9 ms**      | GL 3.6×   |
+| 128×1024 (OS2 high-res) | 131K  | 17.1 ms    | **4.9 ms**      | GL 3.5×   |
+| 128×2048 (OS2 dense)    | 262K  | 15.9 ms    | **5.3 ms**      | GL 3.0×   |
 
 ### Analysis
 

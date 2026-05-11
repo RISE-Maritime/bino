@@ -37,9 +37,9 @@ Candidates:
   to sample than K. Common in ITU-R models. Less physical basis than
   K but often indistinguishable in practice for non-coherent radar.
 - **GIT (Georgia Tech) empirical model.** σ₀ tables from sea state
-  + frequency + grazing angle + polarization. Not a distribution —
-  gives mean σ₀, not per-cell statistics. Often paired with K or
-  Weibull for the cell-to-cell variation.
+  - frequency + grazing angle + polarization. Not a distribution —
+    gives mean σ₀, not per-cell statistics. Often paired with K or
+    Weibull for the cell-to-cell variation.
 
 The spike should prototype the K-distribution (it's the standard)
 and compare output against a simpler Weibull to see if the

@@ -31,7 +31,7 @@ period, direction). Settle:
   flat-shaded by accident).
 - A PPM dump for visual sanity.
 - Sea-state parameters wired to a `setSeaState({height, period,
-  direction})` API the v0.4a integration can call.
+direction})` API the v0.4a integration can call.
 - `results.md` with the verdict + the shader source ready to lift
   into `@bino/core`.
 

@@ -108,7 +108,10 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   controls.maxDistance = 50_000;
   controls.update();
 
-  interface AnyKernel { step(time: number): CameraFrame | LidarFrame | RadarFrame; dispose(): void }
+  interface AnyKernel {
+    step(time: number): CameraFrame | LidarFrame | RadarFrame;
+    dispose(): void;
+  }
   const kernels: AnyKernel[] = [];
   const cameraHelpers: THREE.CameraHelper[] = [];
   const radarOverlays: Array<{ ring: THREE.LineLoop }> = [];
@@ -170,7 +173,14 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   const sensorOverlays: SensorOverlay[] = [];
   const previewCanvases = opts.previewCanvases;
 
-  function createOverlay(sensorId: string, sensorNode: THREE.Object3D, type: "lidar" | "radar", range: number, kernel: AnyKernel, maxPts: number): void {
+  function createOverlay(
+    sensorId: string,
+    sensorNode: THREE.Object3D,
+    type: "lidar" | "radar",
+    range: number,
+    kernel: AnyKernel,
+    maxPts: number,
+  ): void {
     const ovPos = new THREE.BufferAttribute(new Float32Array(maxPts * 3), 3);
     ovPos.setUsage(THREE.DynamicDrawUsage);
     const ovCol = new THREE.BufferAttribute(new Float32Array(maxPts * 3), 3);
@@ -179,12 +189,30 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     ovGeo.setAttribute("position", ovPos);
     ovGeo.setAttribute("color", ovCol);
     ovGeo.setDrawRange(0, 0);
-    const ovMat = new THREE.PointsMaterial({ size: 4, vertexColors: true, sizeAttenuation: false, depthTest: true, transparent: true, opacity: 0.85 });
+    const ovMat = new THREE.PointsMaterial({
+      size: 4,
+      vertexColors: true,
+      sizeAttenuation: false,
+      depthTest: true,
+      transparent: true,
+      opacity: 0.85,
+    });
     const ovPts = new THREE.Points(ovGeo, ovMat);
     ovPts.visible = false;
     ovPts.renderOrder = 1;
     built.scene.add(ovPts);
-    sensorOverlays.push({ sensorId, sensorNode, type, range, kernel, points: ovPts, geometry: ovGeo, positionAttr: ovPos, colorAttr: ovCol, maxPoints: maxPts });
+    sensorOverlays.push({
+      sensorId,
+      sensorNode,
+      type,
+      range,
+      kernel,
+      points: ovPts,
+      geometry: ovGeo,
+      positionAttr: ovPos,
+      colorAttr: ovCol,
+      maxPoints: maxPts,
+    });
   }
 
   for (const vessel of compiled.vessels) {
@@ -210,7 +238,14 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           offscreen.width = sensor.resolution[0];
           offscreen.height = sensor.resolution[1];
           const imageData = new ImageData(sensor.resolution[0], sensor.resolution[1]);
-          previews.push({ type: "camera", id: sensor.id, kernel, canvas: previewCanvas, offscreen, imageData });
+          previews.push({
+            type: "camera",
+            id: sensor.id,
+            kernel,
+            canvas: previewCanvas,
+            offscreen,
+            imageData,
+          });
         }
       } else if (sensor.type === "lidar") {
         const kernel = createLidarKernelWasm({
@@ -230,7 +265,12 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           lidarRenderer.setClearColor(0x0a1626);
           lidarRenderer.setSize(previewCanvas.width, previewCanvas.height, false);
           const lidarScene = new THREE.Scene();
-          const lidarCam = new THREE.PerspectiveCamera(50, previewCanvas.width / Math.max(1, previewCanvas.height), 0.5, range * 3);
+          const lidarCam = new THREE.PerspectiveCamera(
+            50,
+            previewCanvas.width / Math.max(1, previewCanvas.height),
+            0.5,
+            range * 3,
+          );
           lidarCam.position.set(range * 0.3, range * 0.4, range * 0.3);
           lidarCam.lookAt(0, 0, -range * 0.15);
           const lidarControls = new OrbitControls(lidarCam, previewCanvas);
@@ -241,8 +281,16 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           const grid = new THREE.GridHelper(range * 2, 8, 0x1f3a4d, 0x152535);
           lidarScene.add(grid);
           lidarScene.add(new THREE.AxesHelper(range * 0.12));
-          const fwdGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -range)]);
-          lidarScene.add(new THREE.Line(fwdGeo, new THREE.LineBasicMaterial({ color: 0x55cc77, transparent: true, opacity: 0.3 })));
+          const fwdGeo = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(0, 0, -range),
+          ]);
+          lidarScene.add(
+            new THREE.Line(
+              fwdGeo,
+              new THREE.LineBasicMaterial({ color: 0x55cc77, transparent: true, opacity: 0.3 }),
+            ),
+          );
           const posAttr = new THREE.BufferAttribute(new Float32Array(maxPoints * 3), 3);
           posAttr.setUsage(THREE.DynamicDrawUsage);
           const colAttr = new THREE.BufferAttribute(new Float32Array(maxPoints * 3), 3);
@@ -251,13 +299,30 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           pcGeo.setAttribute("position", posAttr);
           pcGeo.setAttribute("color", colAttr);
           pcGeo.setDrawRange(0, 0);
-          lidarScene.add(new THREE.Points(pcGeo, new THREE.PointsMaterial({ size: 3, vertexColors: true, sizeAttenuation: false })));
+          lidarScene.add(
+            new THREE.Points(
+              pcGeo,
+              new THREE.PointsMaterial({ size: 3, vertexColors: true, sizeAttenuation: false }),
+            ),
+          );
           lidarScene.add(new THREE.AmbientLight(0xffffff, 0.5));
           previews.push({
-            type: "lidar", id: sensor.id, kernel, canvas: previewCanvas, range,
-            sensorNode, renderer3d: lidarRenderer, scene3d: lidarScene, camera3d: lidarCam, controls3d: lidarControls,
-            positionAttr: posAttr, colorAttr: colAttr, pointGeometry: pcGeo, maxPoints,
-            prevW: previewCanvas.width, prevH: previewCanvas.height,
+            type: "lidar",
+            id: sensor.id,
+            kernel,
+            canvas: previewCanvas,
+            range,
+            sensorNode,
+            renderer3d: lidarRenderer,
+            scene3d: lidarScene,
+            camera3d: lidarCam,
+            controls3d: lidarControls,
+            positionAttr: posAttr,
+            colorAttr: colAttr,
+            pointGeometry: pcGeo,
+            maxPoints,
+            prevW: previewCanvas.width,
+            prevH: previewCanvas.height,
           });
         }
       } else if (sensor.type === "radar_marine") {
@@ -275,9 +340,19 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         createOverlay(sensor.id, sensorNode, "radar", sensor.range_m, kernel, 65536);
         if (previewCanvas) {
           previews.push({
-            type: "radar", id: sensor.id, kernel, canvas: previewCanvas,
+            type: "radar",
+            id: sensor.id,
+            kernel,
+            canvas: previewCanvas,
             range: sensor.range_m,
-            ppiCache: { lut: new Uint32Array(0), imageData: new ImageData(1, 1), w: 0, h: 0, nSpokes: 0, nBins: 0 },
+            ppiCache: {
+              lut: new Uint32Array(0),
+              imageData: new ImageData(1, 1),
+              w: 0,
+              h: 0,
+              nSpokes: 0,
+              nBins: 0,
+            },
           });
         }
       }
@@ -341,7 +416,8 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     for (const p of previews) {
       const out = latestByKernel.get(p.kernel);
       if (!out) continue;
-      if (p.type === "camera") drawCameraPreview(p.canvas, p.offscreen, p.imageData, out as CameraFrame);
+      if (p.type === "camera")
+        drawCameraPreview(p.canvas, p.offscreen, p.imageData, out as CameraFrame);
       else if (p.type === "lidar") drawLidarPreview3d(p, out as LidarFrame);
       else if (p.type === "radar") drawPpi(p.canvas, out as RadarFrame, p.range, p.ppiCache);
     }
@@ -430,7 +506,11 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
       if (ov) ov.points.visible = visible;
     },
     getOverlaySensors() {
-      return sensorOverlays.map((o) => ({ id: o.sensorId, type: o.type, visible: o.points.visible }));
+      return sensorOverlays.map((o) => ({
+        id: o.sensorId,
+        type: o.type,
+        visible: o.points.visible,
+      }));
     },
   };
 }
@@ -475,10 +555,34 @@ function drawCameraPreview(
 }
 
 function drawLidarPreview3d(
-  p: { renderer3d: THREE.WebGLRenderer; scene3d: THREE.Scene; camera3d: THREE.PerspectiveCamera; controls3d: OrbitControls; canvas: HTMLCanvasElement; positionAttr: THREE.BufferAttribute; colorAttr: THREE.BufferAttribute; pointGeometry: THREE.BufferGeometry; range: number; maxPoints: number; prevW: number; prevH: number },
+  p: {
+    renderer3d: THREE.WebGLRenderer;
+    scene3d: THREE.Scene;
+    camera3d: THREE.PerspectiveCamera;
+    controls3d: OrbitControls;
+    canvas: HTMLCanvasElement;
+    positionAttr: THREE.BufferAttribute;
+    colorAttr: THREE.BufferAttribute;
+    pointGeometry: THREE.BufferGeometry;
+    range: number;
+    maxPoints: number;
+    prevW: number;
+    prevH: number;
+  },
   frame: LidarFrame,
 ): void {
-  const { renderer3d, scene3d, camera3d, controls3d, canvas, positionAttr, colorAttr, pointGeometry, range, maxPoints } = p;
+  const {
+    renderer3d,
+    scene3d,
+    camera3d,
+    controls3d,
+    canvas,
+    positionAttr,
+    colorAttr,
+    pointGeometry,
+    range,
+    maxPoints,
+  } = p;
 
   if (p.prevW !== canvas.width || p.prevH !== canvas.height) {
     renderer3d.setSize(canvas.width, canvas.height, false);
@@ -520,7 +624,13 @@ const _ovQuat = new THREE.Quaternion();
 const _ovEuler = new THREE.Euler();
 
 function updateLidarOverlay(
-  ov: { sensorNode: THREE.Object3D; positionAttr: THREE.BufferAttribute; colorAttr: THREE.BufferAttribute; geometry: THREE.BufferGeometry; maxPoints: number },
+  ov: {
+    sensorNode: THREE.Object3D;
+    positionAttr: THREE.BufferAttribute;
+    colorAttr: THREE.BufferAttribute;
+    geometry: THREE.BufferGeometry;
+    maxPoints: number;
+  },
   frame: LidarFrame,
 ): void {
   const count = Math.min(frame.count, ov.maxPoints);
@@ -543,7 +653,14 @@ function updateLidarOverlay(
 }
 
 function updateRadarOverlay(
-  ov: { sensorNode: THREE.Object3D; positionAttr: THREE.BufferAttribute; colorAttr: THREE.BufferAttribute; geometry: THREE.BufferGeometry; maxPoints: number; range: number },
+  ov: {
+    sensorNode: THREE.Object3D;
+    positionAttr: THREE.BufferAttribute;
+    colorAttr: THREE.BufferAttribute;
+    geometry: THREE.BufferGeometry;
+    maxPoints: number;
+    range: number;
+  },
   sweep: RadarFrame,
 ): void {
   const positions = ov.positionAttr.array as Float32Array;
@@ -553,7 +670,9 @@ function updateRadarOverlay(
   ov.sensorNode.getWorldQuaternion(_ovQuat);
   _ovEuler.setFromQuaternion(_ovQuat, "YXZ");
   const heading = _ovEuler.y;
-  const sx = _ovVec.x, sy = _ovVec.y, sz = _ovVec.z;
+  const sx = _ovVec.x,
+    sy = _ovVec.y,
+    sz = _ovVec.z;
   let count = 0;
   for (const spoke of sweep.spokes) {
     const wa = heading + spoke.azimuth;
@@ -578,7 +697,7 @@ function updateRadarOverlay(
   ov.geometry.setDrawRange(0, count);
 }
 
-const PPI_LUT_INVALID = 0xFFFFFFFF;
+const PPI_LUT_INVALID = 0xffffffff;
 
 function buildPpiLut(w: number, h: number, nSpokes: number, nBins: number): Uint32Array {
   const cx = w / 2;
@@ -603,7 +722,12 @@ function buildPpiLut(w: number, h: number, nSpokes: number, nBins: number): Uint
   return lut;
 }
 
-function drawPpi(canvas: HTMLCanvasElement, sweep: RadarFrame, range: number, cache: PpiCache): void {
+function drawPpi(
+  canvas: HTMLCanvasElement,
+  sweep: RadarFrame,
+  range: number,
+  cache: PpiCache,
+): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const w = canvas.width;
@@ -626,7 +750,10 @@ function drawPpi(canvas: HTMLCanvasElement, sweep: RadarFrame, range: number, ca
 
   // Background fill
   for (let i = 0; i < data.length; i += 4) {
-    data[i] = 10; data[i + 1] = 22; data[i + 2] = 38; data[i + 3] = 255;
+    data[i] = 10;
+    data[i + 1] = 22;
+    data[i + 2] = 38;
+    data[i + 3] = 255;
   }
 
   // Fill pixels from polar LUT — pixel-perfect coverage, no gaps
@@ -635,7 +762,7 @@ function drawPpi(canvas: HTMLCanvasElement, sweep: RadarFrame, range: number, ca
     const entry = lut[i]!;
     if (entry === PPI_LUT_INVALID) continue;
     const spokeIdx = entry >>> 16;
-    const binIdx = entry & 0xFFFF;
+    const binIdx = entry & 0xffff;
     const v = sweep.spokes[spokeIdx]!.intensity[binIdx]!;
     if (v === 0) continue;
     const norm = Math.sqrt(v / 255);
@@ -694,18 +821,28 @@ const BUILDING_Y = 0.5;
 function buildingsToObstacles(
   buildings: BuildingData[],
   anchor: Anchor,
-): Array<{ position: [number, number, number]; heading: number; half_extents: [number, number, number] }> {
+): Array<{
+  position: [number, number, number];
+  heading: number;
+  half_extents: [number, number, number];
+}> {
   return buildings.map((bldg) => {
     const enu = bldg.polygon.map(([lon, lat]) => geodeticToEnu({ lat, lon, height: 0 }, anchor));
     const es = enu.map((p) => p.e);
     const ns = enu.map((p) => p.n);
-    const minE = Math.min(...es), maxE = Math.max(...es);
-    const minN = Math.min(...ns), maxN = Math.max(...ns);
+    const minE = Math.min(...es),
+      maxE = Math.max(...es);
+    const minN = Math.min(...ns),
+      maxN = Math.max(...ns);
     const halfX = Math.max((maxE - minE) / 2, 0.5);
     const halfZ = Math.max((maxN - minN) / 2, 0.5);
     const halfY = bldg.heightM / 2;
     return {
-      position: [(minE + maxE) / 2, BUILDING_Y + halfY, -((minN + maxN) / 2)] as [number, number, number],
+      position: [(minE + maxE) / 2, BUILDING_Y + halfY, -((minN + maxN) / 2)] as [
+        number,
+        number,
+        number,
+      ],
       heading: 0,
       half_extents: [halfX, halfY, halfZ] as [number, number, number],
     };

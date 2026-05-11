@@ -12,6 +12,6 @@ export async function loadScenario(path: string): Promise<CompiledScene> {
     return compileScenario((data as { scenario: unknown }).scenario);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(`${path}: ${detail}`);
+    throw new Error(`${path}: ${detail}`, { cause: err });
   }
 }

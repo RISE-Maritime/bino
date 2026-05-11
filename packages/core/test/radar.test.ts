@@ -1,5 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-import * as THREE from "three";
+import { describe, expect, it } from "vitest";
 import { compileScenario } from "../src/compile.js";
 import { buildScene } from "../src/scene.js";
 import { applyPoseUpdate } from "../src/pose.js";

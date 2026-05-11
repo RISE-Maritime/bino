@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { buildSeamarksMesh } from "../src/seamarks.js";
 import type { SeamarkData } from "../src/overpass.js";
 
-const ANCHOR = { lat: 54.10, lon: 10.10, height: 0 };
+const ANCHOR = { lat: 54.1, lon: 10.1, height: 0 };
 
 describe("buildSeamarksMesh", () => {
   it("returns a named group", () => {
@@ -35,11 +35,15 @@ describe("buildSeamarksMesh", () => {
 
   it("creates different geometry for a light vs buoy", () => {
     const buoy: SeamarkData = {
-      lat: 54.11, lon: 10.11, type: "buoy_lateral",
+      lat: 54.11,
+      lon: 10.11,
+      type: "buoy_lateral",
       tags: { "seamark:type": "buoy_lateral" },
     };
     const light: SeamarkData = {
-      lat: 54.12, lon: 10.12, type: "light_major",
+      lat: 54.12,
+      lon: 10.12,
+      type: "light_major",
       tags: { "seamark:type": "light_major" },
     };
     const buoyGroup = buildSeamarksMesh([buoy], ANCHOR);
@@ -56,7 +60,9 @@ describe("buildSeamarksMesh", () => {
 
   it("positions seamark at the correct ENU offset", () => {
     const sm: SeamarkData = {
-      lat: 54.11, lon: 10.11, type: "buoy_safe_water",
+      lat: 54.11,
+      lon: 10.11,
+      type: "buoy_safe_water",
       tags: { "seamark:type": "buoy_safe_water" },
     };
     const group = buildSeamarksMesh([sm], ANCHOR);
@@ -67,7 +73,9 @@ describe("buildSeamarksMesh", () => {
 
   it("falls back to marker geometry for unknown type", () => {
     const sm: SeamarkData = {
-      lat: 54.11, lon: 10.11, type: "unknown_thing",
+      lat: 54.11,
+      lon: 10.11,
+      type: "unknown_thing",
       tags: { "seamark:type": "unknown_thing" },
     };
     const group = buildSeamarksMesh([sm], ANCHOR);

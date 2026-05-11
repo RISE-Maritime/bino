@@ -32,10 +32,22 @@ export function componentsFor(seaState: SeaState | undefined): WaveComponent[] {
   const dx = Math.cos(dirRad);
   const dz = Math.sin(dirRad);
   return [
-    { amplitude: A * 1.0, wavelength: peakWavelength,        dirX: dx,                       dirZ: dz,                       steepness: 0.5 },
-    { amplitude: A * 0.6, wavelength: peakWavelength * 0.5,  dirX: dx * 0.92 + -dz * 0.39,   dirZ: dz * 0.92 + dx * 0.39,    steepness: 0.4 },
-    { amplitude: A * 0.4, wavelength: peakWavelength * 0.25, dirX: dx * 0.71 + -dz * 0.71,   dirZ: dz * 0.71 + dx * 0.71,    steepness: 0.3 },
-    { amplitude: A * 0.3, wavelength: peakWavelength * 0.7,  dirX: -dz,                      dirZ: dx,                       steepness: 0.2 },
+    { amplitude: A * 1.0, wavelength: peakWavelength, dirX: dx, dirZ: dz, steepness: 0.5 },
+    {
+      amplitude: A * 0.6,
+      wavelength: peakWavelength * 0.5,
+      dirX: dx * 0.92 + -dz * 0.39,
+      dirZ: dz * 0.92 + dx * 0.39,
+      steepness: 0.4,
+    },
+    {
+      amplitude: A * 0.4,
+      wavelength: peakWavelength * 0.25,
+      dirX: dx * 0.71 + -dz * 0.71,
+      dirZ: dz * 0.71 + dx * 0.71,
+      steepness: 0.3,
+    },
+    { amplitude: A * 0.3, wavelength: peakWavelength * 0.7, dirX: -dz, dirZ: dx, steepness: 0.2 },
   ];
 }
 
@@ -248,10 +260,7 @@ const DEFAULT_OPTS: Required<SeaSurfaceOptions> = {
   yOffset: 0,
 };
 
-export function createSeaSurface(
-  env: Environment,
-  opts: SeaSurfaceOptions = {},
-): SeaSurfaceHandle {
+export function createSeaSurface(env: Environment, opts: SeaSurfaceOptions = {}): SeaSurfaceHandle {
   const { width, height, segments, yOffset } = { ...DEFAULT_OPTS, ...opts };
 
   const planeRadius = Math.sqrt(width * width + height * height) / 2;
@@ -300,10 +309,7 @@ export function createSeaSurface(
     setSeaState(seaState: SeaState | undefined) {
       const comps = componentsFor(seaState);
       setUniformsFromComponents(material.uniforms, comps);
-      material.uniforms["uMaxAmplitude"]!.value = comps.reduce(
-        (sum, c) => sum + c.amplitude,
-        0,
-      );
+      material.uniforms["uMaxAmplitude"]!.value = comps.reduce((sum, c) => sum + c.amplitude, 0);
     },
     setCenter(x: number, z: number) {
       mesh.position.x = x;

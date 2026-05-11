@@ -124,10 +124,14 @@ function mergeTwo(a: THREE.BufferGeometry, b: THREE.BufferGeometry): THREE.Buffe
 
 function getGeometryForStyle(style: SeamarkStyle): THREE.BufferGeometry {
   switch (style.geometry) {
-    case "buoy": return getBuoyGeometry();
-    case "beacon": return getBeaconGeometry();
-    case "light": return getLightGeometry();
-    case "marker": return getMarkerGeometry();
+    case "buoy":
+      return getBuoyGeometry();
+    case "beacon":
+      return getBeaconGeometry();
+    case "light":
+      return getLightGeometry();
+    case "marker":
+      return getMarkerGeometry();
   }
 }
 

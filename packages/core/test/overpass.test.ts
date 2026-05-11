@@ -8,10 +8,10 @@ import {
 describe("parseBuildingElements", () => {
   it("parses a building way with levels tag", () => {
     const elements: OverpassElement[] = [
-      { type: "node", id: 1, lat: 54.30, lon: 10.10 },
-      { type: "node", id: 2, lat: 54.30, lon: 10.11 },
+      { type: "node", id: 1, lat: 54.3, lon: 10.1 },
+      { type: "node", id: 2, lat: 54.3, lon: 10.11 },
       { type: "node", id: 3, lat: 54.31, lon: 10.11 },
-      { type: "node", id: 4, lat: 54.31, lon: 10.10 },
+      { type: "node", id: 4, lat: 54.31, lon: 10.1 },
       {
         type: "way",
         id: 100,

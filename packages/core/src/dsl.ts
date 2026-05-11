@@ -81,13 +81,27 @@ export const VesselDimensions = z.object({
 });
 export type VesselDimensions = z.infer<typeof VesselDimensions>;
 
-export const Vessel = z.object({
-  id: z.string().min(1),
-  model: z.string().min(1),
-  pose_source: PoseSource,
-  sensors: z.array(Sensor).default([]),
-  dimensions: VesselDimensions.optional(),
-});
+export const Vessel = z
+  .object({
+    id: z.string().min(1),
+    model: z.string().min(1),
+    pose_source: PoseSource,
+    sensors: z.array(Sensor).default([]),
+    dimensions: VesselDimensions.optional(),
+  })
+  .superRefine((v, ctx) => {
+    const ids = new Set<string>();
+    for (const s of v.sensors) {
+      if (ids.has(s.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate sensor id '${s.id}' on vessel '${v.id}'`,
+          path: ["sensors"],
+        });
+      }
+      ids.add(s.id);
+    }
+  });
 export type Vessel = z.infer<typeof Vessel>;
 
 export const Modes = z.object({
@@ -148,12 +162,26 @@ export const Terrain = z.object({
 });
 export type Terrain = z.infer<typeof Terrain>;
 
-export const Scenario = z.object({
-  name: z.string().min(1),
-  anchor: Anchor,
-  vessels: z.array(Vessel).min(1),
-  modes: Modes,
-  environment: Environment.default({}),
-  terrain: Terrain.optional(),
-});
+export const Scenario = z
+  .object({
+    name: z.string().min(1),
+    anchor: Anchor,
+    vessels: z.array(Vessel).min(1),
+    modes: Modes,
+    environment: Environment.default({}),
+    terrain: Terrain.optional(),
+  })
+  .superRefine((s, ctx) => {
+    const ids = new Set<string>();
+    for (const v of s.vessels) {
+      if (ids.has(v.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate vessel id '${v.id}'`,
+          path: ["vessels"],
+        });
+      }
+      ids.add(v.id);
+    }
+  });
 export type Scenario = z.infer<typeof Scenario>;

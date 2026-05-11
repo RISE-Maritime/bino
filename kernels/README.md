@@ -6,10 +6,10 @@ module (`--target wasm32-unknown-unknown` + `wasm-bindgen`).
 
 ## Crates
 
-| Crate         | Purpose |
-|---------------|---------|
-| `radar/`      | Marine radar v1 — geometry-of-returns, K-distribution sea clutter, Gaussian antenna pattern, ITU-R P.838 rain attenuation |
-| `lidar/`      | BVH ray-cast lidar — two-tree design (static terrain + dynamic vessels), Moller-Trumbore triangle intersection |
+| Crate    | Purpose                                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `radar/` | Marine radar v1 — geometry-of-returns, K-distribution sea clutter, Gaussian antenna pattern, ITU-R P.838 rain attenuation |
+| `lidar/` | BVH ray-cast lidar — two-tree design (static terrain + dynamic vessels), Moller-Trumbore triangle intersection            |
 
 ## Build
 

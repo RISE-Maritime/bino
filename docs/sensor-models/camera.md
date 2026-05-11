@@ -13,13 +13,13 @@ WebGL render-to-texture approach. Uses Three.js PerspectiveCamera with a dedicat
 
 ## Configuration
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| fov_deg | number (0, 180) | Vertical field of view in degrees |
-| resolution | [width, height] | Output resolution in pixels |
-| rate_hz | number | Capture rate |
-| exposure_time_s | number (default 0) | Exposure interval duration |
-| phase_offset_s | number (default 0) | Scheduling phase offset |
+| Parameter       | Type               | Description                       |
+| --------------- | ------------------ | --------------------------------- |
+| fov_deg         | number (0, 180)    | Vertical field of view in degrees |
+| resolution      | [width, height]    | Output resolution in pixels       |
+| rate_hz         | number             | Capture rate                      |
+| exposure_time_s | number (default 0) | Exposure interval duration        |
+| phase_offset_s  | number (default 0) | Scheduling phase offset           |
 
 ## Exposure model
 

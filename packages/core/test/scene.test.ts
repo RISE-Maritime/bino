@@ -49,7 +49,11 @@ const injectScenario = {
 const injectAllScenario = {
   ...minimal,
   name: "inject-all-smoke",
-  modes: { rendering: "inject_all" as const, clock: "wall" as const, determinism: "relaxed" as const },
+  modes: {
+    rendering: "inject_all" as const,
+    clock: "wall" as const,
+    determinism: "relaxed" as const,
+  },
 };
 
 describe("buildScene", () => {
@@ -104,9 +108,7 @@ describe("buildScene", () => {
     expect(built.terrain).toBeUndefined();
 
     // Scene should contain only fallback lights + vessel groups
-    const nonLightChildren = built.scene.children.filter(
-      (c) => !(c instanceof THREE.Light),
-    );
+    const nonLightChildren = built.scene.children.filter((c) => !(c instanceof THREE.Light));
     expect(nonLightChildren.length).toBe(2); // ego + ferry
     expect(built.entities.size).toBe(2);
     expect(built.entities.get("ego")).toBeDefined();

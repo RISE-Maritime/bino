@@ -3,11 +3,11 @@
 ## Why
 
 v0.4b ports the v0.1 TS lidar kernel (GL depth-pass) to Rust. The
-algorithms are *different*: depth-pass renders the whole scene
+algorithms are _different_: depth-pass renders the whole scene
 through the lidar's perspective camera and reads back depth bytes;
 ray-cast iterates rays-vs-geometry on the CPU. The retro for v0.3
 flagged this as the milestone's biggest research risk: a Rust
-ray-cast that's *slower* than the GL depth-pass would defeat the
+ray-cast that's _slower_ than the GL depth-pass would defeat the
 entire architectural claim.
 
 Settle, at the algorithm level:

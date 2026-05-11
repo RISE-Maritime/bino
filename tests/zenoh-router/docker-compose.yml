@@ -16,8 +16,8 @@ services:
     init: true
     ports:
       - "127.0.0.1:10000:10000" # remote-api WebSocket
-      - "127.0.0.1:8000:8000"   # REST plugin (handy for debugging)
-      - "127.0.0.1:7447:7447"   # zenoh peer protocol
+      - "127.0.0.1:8000:8000" # REST plugin (handy for debugging)
+      - "127.0.0.1:7447:7447" # zenoh peer protocol
     environment:
       - RUST_LOG=info
     healthcheck:

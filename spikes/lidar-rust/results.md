@@ -81,6 +81,7 @@ not by the (potentially huge) static terrain count.
 ### 3. Memory model: copy-each-frame, like v0.3 radar
 
 Per-frame payload:
+
 - moving-entity bboxes: ≤100 × 24 bytes ≈ 2.4 KB
 - host pose: ~32 bytes
 - config: <100 bytes
@@ -154,15 +155,15 @@ impl Bvh {
   exclusively. For terrain we'll have actual triangles; the BVH
   leaves should hold triangle indices and the leaf test does
   ray-triangle intersection (Möller-Trumbore, ~30 LOC). The BVH
-  *bounding* AABBs stay the same. Adds maybe 100 more LOC to v0.4b
+  _bounding_ AABBs stay the same. Adds maybe 100 more LOC to v0.4b
   #9.
 
 ## Acceptance vs the spike plan
 
-| criterion | result |
-|-----------|--------|
-| BVH library decision | ✓ — roll our own |
-| BVH lifecycle decision | ✓ — terrain at init, vessels per-frame |
-| Scene geometry handoff decision | ✓ — copy-each-frame |
-| Cost claim sanity check | ✓ — naive 86 ms at 5k boxes; BVH needed |
-| Code sketch for v0.4b #9 | ✓ |
+| criterion                       | result                                  |
+| ------------------------------- | --------------------------------------- |
+| BVH library decision            | ✓ — roll our own                        |
+| BVH lifecycle decision          | ✓ — terrain at init, vessels per-frame  |
+| Scene geometry handoff decision | ✓ — copy-each-frame                     |
+| Cost claim sanity check         | ✓ — naive 86 ms at 5k boxes; BVH needed |
+| Code sketch for v0.4b #9        | ✓                                       |

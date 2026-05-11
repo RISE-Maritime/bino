@@ -89,7 +89,10 @@ function applyEnvironment(
  * 0 at south, increasing east/clockwise (matches Three's
  * `setFromSphericalCoords` with `theta` rotating around y).
  */
-export function solarPosition(timeOfDay: string, latDeg: number): {
+export function solarPosition(
+  timeOfDay: string,
+  latDeg: number,
+): {
   elevation: number;
   azimuth: number;
 } {

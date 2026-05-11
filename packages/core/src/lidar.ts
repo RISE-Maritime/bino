@@ -66,7 +66,7 @@ export function createLidarKernel(opts: LidarKernelOptions): LidarKernel {
 
   const excludeOwn = opts.excludeOwnVessel !== false;
   const ownHull = excludeOwn
-    ? opts.sensorNode.parent?.children.find((c) => c.name.endsWith("__hull")) ?? null
+    ? (opts.sensorNode.parent?.children.find((c) => c.name.endsWith("__hull")) ?? null)
     : null;
 
   return {

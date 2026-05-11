@@ -1,7 +1,7 @@
 # Bino — implementation plan
 
-Companion to `docs/internal/design-vision.md`. The vision is the *what* and
-*why*; this is the *in what order* and *what's risky*. Updated as we go.
+Companion to `docs/internal/design-vision.md`. The vision is the _what_ and
+_why_; this is the _in what order_ and _what's risky_. Updated as we go.
 
 **Status anchor (2026-05-10):** v0.1 through v1.0 all closed. Bino
 runs camera + lidar + radar end-to-end with inject/replace rendering
@@ -42,7 +42,7 @@ is its own time-boxed spike under `spikes/`, ending in a verdict file.
 
 - **S1 — Zenoh JS/TS client maturity.** The design doc names Zenoh as
   the only input but doesn't pin a client. The `@eclipse-zenoh/zenoh-ts`
-  package (or whichever is current) needs to be exercised in *both*
+  package (or whichever is current) needs to be exercised in _both_
   Node and the browser, with the same `subscribe(topic, handler)` shape,
   before either `@bino/node` or `@bino/viewer` is wired to it. If the
   client is Node-only or browser-only, the "one codebase, two
@@ -268,7 +268,7 @@ independent of node publishing; the live e2e (#10) caps the milestone.
 6. **Service wiring.** `createNodeService` accepts an optional
    Zenoh session; when provided, the runner's per-sensor outputs
    flow into publishers. CLI `--zenoh ws://...` activates both pose
-   subscription *and* sensor publishing — full duplex.
+   subscription _and_ sensor publishing — full duplex.
 7. ~~**Node WebSocket polyfill check.**~~ ✅ Resolved by S6 — Node 22's
    built-in `WebSocket` works against `zenoh-bridge-remote-api`. No
    polyfill needed.
@@ -300,9 +300,9 @@ independent of node publishing; the live e2e (#10) caps the milestone.
     matches `rate_hz` ±10%, (b) frame contents advance over time,
     (c) the Playwright-driven viewer at the same `ws://` URL
     renders the same vessels in lock-step. This closes both the v0.1
-    carry-forward *and* v0.2's main acceptance.
+    carry-forward _and_ v0.2's main acceptance.
 12. **DSL grows topic-override fields.** `publish_topic_override:
-    string` per sensor (default derived from vessel.id + sensor.id +
+string` per sensor (default derived from vessel.id + sensor.id +
     Keelson convention). No codec/quality fields needed in v0.2 —
     raw RGBA only.
 
@@ -346,7 +346,7 @@ independent of node publishing; the live e2e (#10) caps the milestone.
   v0.2 behavior: drop, log. Revisit when determinism matters.
 - **Browser viewer subscribing to camera topics is wasteful.** A
   1080p camera over WebSocket is hostile to a browser. v0.2 viewer
-  subscribes to *poses* (cheap) and renders sensor *footprints*
+  subscribes to _poses_ (cheap) and renders sensor _footprints_
   (cheap); subscribing to actual frames is opt-in and discouraged
   outside debug builds.
 
@@ -371,7 +371,7 @@ early.
 
 - **S7 — Rust toolchain. ✅ Resolved: `wasm-bindgen` + cargo direct,
   no `wasm-pack`.** Single crate compiles to both native (`cargo
-  build`) and wasm32 (`cargo build --target wasm32-unknown-unknown` +
+build`) and wasm32 (`cargo build --target wasm32-unknown-unknown` +
   `wasm-bindgen-cli` for JS glue). Conditional bindings via
   `#[cfg(target_arch = "wasm32")]`. `wasm-pack` is a meta-tool that
   bundles wasm-bindgen + a publish path we don't need; sticking to
@@ -383,10 +383,10 @@ early.
   don't want to take on now. Revisit at v0.4 when the lidar's larger
   ray budget makes copies hurt.
 - **S9 — Keelson radar schema. ✅ Resolved.** `radar_spoke:
-  keelson.RadarSpoke` (per-beam: timestamp, frame_id, pose, azimuth
+keelson.RadarSpoke` (per-beam: timestamp, frame_id, pose, azimuth
   in rad, range, PackedElementField[] for intensity layout, packed
   bytes) and `radar_sweep: keelson.RadarSweep` (a `repeated
-  RadarSpoke spokes`). `@rise-maritime/keelson-js` already ships the
+RadarSpoke spokes`). `@rise-maritime/keelson-js` already ships the
   generated payload classes at `dist/payloads/RadarReading.{js,d.ts}`.
   Same encode/decode pattern as v0.2's image_raw / point_cloud.
 - **S10 — Native + wasm dual-target test infra. Pending — ~half day.**
@@ -429,7 +429,7 @@ early.
 6. **`step()` entry point** consumes a copied scene snapshot,
    produces a packed `RadarSweep` (or partial spokes per tick if the
    sweep takes multiple ticks). Native API: `pub fn step(...) ->
-   RadarSweep`. WASM API: same, with `#[wasm_bindgen]` and serde
+RadarSweep`. WASM API: same, with `#[wasm_bindgen]` and serde
    conversions for the JS side.
 7. **Native unit tests.** "ego at origin, ferry at (0, 100) bow-on,
    spoke at azimuth=0 has return at range≈100." Cargo test, runs
@@ -570,11 +570,11 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
   0.4.0 loads cleanly on Bookworm now (v0.1's `GLIBCXX_3.4.32`
   issue is resolved); but Dawn still needs a Vulkan runtime. More
   importantly: the cost/benefit shifted under us. With v0.3 radar
-  + v0.4b lidar both moving to WASM kernels, GPU compute for
-  ray-casting is moot. Camera rendering at 1080p10 isn't a
-  bottleneck. v0.4b #12 closes as **deferred — revisit if a sensor
-  needs GPU compute or production runs on hardware-GPU hosts**.
-  Neither currently on the roadmap.
+  - v0.4b lidar both moving to WASM kernels, GPU compute for
+    ray-casting is moot. Camera rendering at 1080p10 isn't a
+    bottleneck. v0.4b #12 closes as **deferred — revisit if a sensor
+    needs GPU compute or production runs on hardware-GPU hosts**.
+    Neither currently on the roadmap.
 
 ### Tasks, in dependency order
 
@@ -582,7 +582,7 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
 
 1. **DSL `environment` block.** Per the design vision example:
    `sea_state {significant_wave_height, peak_period, direction_deg,
-   spectrum}`, `wind {speed, direction_deg}`, `time_of_day`,
+spectrum}`, `wind {speed, direction_deg}`, `time_of_day`,
    `visibility_m`. Zod schemas in `@bino/core`. `CompiledScene` grows
    an `environment` field.
 2. **`EnvironmentSnapshot` interface in `@bino/core`.** Per-tick
@@ -641,6 +641,7 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
 ### v0.4 acceptance
 
 **v0.4a:**
+
 - `scenarios/v04_kiel.yaml` loads, compiles, and the viewer shows:
   recognizable Kiel coastline geometry, animated sea surface, sun at
   the configured time of day, all on a believable scale.
@@ -648,6 +649,7 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
   `EnvironmentSnapshot`.
 
 **v0.4b:**
+
 - ✅ Rust lidar kernel passes vitest integration tests (5 tests in
   `lidar-wasm.test.ts`: vessel detection, terrain detection,
   occlusion, out-of-range, dispose).
@@ -681,7 +683,7 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
   Defer if so.
 - **Demo expectations after v0.4a lands** — once the viewer shows
   Kiel coastline + animated waves, stakeholders will reasonably
-  assume sensor *physics* match (radar clutter from the visible
+  assume sensor _physics_ match (radar clutter from the visible
   waves, lidar attenuation in shown rain). They won't, until v1.0.
   Surface this clearly in any demo material.
 - **WASM payload size growth** — adding the lidar kernel to
@@ -711,7 +713,7 @@ Total time: ~4 hours (well under the ~2.5-day spike budget). Headlines:
   ship model question, so they want to share infrastructure rather
   than each grow ad-hoc.
 - **OSM-as-authoritative landmask.** v0.4a finish revealed that
-  rendering OSM coastline as a *visible* layer alongside bathymetry
+  rendering OSM coastline as a _visible_ layer alongside bathymetry
   exposes their sub-cell-width disagreement; the architecturally
   cleaner fix (filled landmass polygons from OSM, bathymetry only
   contributes sub-water shape) needs proper bbox-edge-clipping of
@@ -788,8 +790,8 @@ components, snow/hail/fog attenuation models.
 
 **Architectural note (recorded after v0.3 demo, 2026-04-29):** noise
 injection across all sensors — radar clutter from sea state, camera
-contrast loss in fog, lidar attenuation in rain — is a *cross-cutting
-environmental concern*, not a radar-only concern. The v1.0 radar
+contrast loss in fog, lidar attenuation in rain — is a _cross-cutting
+environmental concern_, not a radar-only concern. The v1.0 radar
 is its first concrete consumer; the v0.4 sea-surface work is its
 first concrete producer. See cross-cutting threads.
 
@@ -816,23 +818,23 @@ first concrete producer. See cross-cutting threads.
   v0.1–v0.3 ignore this block entirely; v0.4 brings sea state in for
   the wave shader; v1.0's radar noise model needs sea state (for
   clutter) and visibility (for attenuation). Cross-cutting because
-  *every* sensor degrades with environment — rain/fog hurts cameras,
+  _every_ sensor degrades with environment — rain/fog hurts cameras,
   rain attenuates lidar, sea state generates radar clutter, etc.
   Three implications:
-    1. The DSL `environment` block should be a first-class compiled
-       scene field (added when v0.4 needs it), not a per-sensor
-       afterthought.
-    2. Sensor kernels grow an `EnvironmentSnapshot` input alongside
-       the existing scene snapshot, so each kernel can consume what
-       it needs.
-    3. Weather parameters beyond `visibility_m` — rain intensity,
-       snow, hail — likely need DSL fields by v1.0. Add at the v1.0
-       boundary, or earlier if a sensor at v0.5/v0.6 needs them
-       first.
+  1. The DSL `environment` block should be a first-class compiled
+     scene field (added when v0.4 needs it), not a per-sensor
+     afterthought.
+  2. Sensor kernels grow an `EnvironmentSnapshot` input alongside
+     the existing scene snapshot, so each kernel can consume what
+     it needs.
+  3. Weather parameters beyond `visibility_m` — rain intensity,
+     snow, hail — likely need DSL fields by v1.0. Add at the v1.0
+     boundary, or earlier if a sensor at v0.5/v0.6 needs them
+     first.
 
 ---
 
-## What's deliberately *not* on this plan
+## What's deliberately _not_ on this plan
 
 Mirrors the design doc's non-goals, restated as scope discipline:
 

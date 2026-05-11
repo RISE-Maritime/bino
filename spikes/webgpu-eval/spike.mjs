@@ -21,7 +21,10 @@ console.log("[node]", process.version);
 // own canvas in.
 const g = globalThis;
 if (typeof g.requestAnimationFrame !== "function") {
-  g.requestAnimationFrame = (cb) => { setImmediate(() => cb(performance.now())); return 0; };
+  g.requestAnimationFrame = (cb) => {
+    setImmediate(() => cb(performance.now()));
+    return 0;
+  };
 }
 if (typeof g.cancelAnimationFrame !== "function") g.cancelAnimationFrame = () => {};
 if (typeof g.self === "undefined") g.self = g;
@@ -37,7 +40,9 @@ if (typeof g.document === "undefined") {
         style: {},
         addEventListener() {},
         removeEventListener() {},
-        getContext() { return null; },
+        getContext() {
+          return null;
+        },
       };
       return el;
     },

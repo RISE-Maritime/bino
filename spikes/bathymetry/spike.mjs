@@ -125,7 +125,7 @@ console.log(`[wrote] ${ppmPath}  (open in any image viewer)`);
 const dLat = BBOX.north - BBOX.south;
 const dLon = BBOX.east - BBOX.west;
 const heightM = dLat * 111_320;
-const widthM = dLon * 111_320 * Math.cos((BBOX.south + dLat / 2) * Math.PI / 180);
+const widthM = dLon * 111_320 * Math.cos(((BBOX.south + dLat / 2) * Math.PI) / 180);
 const tileResLat = heightM / height;
 const tileResLon = widthM / width;
 console.log(
@@ -135,9 +135,7 @@ console.log(
 const targetGridM = 50;
 const gridH = Math.round(heightM / targetGridM);
 const gridW = Math.round(widthM / targetGridM);
-console.log(
-  `at 50 m grid: ${gridW}x${gridH} = ${(gridW * gridH).toLocaleString()} vertices`,
-);
+console.log(`at 50 m grid: ${gridW}x${gridH} = ${(gridW * gridH).toLocaleString()} vertices`);
 
 const summary = {
   bbox: BBOX,

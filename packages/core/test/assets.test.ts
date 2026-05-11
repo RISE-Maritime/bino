@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import {
-  parametricHull,
-  loadModel,
-  lookupDimensions,
-  getRegistry,
-} from "../src/assets.js";
+import { parametricHull, loadModel, lookupDimensions, getRegistry } from "../src/assets.js";
 
 describe("getRegistry", () => {
   it("contains tanker_120m, ferry_60m, cargo_90m", () => {

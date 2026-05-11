@@ -42,26 +42,19 @@ export function lookupDimensions(model: string): VesselDimensions {
 // ---------------------------------------------------------------------------
 
 const MAT = {
-  hullAbove: () =>
-    new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.6 }),
-  hullBelow: () =>
-    new THREE.MeshStandardMaterial({ color: 0x6b1a1a, roughness: 0.8 }),
-  deckhouse: () =>
-    new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.5 }),
-  funnel: () =>
-    new THREE.MeshStandardMaterial({ color: 0xd04040, roughness: 0.6 }),
-  deck: () =>
-    new THREE.MeshStandardMaterial({ color: 0x8b7355, roughness: 0.9 }),
+  hullAbove: () => new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.6 }),
+  hullBelow: () => new THREE.MeshStandardMaterial({ color: 0x6b1a1a, roughness: 0.8 }),
+  deckhouse: () => new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.5 }),
+  funnel: () => new THREE.MeshStandardMaterial({ color: 0xd04040, roughness: 0.6 }),
+  deck: () => new THREE.MeshStandardMaterial({ color: 0x8b7355, roughness: 0.9 }),
   windows: () =>
     new THREE.MeshStandardMaterial({
       color: 0x1a3050,
       roughness: 0.3,
       metalness: 0.3,
     }),
-  hatchCover: () =>
-    new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 0.7 }),
-  mast: () =>
-    new THREE.MeshStandardMaterial({ color: 0xc0c0c0, roughness: 0.5 }),
+  hatchCover: () => new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 0.7 }),
+  mast: () => new THREE.MeshStandardMaterial({ color: 0xc0c0c0, roughness: 0.5 }),
 };
 
 // ---------------------------------------------------------------------------
@@ -122,10 +115,7 @@ function computeStations(halfLen: number, length: number): StationParams[] {
  * above=true  → waterline to deck (vertices 2-4 of the 9-vertex profile)
  * above=false → keel to waterline (vertices 0-2 of the 9-vertex profile)
  */
-function buildHullHalf(
-  dims: VesselDimensions,
-  above: boolean,
-): THREE.BufferGeometry {
+function buildHullHalf(dims: VesselDimensions, above: boolean): THREE.BufferGeometry {
   const { length, beam, draft } = dims;
   const freeboard = draft * 0.6;
   const halfLen = length / 2;
@@ -208,13 +198,7 @@ function buildHullHalf(
 // Superstructure parts — shared helpers
 // ---------------------------------------------------------------------------
 
-function makeBridgeBlock(
-  x: number,
-  y: number,
-  w: number,
-  d: number,
-  h: number,
-): THREE.Mesh {
+function makeBridgeBlock(x: number, y: number, w: number, d: number, h: number): THREE.Mesh {
   const geom = new THREE.BoxGeometry(d, h, w);
   const mesh = new THREE.Mesh(geom, MAT.deckhouse());
   mesh.name = "superstructure"; // primary block keeps the canonical name
@@ -222,12 +206,7 @@ function makeBridgeBlock(
   return mesh;
 }
 
-function makeWindowStrip(
-  x: number,
-  y: number,
-  w: number,
-  d: number,
-): THREE.Mesh {
+function makeWindowStrip(x: number, y: number, w: number, d: number): THREE.Mesh {
   const geom = new THREE.BoxGeometry(d + 0.1, 0.8, w + 0.1);
   const mesh = new THREE.Mesh(geom, MAT.windows());
   mesh.name = "bridge_windows";
@@ -235,12 +214,7 @@ function makeWindowStrip(
   return mesh;
 }
 
-function makeFunnel(
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): THREE.Mesh {
+function makeFunnel(x: number, y: number, w: number, h: number): THREE.Mesh {
   const geom = new THREE.CylinderGeometry(w * 0.35, w * 0.45, h, 8);
   const mesh = new THREE.Mesh(geom, MAT.funnel());
   mesh.name = "funnel";
@@ -248,11 +222,7 @@ function makeFunnel(
   return mesh;
 }
 
-function makeMast(
-  x: number,
-  y: number,
-  height: number,
-): THREE.Mesh {
+function makeMast(x: number, y: number, height: number): THREE.Mesh {
   const geom = new THREE.CylinderGeometry(0.15, 0.25, height, 6);
   const mesh = new THREE.Mesh(geom, MAT.mast());
   mesh.name = "mast";
@@ -323,15 +293,11 @@ function buildTankerSuperstructure(
   parts.push(upperMesh);
 
   // Window strip on upper bridge
-  parts.push(
-    makeWindowStrip(bridgeX, deckY + lowerH + upperH * 0.75, upperW, upperD),
-  );
+  parts.push(makeWindowStrip(bridgeX, deckY + lowerH + upperH * 0.75, upperW, upperD));
 
   // Funnel behind bridge
   const funnelH = ss.height * 0.5;
-  parts.push(
-    makeFunnel(bridgeX - ss.length * 0.6, deckY + lowerH, bridgeW * 0.3, funnelH),
-  );
+  parts.push(makeFunnel(bridgeX - ss.length * 0.6, deckY + lowerH, bridgeW * 0.3, funnelH));
 
   // Mast on top of bridge
   const mastH = 10;
@@ -347,11 +313,7 @@ function buildTankerSuperstructure(
     pipeGeom.rotateZ(Math.PI / 2);
     const pipeMesh = new THREE.Mesh(pipeGeom, MAT.mast());
     pipeMesh.name = "pipe_run";
-    pipeMesh.position.set(
-      (halfLen + (bridgeX - ss.length / 2)) / 2,
-      deckY + 1.0,
-      0,
-    );
+    pipeMesh.position.set((halfLen + (bridgeX - ss.length / 2)) / 2, deckY + 1.0, 0);
     parts.push(pipeMesh);
   }
 
@@ -361,11 +323,7 @@ function buildTankerSuperstructure(
     const cwGeom = new THREE.BoxGeometry(catwalkLen, 0.15, 1.0);
     const cwMesh = new THREE.Mesh(cwGeom, MAT.mast());
     cwMesh.name = "catwalk";
-    cwMesh.position.set(
-      (halfLen + (bridgeX - ss.length / 2)) / 2,
-      deckY + 2.5,
-      0,
-    );
+    cwMesh.position.set((halfLen + (bridgeX - ss.length / 2)) / 2, deckY + 2.5, 0);
     parts.push(cwMesh);
   }
 
@@ -405,9 +363,7 @@ function buildFerrySuperstructure(
   parts.push(tier2Mesh);
 
   // Window strip on tier 2
-  parts.push(
-    makeWindowStrip(ssX, deckY + tier1H + tier2H * 0.7, tier2W, ssLen),
-  );
+  parts.push(makeWindowStrip(ssX, deckY + tier1H + tier2H * 0.7, tier2W, ssLen));
 
   // Tier 3: Upper passenger deck (inset)
   const tier3H = ss.height * 0.25;
@@ -420,14 +376,7 @@ function buildFerrySuperstructure(
   parts.push(tier3Mesh);
 
   // Window strip on tier 3
-  parts.push(
-    makeWindowStrip(
-      ssX,
-      deckY + tier1H + tier2H + tier3H * 0.7,
-      tier3W,
-      tier3Len,
-    ),
-  );
+  parts.push(makeWindowStrip(ssX, deckY + tier1H + tier2H + tier3H * 0.7, tier3W, tier3Len));
 
   // Bridge on top (narrower, shorter)
   const bridgeH = ss.height * 0.2;
@@ -441,20 +390,11 @@ function buildFerrySuperstructure(
   parts.push(bridgeMesh);
 
   // Bridge windows
-  parts.push(
-    makeWindowStrip(
-      ssX + ssLen * 0.2,
-      bridgeY + bridgeH * 0.2,
-      bridgeW,
-      bridgeLen,
-    ),
-  );
+  parts.push(makeWindowStrip(ssX + ssLen * 0.2, bridgeY + bridgeH * 0.2, bridgeW, bridgeLen));
 
   // Funnel (smaller, behind bridge)
   const funnelH = ss.height * 0.35;
-  parts.push(
-    makeFunnel(ssX - ssLen * 0.2, deckY + tier1H + tier2H + tier3H, ssW * 0.15, funnelH),
-  );
+  parts.push(makeFunnel(ssX - ssLen * 0.2, deckY + tier1H + tier2H + tier3H, ssW * 0.15, funnelH));
 
   // Mast
   parts.push(makeMast(ssX + ssLen * 0.2, bridgeY + bridgeH / 2, 8));
@@ -492,15 +432,11 @@ function buildCargoSuperstructure(
   parts.push(upperMesh);
 
   // Bridge windows
-  parts.push(
-    makeWindowStrip(bridgeX, deckY + bridgeH + upperH * 0.75, upperW, upperD),
-  );
+  parts.push(makeWindowStrip(bridgeX, deckY + bridgeH + upperH * 0.75, upperW, upperD));
 
   // Funnel behind bridge
   const funnelH = ss.height * 0.4;
-  parts.push(
-    makeFunnel(bridgeX - ss.length * 0.55, deckY + bridgeH, bridgeW * 0.25, funnelH),
-  );
+  parts.push(makeFunnel(bridgeX - ss.length * 0.55, deckY + bridgeH, bridgeW * 0.25, funnelH));
 
   // Mast on top of bridge
   parts.push(makeMast(bridgeX, deckY + bridgeH + upperH, 10));
@@ -541,11 +477,7 @@ function buildCargoSuperstructure(
     boomGeom.rotateZ(Math.PI / 2 + 0.3); // slight upward angle
     const boomMesh = new THREE.Mesh(boomGeom, MAT.mast());
     boomMesh.name = `crane_boom_${ci}`;
-    boomMesh.position.set(
-      cx + boomLen * 0.3,
-      deckY + postH * 0.9,
-      0,
-    );
+    boomMesh.position.set(cx + boomLen * 0.3, deckY + postH * 0.9, 0);
     parts.push(boomMesh);
   }
 
@@ -570,9 +502,7 @@ function buildGenericSuperstructure(
   parts.push(makeBridgeBlock(bridgeX, deckY, bridgeW, ss.length, ss.height));
 
   // Window strip
-  parts.push(
-    makeWindowStrip(bridgeX, deckY + ss.height * 0.85, bridgeW, ss.length),
-  );
+  parts.push(makeWindowStrip(bridgeX, deckY + ss.height * 0.85, bridgeW, ss.length));
 
   // Funnel
   const funnelH = ss.height * 0.4;

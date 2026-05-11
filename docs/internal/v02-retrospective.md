@@ -13,8 +13,8 @@ emerged, and the new risks to carry into v0.3.
 
 ## Acceptance — did v0.2 deliver?
 
-**Yes, fully.** v0.2's headline goal was *sensor publishing on Keelson
-topics*, plus closing v0.1's deferred live Zenoh round-trip. Both
+**Yes, fully.** v0.2's headline goal was _sensor publishing on Keelson
+topics_, plus closing v0.1's deferred live Zenoh round-trip. Both
 shipped.
 
 What's automated and verified:
@@ -52,11 +52,11 @@ All three pre-v0.2 spikes resolved on Day 0 of v0.2 work via a focused
 upstream investigation rather than separate spike folders — the
 verdicts were sharp enough to act on immediately.
 
-| spike | outcome |
-|-------|---------|
+| spike                         | outcome                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **S4 — Keelson schema audit** | ✅ Much better than expected. Existing schemas via `@rise-maritime/keelson-js`@0.5.0 (npm) — `image_raw` / `image_compressed` / `point_cloud` / `frame_transform`, all foxglove protobuf inside a Keelson Envelope. Topic key convention `{base}/@v0/{entity}/pubsub/{subject}/{source}`. **No proposal, no negotiation.** |
-| **S5 — Camera frame codec** | ✅ Collapsed by user feedback. Same-node deployment + `image_raw` accepting raw RGBA natively means raw is right for v0.2. `image_compressed` deferred to v0.3+ if remote-consumer use case appears. |
-| **S6 — `zenohd` in CI** | ✅ Resolved via `tests/zenoh-router/`: Alpine + libgcc + the `zenoh-bridge-remote-api` 1.9.0 binary (zenohd statically linked with the plugin, the standalone form the eclipse-zenoh org publishes on every zenoh-ts release). Cleaner than wrestling the plugin .so + the `eclipse/zenoh:latest` image. |
+| **S5 — Camera frame codec**   | ✅ Collapsed by user feedback. Same-node deployment + `image_raw` accepting raw RGBA natively means raw is right for v0.2. `image_compressed` deferred to v0.3+ if remote-consumer use case appears.                                                                                                                       |
+| **S6 — `zenohd` in CI**       | ✅ Resolved via `tests/zenoh-router/`: Alpine + libgcc + the `zenoh-bridge-remote-api` 1.9.0 binary (zenohd statically linked with the plugin, the standalone form the eclipse-zenoh org publishes on every zenoh-ts release). Cleaner than wrestling the plugin .so + the `eclipse/zenoh:latest` image.                   |
 
 ---
 
@@ -66,19 +66,19 @@ The plan named 11 numbered v0.2 tasks (re-numbered after the audit
 collapsed #1's encoder work and added the pose migration as #2). All
 ten core tasks shipped; the stretch task didn't.
 
-| # | Plan                                       | Reality                                                                                                                                   |
-|---|--------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 | keelson-js integration (encoders/decoders) | Landed as `src/keelson.ts` in `@bino/core`. Three pose/camera/lidar encode-decode pairs + topic-key helpers + `KeelsonNaming`. 8 roundtrip tests. |
-| 2 | Pose subscriber → frame_transform           | Landed. Subscriber tags entityId from topic, not payload — see "Decisions in flight". v0.1 JSON helpers deleted (no compat shim).         |
-| 3 | Per-sensor scheduling                      | Landed. `BinoRunner` now takes `ScheduledKernel[]` (sensorId + rate_hz + kernel). Phase advancement uses floor-of-overshoot to recover cleanly after stalls. |
-| 4 | Camera publisher                            | + #5 collapsed into one `createSensorPublisher` (mechanically symmetric — only the encoder differs).                                      |
-| 5 | Lidar publisher                             | (see #4)                                                                                                                                  |
-| 6 | Service wiring + WS polyfill check          | First half landed. Second half — **WS polyfill was a no-op**: Node 22's built-in `WebSocket` works against `zenoh-bridge-remote-api`. zenoh-ts README is outdated; `nodered-contrib-zenoh`'s `ws` polyfill no longer needed. |
-| 7 | Camera frustum overlay                      | Landed via `THREE.CameraHelper(kernel.camera)`.                                                                                            |
-| 8 | Lidar fan + stale detection                 | Landed. Lidar viz uses the **same** `CameraHelper` recolored cyan against the lidar's depth-pass camera — Three's helper happens to fit both. Stale detection per-entity after 5s of pose silence, surfaced in header. |
-| 9 | Stretch: sensor preview pane                | **Deferred to v0.3.**                                                                                                                      |
-| 10 | Live Zenoh round-trip e2e                  | Landed as `zenoh-e2e.test.ts`, gated on `BINO_ZENOH_URL`. Full duplex: synthetic publisher → service → consumer probes. Closes v0.1 carry-forward. |
-| 11 | DSL `publish_topic_override`                | Landed. Optional per-sensor field; bypasses `construct_pubSub_key` for non-Keelson deployments. Trade-off (loss of real-Keelson-tool interop) documented in schema. |
+| #   | Plan                                       | Reality                                                                                                                                                                                                                      |
+| --- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | keelson-js integration (encoders/decoders) | Landed as `src/keelson.ts` in `@bino/core`. Three pose/camera/lidar encode-decode pairs + topic-key helpers + `KeelsonNaming`. 8 roundtrip tests.                                                                            |
+| 2   | Pose subscriber → frame_transform          | Landed. Subscriber tags entityId from topic, not payload — see "Decisions in flight". v0.1 JSON helpers deleted (no compat shim).                                                                                            |
+| 3   | Per-sensor scheduling                      | Landed. `BinoRunner` now takes `ScheduledKernel[]` (sensorId + rate_hz + kernel). Phase advancement uses floor-of-overshoot to recover cleanly after stalls.                                                                 |
+| 4   | Camera publisher                           | + #5 collapsed into one `createSensorPublisher` (mechanically symmetric — only the encoder differs).                                                                                                                         |
+| 5   | Lidar publisher                            | (see #4)                                                                                                                                                                                                                     |
+| 6   | Service wiring + WS polyfill check         | First half landed. Second half — **WS polyfill was a no-op**: Node 22's built-in `WebSocket` works against `zenoh-bridge-remote-api`. zenoh-ts README is outdated; `nodered-contrib-zenoh`'s `ws` polyfill no longer needed. |
+| 7   | Camera frustum overlay                     | Landed via `THREE.CameraHelper(kernel.camera)`.                                                                                                                                                                              |
+| 8   | Lidar fan + stale detection                | Landed. Lidar viz uses the **same** `CameraHelper` recolored cyan against the lidar's depth-pass camera — Three's helper happens to fit both. Stale detection per-entity after 5s of pose silence, surfaced in header.       |
+| 9   | Stretch: sensor preview pane               | **Deferred to v0.3.**                                                                                                                                                                                                        |
+| 10  | Live Zenoh round-trip e2e                  | Landed as `zenoh-e2e.test.ts`, gated on `BINO_ZENOH_URL`. Full duplex: synthetic publisher → service → consumer probes. Closes v0.1 carry-forward.                                                                           |
+| 11  | DSL `publish_topic_override`               | Landed. Optional per-sensor field; bypasses `construct_pubSub_key` for non-Keelson deployments. Trade-off (loss of real-Keelson-tool interop) documented in schema.                                                          |
 
 ---
 

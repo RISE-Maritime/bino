@@ -25,13 +25,20 @@ let create, globals;
 try {
   ({ create, globals } = await import("webgpu"));
 } catch (e) {
-  writeFileSync(join(outDir, "webgpu.json"), JSON.stringify({
-    candidate: "webgpu",
-    ok: false,
-    reason: `failed to load 'webgpu' module: ${e.message}`,
-    errorCode: e.code,
-    note: "Likely missing GLIBCXX_3.4.32 — Dawn prebuilt expects Ubuntu 24.04+ libstdc++.",
-  }, null, 2));
+  writeFileSync(
+    join(outDir, "webgpu.json"),
+    JSON.stringify(
+      {
+        candidate: "webgpu",
+        ok: false,
+        reason: `failed to load 'webgpu' module: ${e.message}`,
+        errorCode: e.code,
+        note: "Likely missing GLIBCXX_3.4.32 — Dawn prebuilt expects Ubuntu 24.04+ libstdc++.",
+      },
+      null,
+      2,
+    ),
+  );
   console.error(`[webgpu] FAILED to load: ${e.message}`);
   process.exit(2);
 }
@@ -47,9 +54,7 @@ function writeVerdict(v) {
 async function main() {
   console.log(`[webgpu] installing globals + navigator.gpu`);
   Object.assign(globalThis, globals);
-  const gpu = create([
-    "enable-dawn-features=allow_unsafe_apis",
-  ]);
+  const gpu = create(["enable-dawn-features=allow_unsafe_apis"]);
   // Node 22 ships a read-only `navigator` getter on globalThis. Plain
   // assignment throws ("only a getter"). Redefine via defineProperty
   // and copy any existing navigator properties so we don't lose them.
@@ -63,11 +68,17 @@ async function main() {
   console.log(`[webgpu] requesting adapter`);
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) {
-    writeVerdict({ candidate: "webgpu", ok: false, reason: "no GPU adapter (Dawn could not pick a backend)" });
+    writeVerdict({
+      candidate: "webgpu",
+      ok: false,
+      reason: "no GPU adapter (Dawn could not pick a backend)",
+    });
     process.exit(2);
   }
   const info = adapter.info ?? {};
-  console.log(`[webgpu] adapter info: vendor=${info.vendor} arch=${info.architecture} device=${info.device} desc=${info.description}`);
+  console.log(
+    `[webgpu] adapter info: vendor=${info.vendor} arch=${info.architecture} device=${info.device} desc=${info.description}`,
+  );
 
   const device = await adapter.requestDevice();
   console.log(`[webgpu] got device`);
@@ -90,7 +101,12 @@ async function main() {
     const mod = await import("three/examples/jsm/renderers/webgpu/WebGPURenderer.js");
     WebGPURenderer = mod.default ?? mod.WebGPURenderer;
   } catch (e) {
-    writeVerdict({ candidate: "webgpu", ok: false, reason: `failed to import three WebGPURenderer: ${e.message}`, stack: e.stack });
+    writeVerdict({
+      candidate: "webgpu",
+      ok: false,
+      reason: `failed to import three WebGPURenderer: ${e.message}`,
+      stack: e.stack,
+    });
     console.error(e);
     process.exit(2);
   }
@@ -105,18 +121,25 @@ async function main() {
     configure() {},
     unconfigure() {},
     getCurrentTexture() {
-      throw new Error("[webgpu] swapchain getCurrentTexture called — should never happen with explicit render targets");
+      throw new Error(
+        "[webgpu] swapchain getCurrentTexture called — should never happen with explicit render targets",
+      );
     },
   };
   const fakeCanvas = {
-    width: WIDTH, height: HEIGHT,
-    clientWidth: WIDTH, clientHeight: HEIGHT,
+    width: WIDTH,
+    height: HEIGHT,
+    clientWidth: WIDTH,
+    clientHeight: HEIGHT,
     style: {},
-    addEventListener() {}, removeEventListener() {},
+    addEventListener() {},
+    removeEventListener() {},
     getContext(type) {
       return type === "webgpu" ? fakeWebGPUContext : null;
     },
-    getBoundingClientRect() { return { left: 0, top: 0, width: WIDTH, height: HEIGHT }; },
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: WIDTH, height: HEIGHT };
+    },
   };
 
   let renderer;
@@ -129,7 +152,12 @@ async function main() {
     });
     await renderer.init();
   } catch (e) {
-    writeVerdict({ candidate: "webgpu", ok: false, reason: `WebGPURenderer init failed: ${e.message}`, stack: e.stack });
+    writeVerdict({
+      candidate: "webgpu",
+      ok: false,
+      reason: `WebGPURenderer init failed: ${e.message}`,
+      stack: e.stack,
+    });
     console.error(e);
     process.exit(2);
   }
@@ -141,14 +169,20 @@ async function main() {
   const { runBench, fnv1a, printResult } = await import("../../shared/bench.mjs");
 
   const colorTarget = new THREE.WebGLRenderTarget(WIDTH, HEIGHT, {
-    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-    format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
-    depthBuffer: true, stencilBuffer: false,
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+    depthBuffer: true,
+    stencilBuffer: false,
   });
   const depthTarget = new THREE.WebGLRenderTarget(WIDTH, HEIGHT, {
-    minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
-    format: THREE.RGBAFormat, type: THREE.UnsignedByteType,
-    depthBuffer: true, stencilBuffer: false,
+    minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+    depthBuffer: true,
+    stencilBuffer: false,
   });
   const depthOverride = new THREE.MeshDepthMaterial({
     depthPacking: THREE.RGBADepthPacking,
@@ -165,12 +199,15 @@ async function main() {
   //   await renderer.readRenderTargetPixelsAsync(rt, x, y, w, h) -> buffer
   // Returns a fresh buffer each call (different shape from WebGL's
   // version which copies into a preallocated Uint8Array).
-  let lastColor = null, lastDepth = null;
+  let lastColor = null,
+    lastDepth = null;
 
   const result = await runBench({
     name: "webgpu",
-    width: WIDTH, height: HEIGHT,
-    frames: FRAMES, warmup: 10,
+    width: WIDTH,
+    height: HEIGHT,
+    frames: FRAMES,
+    warmup: 10,
     step: (t) => animate(t),
     render: async () => {
       renderer.setRenderTarget(colorTarget);
@@ -194,7 +231,9 @@ async function main() {
   writeVerdict({
     candidate: "webgpu",
     ok: true,
-    width: WIDTH, height: HEIGHT, frames: FRAMES,
+    width: WIDTH,
+    height: HEIGHT,
+    frames: FRAMES,
     fps: result.fps,
     perFrameMs: result.perFrameMs,
     stage: result.stage,

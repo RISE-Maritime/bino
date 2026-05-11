@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import * as THREE from "three";
 import {
   compileScenario,
   buildScene,
@@ -130,9 +129,7 @@ describe("temporal modeling", () => {
     // Verify spoke timestamps increase monotonically
     expect(frame.spokes.length).toBe(36);
     for (let i = 1; i < frame.spokes.length; i++) {
-      expect(frame.spokes[i]!.timestamp).toBeGreaterThan(
-        frame.spokes[i - 1]!.timestamp,
-      );
+      expect(frame.spokes[i]!.timestamp).toBeGreaterThan(frame.spokes[i - 1]!.timestamp);
     }
 
     // Last spoke timestamp should be close to sweep_duration_s = 1/0.4 = 2.5s

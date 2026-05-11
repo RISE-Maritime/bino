@@ -104,8 +104,8 @@ The vessel return (when present) always dominates clutter because
 
 ### Effect of sea state
 
-| Calm (Hs = 0.3 m) | Moderate (Hs = 2.0 m) | Rough (Hs = 5.0 m) |
-|:--:|:--:|:--:|
+|          Calm (Hs = 0.3 m)          |            Moderate (Hs = 2.0 m)            |          Rough (Hs = 5.0 m)           |
+| :---------------------------------: | :-----------------------------------------: | :-----------------------------------: |
 | ![PPI calm](../images/ppi-calm.png) | ![PPI moderate](../images/ppi-moderate.png) | ![PPI rough](../images/ppi-rough.png) |
 
 ## Antenna pattern convolution
@@ -146,16 +146,16 @@ frequency and polarization.
 **Coefficient interpolation.** The implementation stores the following ITU-R
 P.838-3 Table 1 entries for horizontal polarization:
 
-| Freq (GHz) | k_H      | a_H   |
-|:----------:|:--------:|:-----:|
-| 1.0        | 0.0000387| 0.912 |
-| 3.0        | 0.000650 | 1.121 |
-| 6.0        | 0.00175  | 1.308 |
-| 10.0       | 0.0101   | 1.276 |
-| 15.0       | 0.0367   | 1.154 |
-| 20.0       | 0.0751   | 1.099 |
-| 30.0       | 0.187    | 1.021 |
-| 50.0       | 0.536    | 0.873 |
+| Freq (GHz) |    k_H    |  a_H  |
+| :--------: | :-------: | :---: |
+|    1.0     | 0.0000387 | 0.912 |
+|    3.0     | 0.000650  | 1.121 |
+|    6.0     |  0.00175  | 1.308 |
+|    10.0    |  0.0101   | 1.276 |
+|    15.0    |  0.0367   | 1.154 |
+|    20.0    |  0.0751   | 1.099 |
+|    30.0    |   0.187   | 1.021 |
+|    50.0    |   0.536   | 0.873 |
 
 Between table entries, `k` is log-interpolated (it spans several orders of
 magnitude) and `a` is linearly interpolated. At the default X-band frequency of
@@ -232,7 +232,7 @@ The sweep is published as a `RadarSweep` message containing a vector of
 
 ## References
 
-1. Ward, K.D. (1981). "Compound representation of high resolution sea clutter." *Electronics Letters*, 17(16), 561--563.
-2. Nathanson, F.E. (1991). *Radar Design Principles*, 2nd ed. McGraw-Hill. Table 7-2.
+1. Ward, K.D. (1981). "Compound representation of high resolution sea clutter." _Electronics Letters_, 17(16), 561--563.
+2. Nathanson, F.E. (1991). _Radar Design Principles_, 2nd ed. McGraw-Hill. Table 7-2.
 3. ITU-R P.838-3 (2005). "Specific attenuation model for rain for use in prediction methods." International Telecommunication Union.
-4. Haykin, S. & Bakker, R. (1991). "Representation of nonstationary sea clutter." Chapter in *Handbook of Statistics*, Vol. 10.
+4. Haykin, S. & Bakker, R. (1991). "Representation of nonstationary sea clutter." Chapter in _Handbook of Statistics_, Vol. 10.

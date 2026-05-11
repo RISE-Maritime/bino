@@ -78,7 +78,7 @@ describe("BinoRunner — per-sensor scheduling", () => {
     // fires, ~10 slow fires. Tolerance ±1 for boundary effects.
     let fastFires = 0;
     let slowFires = 0;
-    let nextRead = 0;
+    const nextRead = 0;
     for (let i = 0; i < 60; i++) {
       clock.set((i + 1) * 0.034);
       void nextRead;
@@ -211,8 +211,7 @@ describe("BinoRunner — deterministic mode", () => {
     // baseDt: GCD of 100000us (10Hz) and 200000us (5Hz) = 100000us = 0.1s
     // fast fires every 1 tick, slow fires every 2 ticks.
     // Run for 10 ticks = 1 second.
-    const events: Array<{ index: number; time: number; sensorIds: string[] }> =
-      [];
+    const events: Array<{ index: number; time: number; sensorIds: string[] }> = [];
 
     for (let i = 0; i < 10; i++) {
       const { value, done } = await gen.next();
@@ -280,9 +279,7 @@ describe("BinoRunner — deterministic mode", () => {
     const runner = new BinoRunner({
       scene,
       entities,
-      kernels: [
-        { sensorId: "cam", rate_hz: 10, kernel: makeKernel() },
-      ],
+      kernels: [{ sensorId: "cam", rate_hz: 10, kernel: makeKernel() }],
       clock,
       deterministic: true,
     });
@@ -314,9 +311,7 @@ describe("BinoRunner — deterministic mode", () => {
     const runner = new BinoRunner({
       scene,
       entities,
-      kernels: [
-        { sensorId: "cam", rate_hz: 10, kernel },
-      ],
+      kernels: [{ sensorId: "cam", rate_hz: 10, kernel }],
       clock,
       deterministic: true,
     });
@@ -349,9 +344,7 @@ describe("BinoRunner — deterministic mode", () => {
     const runner = new BinoRunner({
       scene,
       entities,
-      kernels: [
-        { sensorId: "cam", rate_hz: 10, kernel: makeKernel() },
-      ],
+      kernels: [{ sensorId: "cam", rate_hz: 10, kernel: makeKernel() }],
       clock,
       deterministic: true,
     });

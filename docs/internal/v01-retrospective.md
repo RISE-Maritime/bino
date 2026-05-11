@@ -29,18 +29,18 @@ Partial yes. What's automated and verified:
   the same `@bino/core` helpers, runs the same kernels in the browser,
   optionally subscribes to Zenoh-WS, and falls back to a deterministic
   scripted trajectory when no broker is configured.
-- Docker smoke (`@bino/node`'s `smoke.test.ts`) asserts that *pose
-  updates change camera frame hashes* — the entire pump → kernel →
+- Docker smoke (`@bino/node`'s `smoke.test.ts`) asserts that _pose
+  updates change camera frame hashes_ — the entire pump → kernel →
   render → readback pipe is exercised on real software-rendered GL.
 - Playwright e2e asserts the viewer ticks frames in headless Chromium.
 
-What's *not* automated and was deferred deliberately:
+What's _not_ automated and was deferred deliberately:
 
 - A live Zenoh round-trip with a third-party publisher and both
   consumers (node + viewer) showing the ego vessel moving in lock-step.
   This needs `zenohd` with the remote-api plugin running in CI, which
   is itself a bit of test-infrastructure work. Bumped to v0.2 (see
-  *New risks* below).
+  _New risks_ below).
 
 Tests at close: 48 in `@bino/core`, 9 in `@bino/node` (+ 2 GL-gated
 that pass inside the Docker image but are skipped on this WSL2 host),
@@ -54,27 +54,27 @@ three packages.
 The plan numbered 16 v0.1 tasks. All 16 shipped. Notes per task on
 where reality diverged from the plan:
 
-| #   | Plan                       | What actually happened                                                                                                              |
-|-----|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| S1  | Zenoh portability spike    | Skipped — user confirmed `zenoh-ts` works in both Node and browser from prior experience.                                           |
-| S2  | Three.js version pin spike | 5-minute decision: pin `0.160.1` to match the headless-render spike's benchmarked numbers.                                          |
-| S3  | YAML loader / Zod-error UX | Picked `yaml` over `js-yaml` (better TS types). Error UX is "prefix file path" only — investing more belongs to v0.5 authoring work.|
-| 1   | `buildScene`               | Landed as planned. Added `three` as both `peerDependency` and `devDependency` for tests.                                            |
-| 2   | `PoseStream` + Memory impl | Landed. `applyPoseUpdate` came along free; not in the original plan but obviously required.                                          |
-| 3   | Camera kernel              | Landed, but the abstract `SensorKernel<Config, Output>` interface from the design doc *did not* fit the TS impl. Deferred unification — see "Decisions in flight". |
-| 4   | Lidar kernel               | Landed. Split out `decodeDepthToPoints` as a pure function so the orchestration and the math test independently.                    |
-| 5   | Clock abstraction          | Landed minimally. `external_fmi` throws (DSL accepts it; v0.6 implements).                                                          |
-| 6   | `@bino/node` skeleton      | Landed. Required pinning the workspace to Node 22 because `@kmamal/gl` ships no Node 24 prebuilt. Added `.nvmrc`.                   |
-| 7   | Headless renderer wrapper  | Landed split as `headless-gl.ts` (driver instantiation) + `runner.ts` (pure scheduler) + `service.ts` (integration). Tests cover the schedule logic without GL. |
-| 8   | Zenoh subscriber           | Landed. Mid-stream **moved to `@bino/core`** when `@bino/viewer` also needed it — see "Decisions in flight".                        |
-| 9   | Dockerfile                 | Landed slimmer than the spike's Dockerfile (removed everything Chromium/Dawn-related, since v0.1 is `@kmamal/gl` only).              |
-| 10  | Smoke test                 | Landed as a vitest test, not a Docker-orchestrated bash script. Surfaces real bugs (see below) — the test paid for itself immediately.|
-| 11  | SvelteKit skeleton         | Landed on Svelte 5 runes + static adapter. Required adding `vite-plugin-wasm` later for #13.                                        |
-| 12  | Scene mount in viewer      | Landed as a third-person debug camera. **Not** the bow-camera output — that's a v0.2 sensor-preview feature.                         |
-| 13  | Zenoh-WS subscriber        | Landed. Refactored to share code with `@bino/node` via `@bino/core`. Required `vite-plugin-top-level-await`.                        |
-| 14  | Standalone scripted mode   | Landed. Default behavior when no `?zenoh=` URL param.                                                                               |
-| 15  | Test scenario YAML         | Landed at `scenarios/v01_smoke.yaml`.                                                                                               |
-| 16  | End-to-end integration     | **Scope-reduced**: Playwright covers the viewer; the full node-and-viewer-fed-by-Zenoh story is bumped to v0.2.                     |
+| #   | Plan                       | What actually happened                                                                                                                                             |
+| --- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| S1  | Zenoh portability spike    | Skipped — user confirmed `zenoh-ts` works in both Node and browser from prior experience.                                                                          |
+| S2  | Three.js version pin spike | 5-minute decision: pin `0.160.1` to match the headless-render spike's benchmarked numbers.                                                                         |
+| S3  | YAML loader / Zod-error UX | Picked `yaml` over `js-yaml` (better TS types). Error UX is "prefix file path" only — investing more belongs to v0.5 authoring work.                               |
+| 1   | `buildScene`               | Landed as planned. Added `three` as both `peerDependency` and `devDependency` for tests.                                                                           |
+| 2   | `PoseStream` + Memory impl | Landed. `applyPoseUpdate` came along free; not in the original plan but obviously required.                                                                        |
+| 3   | Camera kernel              | Landed, but the abstract `SensorKernel<Config, Output>` interface from the design doc _did not_ fit the TS impl. Deferred unification — see "Decisions in flight". |
+| 4   | Lidar kernel               | Landed. Split out `decodeDepthToPoints` as a pure function so the orchestration and the math test independently.                                                   |
+| 5   | Clock abstraction          | Landed minimally. `external_fmi` throws (DSL accepts it; v0.6 implements).                                                                                         |
+| 6   | `@bino/node` skeleton      | Landed. Required pinning the workspace to Node 22 because `@kmamal/gl` ships no Node 24 prebuilt. Added `.nvmrc`.                                                  |
+| 7   | Headless renderer wrapper  | Landed split as `headless-gl.ts` (driver instantiation) + `runner.ts` (pure scheduler) + `service.ts` (integration). Tests cover the schedule logic without GL.    |
+| 8   | Zenoh subscriber           | Landed. Mid-stream **moved to `@bino/core`** when `@bino/viewer` also needed it — see "Decisions in flight".                                                       |
+| 9   | Dockerfile                 | Landed slimmer than the spike's Dockerfile (removed everything Chromium/Dawn-related, since v0.1 is `@kmamal/gl` only).                                            |
+| 10  | Smoke test                 | Landed as a vitest test, not a Docker-orchestrated bash script. Surfaces real bugs (see below) — the test paid for itself immediately.                             |
+| 11  | SvelteKit skeleton         | Landed on Svelte 5 runes + static adapter. Required adding `vite-plugin-wasm` later for #13.                                                                       |
+| 12  | Scene mount in viewer      | Landed as a third-person debug camera. **Not** the bow-camera output — that's a v0.2 sensor-preview feature.                                                       |
+| 13  | Zenoh-WS subscriber        | Landed. Refactored to share code with `@bino/node` via `@bino/core`. Required `vite-plugin-top-level-await`.                                                       |
+| 14  | Standalone scripted mode   | Landed. Default behavior when no `?zenoh=` URL param.                                                                                                              |
+| 15  | Test scenario YAML         | Landed at `scenarios/v01_smoke.yaml`.                                                                                                                              |
+| 16  | End-to-end integration     | **Scope-reduced**: Playwright covers the viewer; the full node-and-viewer-fed-by-Zenoh story is bumped to v0.2.                                                    |
 
 ---
 
@@ -100,7 +100,7 @@ commit:
    yield at the top of each tick lets the pump apply queued updates
    before kernels read transforms.
 
-A third issue surfaced but is *not* a bug — placing a sensor mount
+A third issue surfaced but is _not_ a bug — placing a sensor mount
 inside the bounding box of the v0.1 placeholder hull (`(0,0,5)` inside
 a `20×4×6` box at vessel origin) self-occludes the camera. The
 smoke-test scenario was authored sloppily; real DSL examples mount the
@@ -193,7 +193,7 @@ sharpened them or surfaced new ones.
 4. **Per-sensor publish rate.** v0.1's runner ticks at the highest
    sensor rate and runs every kernel each tick. v0.2 publishes — at
    the wrong rate this either floods the bus or undersamples. The
-   `rate_hz` field in the DSL is *configured* but not yet *honored*
+   `rate_hz` field in the DSL is _configured_ but not yet _honored_
    per-sensor. Schedulable in v0.2 without architectural changes.
 5. **Cross-backend pixel divergence becomes user-visible.** The spike
    already flagged that `@kmamal/gl` (Node ANGLE) and Chromium produce

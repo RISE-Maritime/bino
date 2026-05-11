@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import { type PoseStream } from "@bino/core";
   import { mountViewer, type ViewerHandle, type ViewerStats } from "$lib/viewer.js";
   import { connectZenohPoses, vesselsForZenoh, type ZenohConnection } from "$lib/zenoh.js";
@@ -24,16 +25,25 @@
   // panels are square polar plots. Sensor type drives the size +
   // label only; the actual draw routine is in viewer.ts and
   // dispatches on the kernel's frame shape.
-  type PreviewSpec = { id: string; type: "camera" | "lidar" | "radar"; w: number; h: number; label: string };
+  type PreviewSpec = {
+    id: string;
+    type: "camera" | "lidar" | "radar";
+    w: number;
+    h: number;
+    label: string;
+  };
   const previewSpecs: PreviewSpec[] = (v01Scenario.vessels[0]?.sensors ?? [])
     .map((s): PreviewSpec | null => {
-      if (s.type === "camera") return { id: s.id, type: "camera", w: 240, h: 180, label: `camera · ${s.id}` };
-      if (s.type === "lidar") return { id: s.id, type: "lidar", w: 220, h: 220, label: `lidar · ${s.id}` };
-      if (s.type === "radar_marine") return { id: s.id, type: "radar", w: 220, h: 220, label: `PPI · ${s.id}` };
+      if (s.type === "camera")
+        return { id: s.id, type: "camera", w: 240, h: 180, label: `camera · ${s.id}` };
+      if (s.type === "lidar")
+        return { id: s.id, type: "lidar", w: 220, h: 220, label: `lidar · ${s.id}` };
+      if (s.type === "radar_marine")
+        return { id: s.id, type: "radar", w: 220, h: 220, label: `PPI · ${s.id}` };
       return null;
     })
     .filter((s): s is PreviewSpec => s !== null);
-  const previewCanvasMap = new Map<string, HTMLCanvasElement>();
+  const previewCanvasMap = new SvelteMap<string, HTMLCanvasElement>();
   function bindPreview(node: HTMLCanvasElement, id: string) {
     previewCanvasMap.set(id, node);
     return {
@@ -110,14 +120,33 @@
   <header>
     <h1>Bino viewer</h1>
     <span class="stats">
-      {stats.fps.toFixed(1)} fps · {stats.frames} frames · cam {stats.cameraFrames} · lidar {stats.lidarPoints} pts · src: {source}
+      {stats.fps.toFixed(1)} fps · {stats.frames} frames · cam {stats.cameraFrames} · lidar {stats.lidarPoints}
+      pts · src: {source}
       {#if stats.staleEntities.length > 0}
         · <span class="stale">stale: {stats.staleEntities.join(", ")}</span>
       {/if}
     </span>
     <span class="overlay-keys">
-      <button class="overlay-btn" class:active={lidarOverlayOn} onclick={() => { lidarOverlayOn = !lidarOverlayOn; for (const s of previewSpecs) { if (s.type === "lidar") handle?.setOverlayVisible(s.id, lidarOverlayOn); } }}>[L]idar</button>
-      <button class="overlay-btn" class:active={radarOverlayOn} onclick={() => { radarOverlayOn = !radarOverlayOn; for (const s of previewSpecs) { if (s.type === "radar") handle?.setOverlayVisible(s.id, radarOverlayOn); } }}>[R]adar</button>
+      <button
+        class="overlay-btn"
+        class:active={lidarOverlayOn}
+        onclick={() => {
+          lidarOverlayOn = !lidarOverlayOn;
+          for (const s of previewSpecs) {
+            if (s.type === "lidar") handle?.setOverlayVisible(s.id, lidarOverlayOn);
+          }
+        }}>[L]idar</button
+      >
+      <button
+        class="overlay-btn"
+        class:active={radarOverlayOn}
+        onclick={() => {
+          radarOverlayOn = !radarOverlayOn;
+          for (const s of previewSpecs) {
+            if (s.type === "radar") handle?.setOverlayVisible(s.id, radarOverlayOn);
+          }
+        }}>[R]adar</button
+      >
     </span>
     {#if zenohError}
       <span class="err">zenoh: {zenohError}</span>
@@ -132,10 +161,12 @@
       <div
         class="preview-panel"
         class:expanded
-        onclick={() => expandedPreview = expanded ? null : spec.id}
+        onclick={() => (expandedPreview = expanded ? null : spec.id)}
         role="button"
         tabindex="0"
-        onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") expandedPreview = expanded ? null : spec.id; }}
+        onkeydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") expandedPreview = expanded ? null : spec.id;
+        }}
       >
         <div class="preview-label">{spec.label}{expanded ? " ✕" : ""}</div>
         <canvas
