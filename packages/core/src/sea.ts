@@ -279,7 +279,7 @@ export function createSeaSurface(
     uniforms,
     vertexShader: VERT,
     fragmentShader: FRAG,
-    side: THREE.FrontSide,
+    side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,

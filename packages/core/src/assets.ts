@@ -260,16 +260,34 @@ function makeMast(
   return mesh;
 }
 
-function makeDeckPlane(
-  length: number,
-  beam: number,
-  y: number,
-): THREE.Mesh {
-  const geom = new THREE.PlaneGeometry(length * 0.95, beam * 0.9);
-  geom.rotateX(-Math.PI / 2);
+function makeDeckSurface(dims: VesselDimensions): THREE.Mesh {
+  const { length, beam, draft } = dims;
+  const freeboard = draft * 0.6;
+  const halfLen = length / 2;
+  const halfBeam = beam / 2;
+  const stations = computeStations(halfLen, length);
+
+  const positions: number[] = [];
+  for (const st of stations) {
+    const w = halfBeam * st.widthFactor;
+    positions.push(st.x, freeboard, -w * 0.95);
+    positions.push(st.x, freeboard, w * 0.95);
+  }
+
+  const indices: number[] = [];
+  for (let i = 0; i < stations.length - 1; i++) {
+    const a = i * 2;
+    const b = (i + 1) * 2;
+    indices.push(a, a + 1, b);
+    indices.push(b, a + 1, b + 1);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geom.setIndex(indices);
+  geom.computeVertexNormals();
   const mesh = new THREE.Mesh(geom, MAT.deck());
   mesh.name = "deck_surface";
-  mesh.position.set(0, y, 0);
   return mesh;
 }
 
@@ -320,7 +338,7 @@ function buildTankerSuperstructure(
   parts.push(makeMast(bridgeX, deckY + lowerH + upperH, mastH));
 
   // Deck surface
-  parts.push(makeDeckPlane(dims.length, dims.beam, deckY));
+  parts.push(makeDeckSurface(dims));
 
   // Pipe runs along deck centerline
   const pipeLen = halfLen + bridgeX - ss.length / 2 - 2;
@@ -367,7 +385,7 @@ function buildFerrySuperstructure(
   const parts: THREE.Mesh[] = [];
 
   // Deck surface
-  parts.push(makeDeckPlane(dims.length, dims.beam, deckY));
+  parts.push(makeDeckSurface(dims));
 
   // Tier 1: Car deck — open at sides (just the ceiling/floor of next deck)
   const tier1H = ss.height * 0.3;
@@ -454,7 +472,7 @@ function buildCargoSuperstructure(
   const parts: THREE.Mesh[] = [];
 
   // Deck surface
-  parts.push(makeDeckPlane(dims.length, dims.beam, deckY));
+  parts.push(makeDeckSurface(dims));
 
   // Bridge house aft (main deckhouse)
   const bridgeH = ss.height * 0.6;
@@ -543,7 +561,7 @@ function buildGenericSuperstructure(
   const parts: THREE.Mesh[] = [];
 
   // Deck
-  parts.push(makeDeckPlane(dims.length, dims.beam, deckY));
+  parts.push(makeDeckSurface(dims));
 
   // Main bridge block
   parts.push(makeBridgeBlock(bridgeX, deckY, bridgeW, ss.length, ss.height));
