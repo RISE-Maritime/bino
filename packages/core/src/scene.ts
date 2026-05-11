@@ -108,7 +108,7 @@ function buildHorizonOcean(terrain: TerrainData): THREE.Mesh {
   });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.name = "horizon-ocean";
-  mesh.position.y = -0.1; // just below the wave plane (y=0)
+  mesh.position.y = -15;
   return mesh;
 }
 

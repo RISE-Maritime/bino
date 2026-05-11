@@ -279,7 +279,10 @@ export function createSeaSurface(
     uniforms,
     vertexShader: VERT,
     fragmentShader: FRAG,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
   });
 
   const geom = new THREE.PlaneGeometry(width, height, segments, segments);
