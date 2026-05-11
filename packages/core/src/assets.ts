@@ -387,10 +387,13 @@ function buildFerrySuperstructure(
   // Deck surface
   parts.push(makeDeckSurface(dims));
 
-  // Tier 1: Car deck — open at sides (just the ceiling/floor of next deck)
+  // Tier 1: Car deck
   const tier1H = ss.height * 0.3;
-  // We represent the car deck as thin floor plates at each end (no walls)
-  // Skip visible walls for the bottom tier — open sides
+  const tier1Geom = new THREE.BoxGeometry(ssLen, tier1H, ssW);
+  const tier1Mesh = new THREE.Mesh(tier1Geom, MAT.hullAbove());
+  tier1Mesh.name = "car_deck";
+  tier1Mesh.position.set(ssX, deckY + tier1H / 2, 0);
+  parts.push(tier1Mesh);
 
   // Tier 2: Passenger deck (full enclosure, slightly narrower)
   const tier2H = ss.height * 0.3;
