@@ -86,8 +86,8 @@ no GPU).
 
 ## Consequences
 
-- The GL depth-pass kernel stays in `packages/core/src/lidar.ts` for
-  reference and testing but is not used by `createNodeService`.
+- The GL depth-pass kernel has been removed. The WASM kernel is the
+  sole lidar implementation.
 - The DSL does not yet expose `azimuths` or `fov_h_deg` — the WASM
   wrapper defaults to `channels × channels` at 90° (v0.1
   compatibility). Adding these fields to the DSL is a v0.5 task.

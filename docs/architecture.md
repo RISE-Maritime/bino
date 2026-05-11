@@ -35,8 +35,7 @@ Pure TypeScript library. No I/O, no renderer instantiation. Exported modules:
 - `compile.ts` -- scenario validation and compilation
 - `scene.ts` -- Three.js scene graph construction (`buildScene`)
 - `camera.ts` -- camera kernel (WebGL render-to-texture)
-- `lidar.ts` -- lidar GL depth-pass kernel (reference impl)
-- `lidar-wasm.ts` -- lidar WASM kernel wrapper
+- `lidar-wasm.ts` -- lidar WASM BVH ray-cast kernel
 - `radar.ts` -- radar WASM kernel wrapper
 - `clock.ts` -- clock abstractions (wall, stepped, external_fmi stub)
 - `env.ts` -- EnvironmentSnapshot per-tick payload

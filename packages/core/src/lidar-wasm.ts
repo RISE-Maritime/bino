@@ -1,7 +1,15 @@
 import * as THREE from "three";
 import { lidar_init_terrain, lidar_sweep } from "../wasm/lidar.js";
 import type { LidarSensor } from "./dsl.js";
-import type { LidarFrame } from "./lidar.js";
+
+export interface LidarFrame {
+  points: Float32Array;
+  count: number;
+  time: number;
+  /** Per-point intra-sweep timestamps (seconds). Present when the
+   *  kernel supports temporal interpolation. */
+  timestamps?: Float32Array;
+}
 
 const DEFAULT_FOV_DEG = 90;
 const PLACEHOLDER_HALF_EXTENTS: [number, number, number] = [40, 6, 7];

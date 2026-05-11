@@ -13,7 +13,7 @@ import {
 } from "../src/keelson.js";
 import type { PoseUpdate } from "../src/pose.js";
 import type { CameraFrame } from "../src/camera.js";
-import type { LidarFrame } from "../src/lidar.js";
+import type { LidarFrame } from "../src/lidar-wasm.js";
 
 describe("Keelson topic keys", () => {
   it("constructs frame_transform key for a vessel", () => {

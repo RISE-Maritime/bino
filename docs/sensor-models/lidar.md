@@ -125,14 +125,14 @@ dir = ( cos(elev) * sin(az),
 
 ## Performance
 
-Benchmark results from ADR-001 (114K terrain triangles, v04_kiel scenario):
+Benchmark results (114K terrain triangles, v04_kiel scenario):
 
-| Config           | WASM ray-cast | GL depth-pass | Ratio            |
-| ---------------- | ------------- | ------------- | ---------------- |
-| 32 ch x 360 az   | 1.1 ms        | 3.8 ms        | WASM 3.5x faster |
-| 128 ch x 1024 az | 17 ms         | 4.9 ms        | GL 3.5x faster   |
+| Config           | WASM ray-cast |
+| ---------------- | ------------- |
+| 32 ch x 360 az   | 1.1 ms        |
+| 128 ch x 1024 az | 17 ms         |
 
-Decision: WASM ray-cast was selected. It provides native 360-degree support without cubemap seam artifacts, has no GL context dependency, and produces deterministic output. Both approaches remain within the 10 Hz frame budget at current operational configurations.
+All configurations are well within the 10 Hz frame budget (100 ms). See `packages/node/test/lidar-bench.test.ts` for the full benchmark suite.
 
 ## Output Format
 

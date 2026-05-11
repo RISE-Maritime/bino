@@ -3,12 +3,10 @@ import * as THREE from "three";
 import {
   compileScenario,
   buildScene,
-  createLidarKernel,
   createLidarKernelWasm,
   applyPoseUpdate,
   type LidarSensor,
 } from "@bino/core";
-import { createHeadlessRenderer } from "../src/headless-gl.js";
 
 // ── Terrain generator matching v04_kiel complexity ──────────────
 // v04_kiel GMRT grid: ~258×223 cells at 50m res → ~115K triangles.
@@ -116,18 +114,6 @@ function printRow(label: string, s: Stats, rays: number) {
 const WARMUP = 10;
 const MEASURED = 50;
 
-// ── GL availability ─────────────────────────────────────────────
-const glAvailable = (() => {
-  try {
-    const handle = createHeadlessRenderer(8, 8);
-    handle.dispose();
-    return true;
-  } catch {
-    return false;
-  }
-})();
-const itGl = glAvailable ? it : it.skip;
-
 // ── Benchmark helpers ───────────────────────────────────────────
 
 const terrain = buildSyntheticTerrain();
@@ -173,54 +159,8 @@ function benchWasm(channels: number, azimuths: number, fovH: number): Stats {
   return collectStats(timings);
 }
 
-// GL 360° benchmark: render N cubemap faces per sweep, each covering
-// 90° horizontal × 45° vertical FOV. Total pixel count per sweep =
-// faces × (azimuths/faces) × channels.
-function benchGl(channels: number, azimuths: number): Stats {
-  const cfg = { ...lidarConfig, channels };
-  const { scene, sensorNode } = setupScene();
-  const faceWidth = Math.ceil(azimuths / GL_CUBEMAP_FACES);
-  const handle = createHeadlessRenderer(faceWidth, channels);
-  try {
-    const kernels: ReturnType<typeof createLidarKernel>[] = [];
-    for (let f = 0; f < GL_CUBEMAP_FACES; f++) {
-      const faceNode = new THREE.Object3D();
-      faceNode.name = `lidar_face_${f}`;
-      faceNode.rotation.y = (f * Math.PI) / 2;
-      sensorNode.add(faceNode);
-      kernels.push(
-        createLidarKernel({
-          renderer: handle.renderer,
-          scene,
-          sensorNode: faceNode,
-          config: cfg,
-          fov_deg: 45,
-          width: faceWidth,
-        }),
-      );
-    }
-    scene.updateMatrixWorld(true);
-    for (let i = 0; i < WARMUP; i++) {
-      for (const k of kernels) k.step(i * 0.1);
-    }
-    const timings: number[] = [];
-    for (let i = 0; i < MEASURED; i++) {
-      const t0 = performance.now();
-      for (const k of kernels) k.step(i * 0.1);
-      timings.push(performance.now() - t0);
-    }
-    for (const k of kernels) k.dispose();
-    return collectStats(timings);
-  } finally {
-    handle.dispose();
-  }
-}
-
 // ── Tests ───────────────────────────────────────────────────────
 
-// Realistic configs: channels (vertical) × azimuths (horizontal).
-// Full-360° sweep — matches Keelson PointCloud (one complete revolution).
-// GL can't do 360° in one perspective render; needs N cubemap faces.
 const CONFIGS = [
   { channels: 32, azimuths: 360, fovH: 360, label: "32×360 (11.5K, 360°)" },
   { channels: 128, azimuths: 512, fovH: 360, label: "OS2-512 (65K, 360°)" },
@@ -228,72 +168,15 @@ const CONFIGS = [
   { channels: 128, azimuths: 2048, fovH: 360, label: "OS2-2048 (262K, 360°)" },
 ];
 
-// GL needs a cubemap for 360°: 4 faces at 90° each (no top/bottom needed
-// for a lidar with narrow vertical FOV). Each face renders the full scene.
-const GL_CUBEMAP_FACES = 4;
-
-describe("lidar benchmark: GL depth-pass vs Rust ray-cast", () => {
-  const wasmResults: Record<string, Stats> = {};
-  const glResults: Record<string, Stats> = {};
-
+describe("lidar benchmark: WASM ray-cast", () => {
   it(`WASM ray-cast scaling (${triCount} terrain tris)`, () => {
     console.log(`\n── Lidar benchmark (${triCount} terrain tris, 1 vessel, 360° sweep) ──`);
-    console.log("  WASM ray-cast:");
     for (const cfg of CONFIGS) {
       const rays = cfg.channels * cfg.azimuths;
-      wasmResults[cfg.label] = benchWasm(cfg.channels, cfg.azimuths, cfg.fovH);
-      printRow(`    ${cfg.label}`, wasmResults[cfg.label], rays);
+      const stats = benchWasm(cfg.channels, cfg.azimuths, cfg.fovH);
+      printRow(`  ${cfg.label}`, stats, rays);
     }
-    expect(wasmResults[CONFIGS[0]!.label]!.p95).toBeLessThan(100);
-  });
-
-  itGl(`GL depth-pass scaling (${triCount} terrain tris)`, () => {
-    console.log("  GL depth-pass:");
-    for (const cfg of CONFIGS) {
-      const rays = cfg.channels * cfg.azimuths;
-      glResults[cfg.label] = benchGl(cfg.channels, cfg.azimuths);
-      printRow(`    ${cfg.label}`, glResults[cfg.label], rays);
-    }
-    expect(glResults[CONFIGS[0]!.label]!.p95).toBeLessThan(200);
-  });
-
-  it("summary", () => {
-    console.log("\n── Summary ──");
-    const hasGl = CONFIGS.every((cfg) => glResults[cfg.label]);
-    if (hasGl) {
-      console.log("  config                          WASM p50    GL p50     WASM speedup");
-      console.log("  ──────────────────────────────  ─────────   ─────────  ────────────");
-      for (const cfg of CONFIGS) {
-        const w = wasmResults[cfg.label]!;
-        const g = glResults[cfg.label]!;
-        const speedup = g.p50 / w.p50;
-        console.log(
-          `  ${cfg.label.padEnd(32)}  ${fmtMs(w.p50).padStart(7)}ms   ${fmtMs(g.p50).padStart(7)}ms  ${speedup.toFixed(1)}×`,
-        );
-      }
-      const last = CONFIGS[CONFIGS.length - 1]!;
-      const topSpeedup = glResults[last.label]!.p50 / wasmResults[last.label]!.p50;
-      if (topSpeedup > 1.5) {
-        console.log(
-          `\n  ✓ Rust ray-cast ${topSpeedup.toFixed(1)}× faster at ${last.label} — architecture validated.\n`,
-        );
-      } else {
-        console.log(
-          `\n  At ${last.label} Rust is ${topSpeedup.toFixed(1)}× vs GL.` +
-            "\n  See p95 and scaling trend for the full picture.\n",
-        );
-      }
-    } else {
-      const first = CONFIGS[0]!;
-      const w = wasmResults[first.label];
-      if (w) {
-        console.log(`  WASM ray-cast ${first.label}: p50=${fmtMs(w.p50)}ms  p95=${fmtMs(w.p95)}ms`);
-      }
-      console.log(
-        "  GL depth-pass: skipped (no GL context)." +
-          "\n  Rebuild @kmamal/gl or run in Docker for the full comparison.\n",
-      );
-    }
-    expect(true).toBe(true);
+    const first = benchWasm(CONFIGS[0]!.channels, CONFIGS[0]!.azimuths, CONFIGS[0]!.fovH);
+    expect(first.p95).toBeLessThan(100);
   });
 });

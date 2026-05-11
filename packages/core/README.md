@@ -17,8 +17,7 @@ here as thin TypeScript wrappers around the built `.wasm` modules.
 | `compile`    | Scenario validation and compilation         |
 | `scene`      | Three.js scene graph construction           |
 | `camera`     | Camera kernel (WebGL render-to-texture)     |
-| `lidar`      | Lidar GL depth-pass kernel (reference impl) |
-| `lidar-wasm` | Lidar WASM kernel wrapper                   |
+| `lidar-wasm` | Lidar WASM BVH ray-cast kernel              |
 | `radar`      | Radar WASM kernel wrapper                   |
 | `clock`      | Clock abstractions (wall, stepped)          |
 | `env`        | EnvironmentSnapshot per-tick payload        |

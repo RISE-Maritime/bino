@@ -14,7 +14,7 @@ import { PackedElementField_NumericType } from "@rise-maritime/keelson-js/dist/p
 
 import type { PoseUpdate } from "./pose.js";
 import type { CameraFrame } from "./camera.js";
-import type { LidarFrame } from "./lidar.js";
+import type { LidarFrame } from "./lidar-wasm.js";
 import type { RadarFrame } from "./radar.js";
 
 const SUBJECT_FRAME_TRANSFORM = "frame_transform";
