@@ -51,14 +51,20 @@ const VERT = /* glsl */ `
 
   varying vec3 vWorldPos;
   varying vec3 vNormal;
+  varying float vWaveHeight;
 
   const float G = 9.81;
 
   void main() {
     vec3 pos = position;
+    // Use world-space coordinates for wave phase so the mesh can follow
+    // the camera without waves appearing to slide.
+    vec4 worldBase = modelMatrix * vec4(pos, 1.0);
+
     vec3 displaced = pos;
     vec3 tangent  = vec3(1.0, 0.0, 0.0);
     vec3 binormal = vec3(0.0, 0.0, 1.0);
+    float waveHeightSum = 0.0;
 
     for (int i = 0; i < N_WAVES; i++) {
       float A = uAmplitude[i];
@@ -68,19 +74,21 @@ const VERT = /* glsl */ `
 
       float k = 6.2831853 / L;
       float omega = sqrt(G * k);
-      float phase = k * dot(D, pos.xz) - omega * uTime;
+      float phase = k * dot(D, worldBase.xz) - omega * uTime;
       float c = cos(phase);
       float s = sin(phase);
 
       displaced.x += Q * A * D.x * c;
       displaced.z += Q * A * D.y * c;
       displaced.y += A * s;
+      waveHeightSum += A * s;
 
       float WA = k * A;
       tangent  += vec3(-Q * D.x * D.x * WA * s, D.x * WA * c, -Q * D.x * D.y * WA * s);
       binormal += vec3(-Q * D.x * D.y * WA * s, D.y * WA * c, -Q * D.y * D.y * WA * s);
     }
 
+    vWaveHeight = waveHeightSum;
     vec3 normal = normalize(cross(binormal, tangent));
     vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
     vWorldPos = worldPos.xyz;
@@ -92,20 +100,117 @@ const VERT = /* glsl */ `
 const FRAG = /* glsl */ `
   precision highp float;
 
+  uniform float uTime;
   uniform vec3 uSeaColor;
   uniform vec3 uSkyColor;
   uniform vec3 uSunDir;
+  uniform float uMaxAmplitude;
+  uniform float uPlaneRadius;
 
   varying vec3 vWorldPos;
   varying vec3 vNormal;
+  varying float vWaveHeight;
+
+  // ---- Procedural noise (hash-based 2D value noise + FBM) ----
+  float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float valueNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+  }
+
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float amp = 0.5;
+    float totalAmp = 0.0;
+    for (int i = 0; i < 4; i++) {
+      v += amp * valueNoise(p);
+      totalAmp += amp;
+      p *= 2.0;
+      amp *= 0.5;
+    }
+    return v / totalAmp;
+  }
 
   void main() {
     vec3 n = normalize(vNormal);
-    float upness = clamp(n.y, 0.0, 1.0);
-    vec3 base = mix(uSkyColor, uSeaColor, upness);
-    float sun = max(dot(n, normalize(uSunDir)), 0.0);
-    vec3 lit = base + vec3(0.6) * pow(sun, 16.0);
-    gl_FragColor = vec4(lit, 1.0);
+
+    // --- Procedural noise normal perturbation (fine ripples) ---
+    vec2 noiseCoord = vWorldPos.xz * 0.5 + uTime * vec2(0.3, 0.25);
+    float eps = 0.5;
+    float nC = fbm(noiseCoord);
+    float nR = fbm(noiseCoord + vec2(eps, 0.0));
+    float nU = fbm(noiseCoord + vec2(0.0, eps));
+    vec3 noiseNormal = normalize(vec3(nC - nR, eps, nC - nU));
+    n = normalize(n + noiseNormal * 0.15);
+
+    // --- View direction ---
+    vec3 viewDir = normalize(cameraPosition - vWorldPos);
+
+    // --- Schlick fresnel (water IOR 1.33, F0 ≈ 0.02) ---
+    float cosTheta = max(dot(viewDir, n), 0.0);
+    float F0 = 0.02;
+    float fresnel = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+
+    // --- Reflected color (sky gradient) ---
+    vec3 reflDir = reflect(-viewDir, n);
+    float skyT = clamp(reflDir.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 horizonHaze = vec3(0.75, 0.82, 0.88);
+    vec3 skyBlue = vec3(0.35, 0.55, 0.85);
+    vec3 reflectedColor = mix(horizonHaze, skyBlue, skyT);
+
+    // --- Subsurface scattering approximation ---
+    vec3 sssColor = vec3(0.0, 0.55, 0.45); // turquoise/green tint
+    vec3 sunDir = normalize(uSunDir);
+    float viewSunAlign = max(dot(viewDir, -sunDir), 0.0);
+    float maxAmp = max(uMaxAmplitude, 0.01);
+    float normalizedHeight = clamp((vWaveHeight / maxAmp + 1.0) * 0.5, 0.0, 1.0);
+    float sss = normalizedHeight * pow(viewSunAlign, 3.0) * 0.4;
+    vec3 subsurface = sssColor * sss;
+
+    // --- Base water color ---
+    vec3 waterColor = mix(uSeaColor, reflectedColor, fresnel) + subsurface;
+
+    // --- Sun specular (Blinn-Phong) ---
+    vec3 halfDir = normalize(sunDir + viewDir);
+    float NdotH = max(dot(n, halfDir), 0.0);
+    float specPrimary = pow(NdotH, 256.0);   // tight sun highlight
+    float specSecondary = pow(NdotH, 32.0);   // broader glare
+    vec3 sunColor = vec3(1.0, 0.95, 0.85);
+    vec3 specular = sunColor * (specPrimary * 1.5 + specSecondary * 0.25);
+
+    // --- Foam / whitecaps ---
+    float foamNoise = fbm(vWorldPos.xz * 0.3 + uTime * vec2(0.1, 0.08));
+    float foamMask = smoothstep(0.5, 0.9, normalizedHeight) * foamNoise;
+    vec3 foamColor = vec3(0.9, 0.95, 1.0);
+    waterColor = mix(waterColor, foamColor, foamMask * 0.6);
+
+    // --- Combine ---
+    vec3 color = waterColor + specular;
+
+    // --- Distance fog (exponential atmospheric) ---
+    float dist = length(vWorldPos - cameraPosition);
+    vec3 fogColor = horizonHaze;
+    float fogDensity = 0.00012;
+    float fogFactor = 1.0 - exp(-fogDensity * dist);
+    color = mix(color, fogColor, fogFactor);
+
+    // --- Edge blending (hide plane boundary) ---
+    float edgeDist = length(vWorldPos.xz - cameraPosition.xz);
+    float edgeFade = smoothstep(uPlaneRadius * 0.7, uPlaneRadius, edgeDist);
+    color = mix(color, fogColor, edgeFade);
+
+    gl_FragColor = vec4(color, 1.0);
   }
 `;
 
@@ -114,6 +219,7 @@ export interface SeaSurfaceHandle {
   material: THREE.ShaderMaterial;
   setTime(t: number): void;
   setSeaState(seaState: SeaState | undefined): void;
+  setCenter(x: number, z: number): void;
   dispose(): void;
 }
 
@@ -129,18 +235,16 @@ export interface SeaSurfaceOptions {
   yOffset?: number;
 }
 
-// Default sea-plane sizing: 4 km × 4 km × 384 segments (~10 m per
+// Default sea-plane sizing: 6 km × 6 km × 512 segments (~11.7 m per
 // segment). Peak Pierson-Moskowitz wavelengths in normal seas are
-// 30-100 m → 3-10 segments per crest. Visible wave silhouettes
-// without the 512-seg vertex shader cost. Callers can override via
+// 30-100 m → 3-9 segments per crest. Wider extent reduces visible
+// edge pop-in when following the camera. Callers can override via
 // SeaSurfaceOptions if they need either denser detail or a wider
-// horizon. The previous default (10 km × 10 km × 256 segments,
-// 39 m per segment) aliased away every wave component — fine for
-// flat water, useless for a sea-state demo.
+// horizon.
 const DEFAULT_OPTS: Required<SeaSurfaceOptions> = {
-  width: 4_000,
-  height: 4_000,
-  segments: 384,
+  width: 6_000,
+  height: 6_000,
+  segments: 512,
   yOffset: 0,
 };
 
@@ -150,10 +254,15 @@ export function createSeaSurface(
 ): SeaSurfaceHandle {
   const { width, height, segments, yOffset } = { ...DEFAULT_OPTS, ...opts };
 
+  const planeRadius = Math.sqrt(width * width + height * height) / 2;
+
+  const components = componentsFor(env.sea_state);
+  const maxAmplitude = components.reduce((sum, c) => sum + c.amplitude, 0);
+
   const uniforms = {
     uTime: { value: 0 },
-    uSeaColor: { value: new THREE.Color(0x091e3a) },
-    uSkyColor: { value: new THREE.Color(0xc0d8ec) },
+    uSeaColor: { value: new THREE.Color(0x062840) },
+    uSkyColor: { value: new THREE.Color(0xb0ccdd) },
     uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
     uAmplitude: { value: new Float32Array(N_WAVES) },
     uWavelength: { value: new Float32Array(N_WAVES) },
@@ -161,8 +270,10 @@ export function createSeaSurface(
       value: Array.from({ length: N_WAVES }, () => new THREE.Vector2()),
     },
     uSteepness: { value: new Float32Array(N_WAVES) },
+    uMaxAmplitude: { value: maxAmplitude },
+    uPlaneRadius: { value: planeRadius },
   };
-  setUniformsFromComponents(uniforms, componentsFor(env.sea_state));
+  setUniformsFromComponents(uniforms, components);
 
   const material = new THREE.ShaderMaterial({
     uniforms,
@@ -184,7 +295,16 @@ export function createSeaSurface(
       material.uniforms["uTime"]!.value = t;
     },
     setSeaState(seaState: SeaState | undefined) {
-      setUniformsFromComponents(material.uniforms, componentsFor(seaState));
+      const comps = componentsFor(seaState);
+      setUniformsFromComponents(material.uniforms, comps);
+      material.uniforms["uMaxAmplitude"]!.value = comps.reduce(
+        (sum, c) => sum + c.amplitude,
+        0,
+      );
+    },
+    setCenter(x: number, z: number) {
+      mesh.position.x = x;
+      mesh.position.z = z;
     },
     dispose() {
       geom.dispose();

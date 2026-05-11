@@ -99,11 +99,11 @@ function buildHorizonOcean(terrain: TerrainData): THREE.Mesh {
   const dLon = bbox[2] - bbox[0];
   const heightM = dLat * 111_320;
   const widthM = dLon * 111_320 * Math.cos(((bbox[1] + dLat / 2) * Math.PI) / 180);
-  const size = Math.max(widthM, heightM) + 4_000;
+  const size = Math.max(widthM, heightM) + 8_000;
   const geom = new THREE.PlaneGeometry(size, size, 1, 1);
   geom.rotateX(-Math.PI / 2);
   const mat = new THREE.MeshStandardMaterial({
-    color: 0x0c1e3c,
+    color: 0x0a1e35,
     roughness: 0.7,
   });
   const mesh = new THREE.Mesh(geom, mat);

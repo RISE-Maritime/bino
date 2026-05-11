@@ -224,7 +224,10 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     controls.update();
 
     const t = performance.now() / 1000;
-    if (built.sea) built.sea.setTime(t);
+    if (built.sea) {
+      built.sea.setTime(t);
+      built.sea.setCenter(debugCamera.position.x, debugCamera.position.z);
+    }
     const radarStats: Record<string, { spokes: number; bins: number }> = {};
     const latestByKernel = new Map<unknown, CameraFrame | LidarFrame | RadarFrame>();
     for (const k of kernels) {
