@@ -47,6 +47,15 @@ export interface MountOptions {
   previewCanvases?: Map<string, HTMLCanvasElement>;
 }
 
+interface PpiCache {
+  lut: Uint32Array;
+  imageData: ImageData;
+  w: number;
+  h: number;
+  nSpokes: number;
+  nBins: number;
+}
+
 /**
  * Mounts the viewer on a canvas. Builds the scene from the v0.1 demo
  * scenario, instantiates the same camera/lidar kernels @bino/node uses
@@ -122,6 +131,8 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     id: string;
     kernel: RadarKernel;
     canvas: HTMLCanvasElement;
+    range: number;
+    ppiCache: PpiCache;
   }
   const previews: Array<CameraPreview | LidarPreview | RadarPreview> = [];
   const previewCanvases = opts.previewCanvases;
@@ -189,7 +200,11 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         sensorNode.add(ring);
         radarOverlays.push({ ring });
         if (previewCanvas) {
-          previews.push({ type: "radar", id: sensor.id, kernel, canvas: previewCanvas });
+          previews.push({
+            type: "radar", id: sensor.id, kernel, canvas: previewCanvas,
+            range: sensor.range_m,
+            ppiCache: { lut: new Uint32Array(0), imageData: new ImageData(1, 1), w: 0, h: 0, nSpokes: 0, nBins: 0 },
+          });
         }
       }
     }
@@ -254,7 +269,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
       if (!out) continue;
       if (p.type === "camera") drawCameraPreview(p.canvas, p.offscreen, p.imageData, out as CameraFrame);
       else if (p.type === "lidar") drawLidarPreview(p.canvas, out as LidarFrame, p.range);
-      else if (p.type === "radar") drawPpi(p.canvas, out as RadarFrame);
+      else if (p.type === "radar") drawPpi(p.canvas, out as RadarFrame, p.range, p.ppiCache);
     }
 
     for (const h of cameraHelpers) h.update();
@@ -370,7 +385,7 @@ function drawLidarPreview(canvas: HTMLCanvasElement, frame: LidarFrame, range: n
   ctx.fillStyle = "#0a1626";
   ctx.fillRect(0, 0, w, h);
 
-  // range rings + crosshair, same look as the PPI for visual coherence
+  // Range rings + crosshair
   ctx.strokeStyle = "#1f3a4d";
   ctx.lineWidth = 1;
   for (let k = 1; k <= 4; k++) {
@@ -385,42 +400,125 @@ function drawLidarPreview(canvas: HTMLCanvasElement, frame: LidarFrame, range: n
   ctx.lineTo(cx, cy + r);
   ctx.stroke();
 
-  // points: top-down scatter onto x-z plane.
-  // Sensor-local frame: camera looks down -Z, so forward is -z. Map
-  // forward → up on the canvas (small canvas-y), right → right.
-  ctx.fillStyle = "#ffaa55";
+  // Points: top-down scatter, color-coded by distance.
   const scale = r / range;
+  const pointSize = Math.max(1.5, w / 150);
+  const halfPt = pointSize / 2;
   for (let i = 0; i < frame.count; i++) {
     const px = frame.points[i * 3 + 0]!;
     const pz = frame.points[i * 3 + 2]!;
     const sx = cx + px * scale;
-    const sy = cy + pz * scale; // pz<0 (forward) → sy<cy (above center)
+    const sy = cy + pz * scale;
     if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
-    ctx.fillRect(sx - 0.5, sy - 0.5, 1.5, 1.5);
+    const dist = Math.sqrt(px * px + pz * pz);
+    const t = Math.min(dist / range, 1.0);
+    const cr = Math.round(255 - 195 * t);
+    const cg = Math.round(200 - 80 * t);
+    const cb = Math.round(80 + 175 * t);
+    ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
+    ctx.fillRect(sx - halfPt, sy - halfPt, pointSize, pointSize);
   }
+
+  // Range labels
+  const fontSize = Math.max(10, Math.round(w / 25));
+  ctx.font = `${fontSize}px monospace`;
+  ctx.fillStyle = "rgba(100, 160, 180, 0.6)";
+  ctx.textAlign = "left";
+  for (let k = 1; k <= 4; k++) {
+    const m = (k / 4) * range;
+    const label = m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m.toFixed(0)}m`;
+    ctx.fillText(label, cx + 3, cy - (r * k) / 4 - 3);
+  }
+
+  // Forward marker
+  ctx.strokeStyle = "rgba(100, 180, 140, 0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - r);
+  ctx.stroke();
 }
 
-function drawPpi(canvas: HTMLCanvasElement, sweep: RadarFrame): void {
+const PPI_LUT_INVALID = 0xFFFFFFFF;
+
+function buildPpiLut(w: number, h: number, nSpokes: number, nBins: number): Uint32Array {
+  const cx = w / 2;
+  const cy = h / 2;
+  const r = Math.min(cx, cy) - 4;
+  const lut = new Uint32Array(w * h);
+  lut.fill(PPI_LUT_INVALID);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > r || dist < 1) continue;
+      let az = Math.atan2(dx, -dy);
+      if (az < 0) az += Math.PI * 2;
+      const spokeIdx = Math.floor((az / (Math.PI * 2)) * nSpokes) % nSpokes;
+      const binIdx = Math.floor((dist / r) * nBins);
+      if (binIdx >= nBins) continue;
+      lut[y * w + x] = (spokeIdx << 16) | binIdx;
+    }
+  }
+  return lut;
+}
+
+function drawPpi(canvas: HTMLCanvasElement, sweep: RadarFrame, range: number, cache: PpiCache): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const w = canvas.width;
   const h = canvas.height;
+  const bins = sweep.spokes[0]?.intensity.length ?? 0;
+  const nSpokes = sweep.spokes.length;
+  if (bins === 0 || nSpokes === 0) return;
+
+  if (cache.w !== w || cache.h !== h || cache.nSpokes !== nSpokes || cache.nBins !== bins) {
+    cache.lut = buildPpiLut(w, h, nSpokes, bins);
+    cache.imageData = new ImageData(w, h);
+    cache.w = w;
+    cache.h = h;
+    cache.nSpokes = nSpokes;
+    cache.nBins = bins;
+  }
+
+  const { lut, imageData } = cache;
+  const data = imageData.data;
+
+  // Background fill
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = 10; data[i + 1] = 22; data[i + 2] = 38; data[i + 3] = 255;
+  }
+
+  // Fill pixels from polar LUT — pixel-perfect coverage, no gaps
+  const n = w * h;
+  for (let i = 0; i < n; i++) {
+    const entry = lut[i]!;
+    if (entry === PPI_LUT_INVALID) continue;
+    const spokeIdx = entry >>> 16;
+    const binIdx = entry & 0xFFFF;
+    const v = sweep.spokes[spokeIdx]!.intensity[binIdx]!;
+    if (v === 0) continue;
+    const norm = Math.sqrt(v / 255);
+    const idx = i * 4;
+    data[idx] = Math.round(norm * 40);
+    data[idx + 1] = Math.round(norm * 255);
+    data[idx + 2] = Math.round(norm * 20);
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  // Overlay: range rings + crosshair
   const cx = w / 2;
   const cy = h / 2;
   const r = Math.min(cx, cy) - 4;
-
-  ctx.fillStyle = "#0a1626";
-  ctx.fillRect(0, 0, w, h);
-
-  // range rings
-  ctx.strokeStyle = "#1f3a4d";
+  ctx.strokeStyle = "rgba(80, 140, 160, 0.45)";
   ctx.lineWidth = 1;
   for (let k = 1; k <= 4; k++) {
     ctx.beginPath();
     ctx.arc(cx, cy, (r * k) / 4, 0, Math.PI * 2);
     ctx.stroke();
   }
-  // crosshair
   ctx.beginPath();
   ctx.moveTo(cx - r, cy);
   ctx.lineTo(cx + r, cy);
@@ -428,25 +526,24 @@ function drawPpi(canvas: HTMLCanvasElement, sweep: RadarFrame): void {
   ctx.lineTo(cx, cy + r);
   ctx.stroke();
 
-  // returns — intensity-mapped green phosphor
-  const bins = sweep.spokes[0]?.intensity.length ?? 0;
-  if (bins === 0) return;
-  for (const spoke of sweep.spokes) {
-    for (let b = 0; b < bins; b++) {
-      const v = spoke.intensity[b]!;
-      if (v === 0) continue;
-      const alpha = v / 255;
-      const radius = (b / bins) * r;
-      const angle = spoke.azimuth - Math.PI / 2;
-      const px = cx + Math.cos(angle) * radius;
-      const py = cy + Math.sin(angle) * radius;
-      const green = Math.round(100 + 155 * alpha);
-      ctx.fillStyle = `rgba(${Math.round(alpha * 40)}, ${green}, ${Math.round(alpha * 30)}, ${Math.max(alpha, 0.15)})`;
-      ctx.beginPath();
-      ctx.arc(px, py, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  // Range labels
+  const fontSize = Math.max(10, Math.round(w / 25));
+  ctx.font = `${fontSize}px monospace`;
+  ctx.fillStyle = "rgba(100, 160, 180, 0.6)";
+  ctx.textAlign = "left";
+  for (let k = 1; k <= 4; k++) {
+    const m = (k / 4) * range;
+    const label = m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m.toFixed(0)}m`;
+    ctx.fillText(label, cx + 3, cy - (r * k) / 4 - 3);
   }
+
+  // Heading flash: forward direction
+  ctx.strokeStyle = "rgba(100, 200, 140, 0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy - r);
+  ctx.stroke();
 }
 
 function resize(renderer: THREE.WebGLRenderer, canvas: HTMLCanvasElement): void {

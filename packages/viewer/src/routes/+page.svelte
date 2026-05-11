@@ -42,6 +42,7 @@
       },
     };
   }
+  let expandedPreview: string | null = $state(null);
   let source: "zenoh" | "scripted" | "connecting" = $state("scripted");
   let zenohError: string | undefined = $state();
 
@@ -102,11 +103,21 @@
   <canvas bind:this={canvas} class="scene"></canvas>
   <div class="preview-stack">
     {#each previewSpecs as spec (spec.id)}
-      <div class="preview-panel">
-        <div class="preview-label">{spec.label}</div>
+      {@const expanded = expandedPreview === spec.id}
+      {@const pw = expanded ? (spec.type === "camera" ? 640 : 500) : spec.w}
+      {@const ph = expanded ? (spec.type === "camera" ? 480 : 500) : spec.h}
+      <div
+        class="preview-panel"
+        class:expanded
+        onclick={() => expandedPreview = expanded ? null : spec.id}
+        role="button"
+        tabindex="0"
+        onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") expandedPreview = expanded ? null : spec.id; }}
+      >
+        <div class="preview-label">{spec.label}{expanded ? " ✕" : ""}</div>
         <canvas
-          width={spec.w}
-          height={spec.h}
+          width={pw}
+          height={ph}
           class="preview-canvas"
           class:pixelated={spec.type !== "camera"}
           use:bindPreview={spec.id}
@@ -168,6 +179,14 @@
     padding: 6px 8px 8px;
     font-size: 0.75rem;
     color: #88a;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .preview-panel:hover {
+    border-color: #3a5a6c;
+  }
+  .preview-panel.expanded {
+    border-color: #4a7a8c;
   }
   .preview-label {
     font-variant-numeric: tabular-nums;
