@@ -217,8 +217,8 @@ export async function prepareTerrain(
   const [coastline, bathymetry, buildings, seamarks] = await Promise.all([
     loadCoastline(bbox),
     loadBathymetry(bbox),
-    fetchBuildings ? loadBuildings(bbox).catch(() => [] as BuildingData[]) : ([] as BuildingData[]),
-    fetchSeamarks ? loadSeamarks(bbox).catch(() => [] as SeamarkData[]) : ([] as SeamarkData[]),
+    fetchBuildings ? loadBuildings(bbox).catch((e) => { console.warn("buildings fetch failed:", e); return [] as BuildingData[]; }) : ([] as BuildingData[]),
+    fetchSeamarks ? loadSeamarks(bbox).catch((e) => { console.warn("seamarks fetch failed:", e); return [] as SeamarkData[]; }) : ([] as SeamarkData[]),
   ]);
   return { coastline, bathymetry, buildings, seamarks };
 }

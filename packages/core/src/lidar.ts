@@ -28,6 +28,9 @@ export interface LidarKernelOptions {
   fov_deg?: number;
   /** Render target width (horizontal pixels / azimuths). Defaults to config.channels. */
   width?: number;
+  /** When true, the own vessel's hull group is hidden during the
+   *  depth pass so the lidar doesn't hit its own geometry. Default true. */
+  excludeOwnVessel?: boolean;
 }
 
 export interface DecodedPoints {
@@ -39,7 +42,7 @@ export function createLidarKernel(opts: LidarKernelOptions): LidarKernel {
   const fov = opts.fov_deg ?? DEFAULT_FOV_DEG;
   const channels = opts.config.channels;
   const range = opts.config.range_m;
-  const width = opts.width ?? channels;
+  const width = opts.width ?? opts.config.azimuths ?? channels;
   const height = channels;
 
   const camera = new THREE.PerspectiveCamera(fov, width / height, NEAR_DEFAULT, range);
@@ -61,9 +64,15 @@ export function createLidarKernel(opts: LidarKernelOptions): LidarKernel {
 
   const depthBuf = new Uint8Array(width * height * 4);
 
+  const excludeOwn = opts.excludeOwnVessel !== false;
+  const ownHull = excludeOwn
+    ? opts.sensorNode.parent?.children.find((c) => c.name.endsWith("__hull")) ?? null
+    : null;
+
   return {
     camera,
     step(time: number): LidarFrame {
+      if (ownHull) ownHull.visible = false;
       const prevOverride = opts.scene.overrideMaterial;
       opts.scene.overrideMaterial = depthOverride;
       opts.renderer.setRenderTarget(target);
@@ -71,6 +80,7 @@ export function createLidarKernel(opts: LidarKernelOptions): LidarKernel {
       opts.renderer.readRenderTargetPixels(target, 0, 0, width, height, depthBuf);
       opts.renderer.setRenderTarget(null);
       opts.scene.overrideMaterial = prevOverride;
+      if (ownHull) ownHull.visible = true;
       const decoded = decodeDepthToPoints(depthBuf, width, height, camera, range);
       return { points: decoded.points, count: decoded.count, time };
     },

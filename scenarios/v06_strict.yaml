@@ -45,7 +45,7 @@ scenario:
       sensors:
         - id: bridge_camera
           type: camera
-          mount: { x: 15, y: 0, z: 14 }
+          mount: { x: 15, y: 14, z: 0 }
           fov_deg: 120
           resolution: [640, 480]
           rate_hz: 10
@@ -53,14 +53,14 @@ scenario:
           exposure_time_s: 0.01
         - id: nav_lidar
           type: lidar
-          mount: { x: 15, y: 0, z: 14 }
+          mount: { x: 15, y: 14, z: 0 }
           channels: 32
           range_m: 300
           rate_hz: 10
           phase_offset_s: 0.05
         - id: nav_radar
           type: radar_marine
-          mount: { x: 0, y: 0, z: 20 }
+          mount: { x: 0, y: 20, z: 0 }
           range_m: 6000
           rotation_rate_hz: 0.4
           beam_width_deg: 1.2

@@ -28,6 +28,9 @@ export interface RadarKernelOptions {
   /** Environment for sea clutter + weather attenuation. When
    *  undefined, the kernel produces v0.3-compatible binary output. */
   environment?: Environment;
+  /** Static obstacles (buildings, terrain features) included in every
+   *  sweep. These have zero velocity and don't move between frames. */
+  staticObstacles?: VesselBox[];
 }
 
 interface VesselBox {
@@ -45,6 +48,7 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
   const tmpQuat = new THREE.Quaternion();
   const tmpEuler = new THREE.Euler();
   const tmpVec = new THREE.Vector3();
+  const staticObs = opts.staticObstacles ?? [];
 
   let sweepIndex = 0;
 
@@ -52,10 +56,11 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
 
   return {
     step(time: number): RadarFrame {
-      const vessels: VesselBox[] = [];
+      const vessels: VesselBox[] = [...staticObs];
       for (const child of scene.children) {
         if (!(child instanceof THREE.Group)) continue;
         if (child === sensorNode.parent) continue;
+        if (!child.userData?.model) continue;
         child.getWorldPosition(tmpVec);
         child.getWorldQuaternion(tmpQuat);
         tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
@@ -115,7 +120,7 @@ function buildEnvConfig(config: RadarSensor, env?: Environment) {
     sea_clutter: seaState
       ? {
           hs: seaState.significant_wave_height,
-          radar_height_m: config.mount.z,
+          radar_height_m: config.mount.y,
           enabled: true,
           sweep_index: 0,
         }

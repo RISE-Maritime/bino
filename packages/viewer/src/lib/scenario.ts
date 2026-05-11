@@ -15,7 +15,7 @@ export const v01Scenario: Scenario = {
         {
           id: "bow_camera",
           type: "camera",
-          mount: { x: 20, y: 0, z: 8 },
+          mount: { x: 20, y: 8, z: 0 },
           fov_deg: 90,
           resolution: [640, 480],
           rate_hz: 10,
@@ -23,15 +23,17 @@ export const v01Scenario: Scenario = {
         {
           id: "main_lidar",
           type: "lidar",
-          mount: { x: 20, y: 0, z: 8 },
+          mount: { x: 20, y: 8, z: 0 },
           channels: 32,
           range_m: 200,
           rate_hz: 10,
+          azimuths: 256,
+          fov_h_deg: 360,
         },
         {
           id: "main_radar",
           type: "radar_marine",
-          mount: { x: 0, y: 0, z: 35 },
+          mount: { x: 0, y: 35, z: 0 },
           range_m: 2000,
           rotation_rate_hz: 0.4,
           beam_width_deg: 1.2,

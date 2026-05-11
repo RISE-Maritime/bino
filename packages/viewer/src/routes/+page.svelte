@@ -43,6 +43,23 @@
     };
   }
   let expandedPreview: string | null = $state(null);
+  let lidarOverlayOn = $state(false);
+  let radarOverlayOn = $state(false);
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.target !== document.body) return;
+    if (e.key === "l" || e.key === "L") {
+      lidarOverlayOn = !lidarOverlayOn;
+      for (const spec of previewSpecs) {
+        if (spec.type === "lidar") handle?.setOverlayVisible(spec.id, lidarOverlayOn);
+      }
+    }
+    if (e.key === "r" || e.key === "R") {
+      radarOverlayOn = !radarOverlayOn;
+      for (const spec of previewSpecs) {
+        if (spec.type === "radar") handle?.setOverlayVisible(spec.id, radarOverlayOn);
+      }
+    }
+  }
   let source: "zenoh" | "scripted" | "connecting" = $state("scripted");
   let zenohError: string | undefined = $state();
 
@@ -87,6 +104,8 @@
   });
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 <main class="layout">
   <header>
     <h1>Bino viewer</h1>
@@ -95,6 +114,10 @@
       {#if stats.staleEntities.length > 0}
         · <span class="stale">stale: {stats.staleEntities.join(", ")}</span>
       {/if}
+    </span>
+    <span class="overlay-keys">
+      <button class="overlay-btn" class:active={lidarOverlayOn} onclick={() => { lidarOverlayOn = !lidarOverlayOn; for (const s of previewSpecs) { if (s.type === "lidar") handle?.setOverlayVisible(s.id, lidarOverlayOn); } }}>[L]idar</button>
+      <button class="overlay-btn" class:active={radarOverlayOn} onclick={() => { radarOverlayOn = !radarOverlayOn; for (const s of previewSpecs) { if (s.type === "radar") handle?.setOverlayVisible(s.id, radarOverlayOn); } }}>[R]adar</button>
     </span>
     {#if zenohError}
       <span class="err">zenoh: {zenohError}</span>
@@ -145,6 +168,29 @@
     font-weight: 500;
     margin: 0;
     letter-spacing: -0.01em;
+  }
+  .overlay-keys {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+  }
+  .overlay-btn {
+    background: transparent;
+    border: 1px solid #2a3a4c;
+    border-radius: 4px;
+    color: #88a;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .overlay-btn:hover {
+    border-color: #4a6a7c;
+  }
+  .overlay-btn.active {
+    background: rgba(80, 200, 120, 0.15);
+    border-color: #55cc77;
+    color: #8cf;
   }
   .stats {
     opacity: 0.65;

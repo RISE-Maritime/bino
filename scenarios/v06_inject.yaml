@@ -44,21 +44,21 @@ scenario:
       sensors:
         - id: bow_camera
           type: camera
-          mount: { x: 45, y: 0, z: 16 }
+          mount: { x: 45, y: 16, z: 0 }
           fov_deg: 90
           resolution: [640, 480]
           rate_hz: 10
           phase_offset_s: 0.0
         - id: main_lidar
           type: lidar
-          mount: { x: 45, y: 0, z: 16 }
+          mount: { x: 45, y: 16, z: 0 }
           channels: 16
           range_m: 200
           rate_hz: 10
           phase_offset_s: 0.025
         - id: nav_radar
           type: radar_marine
-          mount: { x: 0, y: 0, z: 30 }
+          mount: { x: 0, y: 30, z: 0 }
           range_m: 4000
           rotation_rate_hz: 0.4
           beam_width_deg: 1.5
