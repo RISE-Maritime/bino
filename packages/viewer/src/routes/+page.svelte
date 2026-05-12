@@ -20,11 +20,6 @@
     staleEntities: [],
   });
 
-  // One preview panel per sensor on the ego vessel. Camera frames
-  // render at 4:3 (matching the configured 640×480); lidar + radar
-  // panels are square polar plots. Sensor type drives the size +
-  // label only; the actual draw routine is in viewer.ts and
-  // dispatches on the kernel's frame shape.
   type PreviewSpec = {
     id: string;
     type: "camera" | "lidar" | "radar";
@@ -37,12 +32,16 @@
       if (s.type === "camera")
         return { id: s.id, type: "camera", w: 240, h: 180, label: `camera · ${s.id}` };
       if (s.type === "lidar")
-        return { id: s.id, type: "lidar", w: 220, h: 220, label: `lidar · ${s.id}` };
+        return { id: s.id, type: "lidar", w: 200, h: 200, label: `lidar · ${s.id}` };
       if (s.type === "radar_marine")
         return { id: s.id, type: "radar", w: 220, h: 220, label: `PPI · ${s.id}` };
       return null;
     })
     .filter((s): s is PreviewSpec => s !== null);
+
+  const lidarSpecs = previewSpecs.filter((s) => s.type === "lidar");
+  const radarSpecs = previewSpecs.filter((s) => s.type === "radar");
+
   const previewCanvasMap = new SvelteMap<string, HTMLCanvasElement>();
   function bindPreview(node: HTMLCanvasElement, id: string) {
     previewCanvasMap.set(id, node);
@@ -53,25 +52,40 @@
     };
   }
   let expandedPreview: string | null = $state(null);
-  let lidarOverlayOn = $state(false);
-  let radarOverlayOn = $state(false);
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.target !== document.body) return;
-    if (e.key === "l" || e.key === "L") {
-      lidarOverlayOn = !lidarOverlayOn;
-      for (const spec of previewSpecs) {
-        if (spec.type === "lidar") handle?.setOverlayVisible(spec.id, lidarOverlayOn);
-      }
-    }
-    if (e.key === "r" || e.key === "R") {
-      radarOverlayOn = !radarOverlayOn;
-      for (const spec of previewSpecs) {
-        if (spec.type === "radar") handle?.setOverlayVisible(spec.id, radarOverlayOn);
-      }
+
+  // Per-sensor overlay visibility
+  let overlayState: Record<string, boolean> = $state(
+    Object.fromEntries([...lidarSpecs, ...radarSpecs].map((s) => [s.id, false])),
+  );
+
+  // Per-sensor preview visibility (lidars only — toggle in preview label)
+  let previewVisible: Record<string, boolean> = $state(
+    Object.fromEntries(lidarSpecs.map((s) => [s.id, true])),
+  );
+
+  function toggleOverlay(id: string) {
+    overlayState[id] = !overlayState[id];
+    handle?.setOverlayVisible(id, overlayState[id]!);
+  }
+
+  function toggleAllOverlays(type: "lidar" | "radar") {
+    const specs = type === "lidar" ? lidarSpecs : radarSpecs;
+    const anyOn = specs.some((s) => overlayState[s.id]);
+    for (const s of specs) {
+      overlayState[s.id] = !anyOn;
+      handle?.setOverlayVisible(s.id, !anyOn);
     }
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.target !== document.body) return;
+    if (e.key === "l" || e.key === "L") toggleAllOverlays("lidar");
+    if (e.key === "r" || e.key === "R") toggleAllOverlays("radar");
+  }
+
   let source: "zenoh" | "scripted" | "connecting" = $state("scripted");
   let zenohError: string | undefined = $state();
+  let loadingStage: string = $state("Starting");
 
   onMount(async () => {
     if (!canvas) return;
@@ -80,6 +94,7 @@
 
     let poses: PoseStream;
     if (zenohUrl) {
+      loadingStage = "Connecting to zenoh";
       source = "connecting";
       try {
         zenoh = await connectZenohPoses(zenohUrl, vesselsForZenoh(v01Scenario.vessels));
@@ -102,6 +117,9 @@
       poses,
       onStats: (s) => {
         stats = s;
+      },
+      onProgress: (stage) => {
+        loadingStage = stage;
       },
       previewCanvases: previewCanvasMap,
     });
@@ -127,55 +145,92 @@
       {/if}
     </span>
     <span class="overlay-keys">
-      <button
-        class="overlay-btn"
-        class:active={lidarOverlayOn}
-        onclick={() => {
-          lidarOverlayOn = !lidarOverlayOn;
-          for (const s of previewSpecs) {
-            if (s.type === "lidar") handle?.setOverlayVisible(s.id, lidarOverlayOn);
-          }
-        }}>[L]idar</button
-      >
-      <button
-        class="overlay-btn"
-        class:active={radarOverlayOn}
-        onclick={() => {
-          radarOverlayOn = !radarOverlayOn;
-          for (const s of previewSpecs) {
-            if (s.type === "radar") handle?.setOverlayVisible(s.id, radarOverlayOn);
-          }
-        }}>[R]adar</button
-      >
+      {#if lidarSpecs.length > 1}
+        {#each lidarSpecs as spec (spec.id)}
+          <button
+            class="overlay-btn"
+            class:active={overlayState[spec.id]}
+            onclick={() => toggleOverlay(spec.id)}
+          >{spec.id}</button>
+        {/each}
+        <button
+          class="overlay-btn master"
+          class:active={lidarSpecs.every((s) => overlayState[s.id])}
+          onclick={() => toggleAllOverlays("lidar")}
+        >[L] all</button>
+      {:else}
+        {#each lidarSpecs as spec (spec.id)}
+          <button
+            class="overlay-btn"
+            class:active={overlayState[spec.id]}
+            onclick={() => toggleOverlay(spec.id)}
+          >[L]idar</button>
+        {/each}
+      {/if}
+      {#each radarSpecs as spec (spec.id)}
+        <button
+          class="overlay-btn"
+          class:active={overlayState[spec.id]}
+          onclick={() => toggleOverlay(spec.id)}
+        >[R]adar</button>
+      {/each}
     </span>
     {#if zenohError}
       <span class="err">zenoh: {zenohError}</span>
     {/if}
   </header>
   <canvas bind:this={canvas} class="scene"></canvas>
+  {#if loadingStage}
+    <div class="loading-overlay">
+      <div class="loading-box">
+        <div class="spinner"></div>
+        <div class="loading-text">{loadingStage}</div>
+      </div>
+    </div>
+  {/if}
   <div class="preview-stack">
     {#each previewSpecs as spec (spec.id)}
+      {@const isLidar = spec.type === "lidar"}
+      {@const hidden = isLidar && !previewVisible[spec.id]}
       {@const expanded = expandedPreview === spec.id}
       {@const pw = expanded ? (spec.type === "camera" ? 640 : 500) : spec.w}
       {@const ph = expanded ? (spec.type === "camera" ? 480 : 500) : spec.h}
       <div
         class="preview-panel"
         class:expanded
-        onclick={() => (expandedPreview = expanded ? null : spec.id)}
+        class:hidden-preview={hidden}
         role="button"
         tabindex="0"
-        onkeydown={(e) => {
-          if (e.key === "Enter" || e.key === " ") expandedPreview = expanded ? null : spec.id;
-        }}
       >
-        <div class="preview-label">{spec.label}{expanded ? " ✕" : ""}</div>
-        <canvas
-          width={pw}
-          height={ph}
-          class="preview-canvas"
-          class:pixelated={spec.type !== "camera"}
-          use:bindPreview={spec.id}
-        ></canvas>
+        <div class="preview-label">
+          {#if isLidar}
+            <button
+              class="toggle-vis"
+              class:off={hidden}
+              onclick={(e) => {
+                e.stopPropagation();
+                previewVisible[spec.id] = !previewVisible[spec.id];
+              }}
+            >{hidden ? "+" : "-"}</button>
+          {/if}
+          <span
+            onclick={() => {
+              if (!hidden) expandedPreview = expanded ? null : spec.id;
+            }}
+          >
+            {spec.label}{expanded ? " x" : ""}
+          </span>
+        </div>
+        {#if !hidden}
+          <canvas
+            width={pw}
+            height={ph}
+            class="preview-canvas"
+            class:pixelated={spec.type !== "camera"}
+            use:bindPreview={spec.id}
+            onclick={() => (expandedPreview = expanded ? null : spec.id)}
+          ></canvas>
+        {/if}
       </div>
     {/each}
   </div>
@@ -223,6 +278,9 @@
     border-color: #55cc77;
     color: #8cf;
   }
+  .overlay-btn.master {
+    border-style: dashed;
+  }
   .stats {
     opacity: 0.65;
     font-size: 0.8125rem;
@@ -265,15 +323,74 @@
   .preview-panel.expanded {
     border-color: #4a7a8c;
   }
+  .preview-panel.hidden-preview {
+    padding: 4px 8px;
+  }
   .preview-label {
     font-variant-numeric: tabular-nums;
     margin-bottom: 4px;
     letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .toggle-vis {
+    background: transparent;
+    border: 1px solid #2a3a4c;
+    border-radius: 3px;
+    color: #88a;
+    font-size: 0.65rem;
+    width: 18px;
+    height: 18px;
+    line-height: 1;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .toggle-vis:hover {
+    border-color: #5a7a8c;
+  }
+  .toggle-vis.off {
+    opacity: 0.5;
   }
   .preview-canvas {
     display: block;
   }
   .preview-canvas.pixelated {
     image-rendering: pixelated;
+  }
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(6, 12, 22, 0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .loading-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .loading-text {
+    color: #8ab;
+    font-size: 0.9rem;
+    letter-spacing: 0.03em;
+  }
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #1a2a3c;
+    border-top-color: #55cc77;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>

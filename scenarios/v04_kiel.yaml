@@ -49,9 +49,15 @@ scenario:
           fov_deg: 90
           resolution: [640, 480]
           rate_hz: 10
-        - id: main_lidar
+        - id: stbd_lidar
           type: lidar
-          mount: { x: 60, y: 18, z: 0 }
+          mount: { x: 0, y: 15, z: 8 }
+          channels: 32
+          range_m: 200
+          rate_hz: 10
+        - id: port_lidar
+          type: lidar
+          mount: { x: 0, y: 15, z: -8 }
           channels: 32
           range_m: 200
           rate_hz: 10

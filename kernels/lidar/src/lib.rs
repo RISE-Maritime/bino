@@ -26,7 +26,8 @@ mod bvh;
 mod geom;
 
 use bvh::Bvh;
-use geom::{mat3_apply, ray_obb, ray_triangle, Ray};
+use geom::{mat3_apply, mat3t_apply, Ray};
+use geom::ray_triangle;
 
 /// Axis-aligned bounding box in world frame.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -99,20 +100,14 @@ pub struct TerrainTriangle {
     pub v: [[f32; 3]; 3],
 }
 
-/// Oriented bounding box for a moving entity (vessel). `rotation` is
-/// row-major 3x3, vessel-local → world. `half_extents` are in vessel-
-/// local frame. Distinct from the radar crate's `VesselBox` (which is
-/// 2D, yaw-only) — kept separate to make the dimensional difference
-/// explicit at call sites.
+/// Per-frame vessel instance referencing a pre-built model by index.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct VesselObb {
+pub struct VesselInstance {
+    pub model_index: u32,
     pub center: [f32; 3],
     pub rotation: [f32; 9],
-    pub half_extents: [f32; 3],
-    /// World-frame linear velocity in m/s. Default [0,0,0].
     #[serde(default)]
     pub velocity: [f32; 3],
-    /// Yaw rate in rad/s. Default 0.
     #[serde(default)]
     pub angular_velocity_y: f32,
 }
@@ -121,7 +116,7 @@ pub struct VesselObb {
 /// (one-time cost at scenario load) — this is just the moving entities.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SceneSnapshot {
-    pub vessels: Vec<VesselObb>,
+    pub vessels: Vec<VesselInstance>,
 }
 
 /// Sensor world-frame placement. `rotation` is row-major 3x3, sensor-
@@ -147,6 +142,10 @@ pub struct LidarConfig {
     /// for backward compatibility.
     #[serde(default)]
     pub sweep_duration_s: f32,
+    /// Water surface Y-coordinate. When set, rays crossing this plane
+    /// from above are terminated (water absorbs lidar energy).
+    #[serde(default)]
+    pub water_level_y: Option<f32>,
 }
 
 /// Output frame — XYZ interleaved in sensor-local frame, packed densely
@@ -184,28 +183,93 @@ impl TerrainBvh {
     }
 }
 
-/// World-frame AABB enclosing an OBB. Used as the BVH leaf bound for
-/// vessels — the leaf intersect still does the exact OBB test.
-fn vessel_world_aabb(v: &VesselObb) -> Aabb {
-    // The world-AABB of an OBB has half-extents h_world[i] = sum_j
-    // |R[i,j]| * half[j]. With row-major, R[i,j] = rotation[i*3+j].
-    let r = &v.rotation;
-    let h = &v.half_extents;
-    let hx = r[0].abs() * h[0] + r[1].abs() * h[1] + r[2].abs() * h[2];
-    let hy = r[3].abs() * h[0] + r[4].abs() * h[1] + r[5].abs() * h[2];
-    let hz = r[6].abs() * h[0] + r[7].abs() * h[1] + r[8].abs() * h[2];
-    Aabb {
-        min: [v.center[0] - hx, v.center[1] - hy, v.center[2] - hz],
-        max: [v.center[0] + hx, v.center[1] + hy, v.center[2] + hz],
+/// Pre-built BVH for a vessel model's triangles in vessel-local frame.
+/// Built once per unique model, reused across frames.
+pub struct VesselModelBvh {
+    bvh: Bvh,
+    triangles: Vec<TerrainTriangle>,
+    pub local_aabb: Aabb,
+}
+
+impl VesselModelBvh {
+    pub fn build(triangles: Vec<TerrainTriangle>) -> Self {
+        let aabbs: Vec<Aabb> = triangles
+            .iter()
+            .map(|t| Aabb::from_points(t.v.iter().copied()))
+            .collect();
+        let local_aabb = aabbs
+            .iter()
+            .fold(Aabb::empty(), |acc, a| acc.union(a));
+        let bvh = Bvh::build(&aabbs);
+        Self {
+            bvh,
+            triangles,
+            local_aabb,
+        }
     }
+
+    pub fn nearest_hit(&self, ray: &Ray, max_t: f32) -> Option<f32> {
+        let tris = &self.triangles;
+        self.bvh.nearest_hit(ray, max_t, |idx, ray, best| {
+            ray_triangle(ray, &tris[idx as usize].v, best)
+        })
+    }
+}
+
+/// World-frame AABB of a vessel instance, derived from the model's
+/// local AABB rotated + translated by the instance pose.
+fn vessel_world_aabb(v: &VesselInstance, model: &VesselModelBvh) -> Aabb {
+    let la = &model.local_aabb;
+    let half = [
+        (la.max[0] - la.min[0]) * 0.5,
+        (la.max[1] - la.min[1]) * 0.5,
+        (la.max[2] - la.min[2]) * 0.5,
+    ];
+    let lc = [
+        (la.min[0] + la.max[0]) * 0.5,
+        (la.min[1] + la.max[1]) * 0.5,
+        (la.min[2] + la.max[2]) * 0.5,
+    ];
+    let wc = mat3_apply(&v.rotation, lc);
+    let wc = [
+        v.center[0] + wc[0],
+        v.center[1] + wc[1],
+        v.center[2] + wc[2],
+    ];
+    let r = &v.rotation;
+    let hx = r[0].abs() * half[0] + r[1].abs() * half[1] + r[2].abs() * half[2];
+    let hy = r[3].abs() * half[0] + r[4].abs() * half[1] + r[5].abs() * half[2];
+    let hz = r[6].abs() * half[0] + r[7].abs() * half[1] + r[8].abs() * half[2];
+    Aabb {
+        min: [wc[0] - hx, wc[1] - hy, wc[2] - hz],
+        max: [wc[0] + hx, wc[1] + hy, wc[2] + hz],
+    }
+}
+
+/// Ray-vessel intersection: transform the ray into vessel-local frame,
+/// then query the model's triangle BVH.
+fn ray_vessel_mesh(
+    ray: &Ray,
+    center: [f32; 3],
+    rotation: &[f32; 9],
+    model: &VesselModelBvh,
+    max_t: f32,
+) -> Option<f32> {
+    let rel = [
+        ray.origin[0] - center[0],
+        ray.origin[1] - center[1],
+        ray.origin[2] - center[2],
+    ];
+    let local_origin = mat3t_apply(rotation, rel);
+    let local_dir = mat3t_apply(rotation, ray.dir);
+    let local_ray = Ray::new(local_origin, local_dir);
+    model.nearest_hit(&local_ray, max_t)
 }
 
 /// Apply a yaw delta (rotation around Y axis) to an existing row-major
 /// 3x3 rotation matrix, returning the composed result.
 fn apply_yaw_delta(rotation: &[f32; 9], yaw_delta: f32) -> [f32; 9] {
     let (sin_y, cos_y) = yaw_delta.sin_cos();
-    // Yaw rotation matrix around Y: Ry = [[cos,0,sin],[0,1,0],[-sin,0,cos]]
-    // Result = Ry * R (row-major multiply)
     [
         cos_y * rotation[0] + sin_y * rotation[6],
         cos_y * rotation[1] + sin_y * rotation[7],
@@ -219,6 +283,20 @@ fn apply_yaw_delta(rotation: &[f32; 9], yaw_delta: f32) -> [f32; 9] {
     ]
 }
 
+/// Compute the maximum ray distance before hitting the water surface.
+/// Returns `range_m` if no water plane is configured or the ray doesn't
+/// cross it.
+#[inline]
+fn water_clip(origin_y: f32, dir_y: f32, water_level: Option<f32>, range_m: f32) -> f32 {
+    match water_level {
+        Some(wl) if origin_y > wl && dir_y < 0.0 => {
+            let t = (wl - origin_y) / dir_y;
+            if t > 0.0 { t.min(range_m) } else { range_m }
+        }
+        _ => range_m,
+    }
+}
+
 /// Run one full lidar sweep. Generates `channels × azimuths` rays in
 /// sensor-local frame, transforms to world, queries terrain + vessel
 /// trees, packs hits as XYZ points back in sensor-local frame.
@@ -228,6 +306,7 @@ fn apply_yaw_delta(rotation: &[f32; 9], yaw_delta: f32) -> [f32; 9] {
 /// modelling motion during the sweep.
 pub fn sweep(
     terrain: &TerrainBvh,
+    vessel_models: &[VesselModelBvh],
     scene: &SceneSnapshot,
     sensor: &SensorPose,
     config: &LidarConfig,
@@ -237,12 +316,20 @@ pub fn sweep(
     let mut points: Vec<f32> = Vec::with_capacity(chans * azis * 3);
     let mut timestamps: Vec<f32> = Vec::new();
 
-    let interpolate = config.sweep_duration_s > 0.0 && !scene.vessels.is_empty();
+    let has_vessels = !scene.vessels.is_empty()
+        && scene
+            .vessels
+            .iter()
+            .all(|v| (v.model_index as usize) < vessel_models.len());
 
-    // When not interpolating, build one static vessel BVH for the whole
-    // sweep — identical to the pre-S16 path.
-    let static_vessel_bvh = if !interpolate && !scene.vessels.is_empty() {
-        let aabbs: Vec<Aabb> = scene.vessels.iter().map(vessel_world_aabb).collect();
+    let interpolate = config.sweep_duration_s > 0.0 && has_vessels;
+
+    let static_vessel_bvh = if !interpolate && has_vessels {
+        let aabbs: Vec<Aabb> = scene
+            .vessels
+            .iter()
+            .map(|v| vessel_world_aabb(v, &vessel_models[v.model_index as usize]))
+            .collect();
         Some(Bvh::build(&aabbs))
     } else {
         None
@@ -255,8 +342,6 @@ pub fn sweep(
     let fov_v = config.fov_v_deg.to_radians();
     let fov_h = config.fov_h_deg.to_radians();
 
-    // Edge-inclusive sampling: at chans=1 the sample sits at elevation
-    // 0; same for azis. Avoids an always-missed sample at FOV edges.
     for c in 0..chans {
         let elev = if chans == 1 {
             0.0
@@ -272,23 +357,21 @@ pub fn sweep(
             };
             let (sin_a, cos_a) = az.sin_cos();
 
-            // Sensor-local direction: forward = -z, right = +x, up = +y.
             let local_dir = [cos_e * sin_a, sin_e, -cos_e * cos_a];
             let world_dir = mat3_apply(&sensor.rotation, local_dir);
             let ray = Ray::new(sensor.origin, world_dir);
 
-            let t_terrain = terrain.nearest_hit(&ray, config.range_m);
-            // Tightening max_t to the terrain hit lets the vessel BVH
-            // prune subtrees that lie behind the terrain plane.
-            let upper = t_terrain.unwrap_or(config.range_m);
+            let effective_range =
+                water_clip(sensor.origin[1], world_dir[1], config.water_level_y, config.range_m);
+
+            let t_terrain = terrain.nearest_hit(&ray, effective_range);
+            let upper = t_terrain.unwrap_or(effective_range);
 
             if interpolate {
-                // --- Per-azimuth interpolated vessel positions ---
                 let t_frac = a as f32 / azis as f32;
                 let dt = t_frac * config.sweep_duration_s;
 
-                // Build interpolated vessels for this azimuth column.
-                let interp_vessels: Vec<VesselObb> = scene
+                let interp_vessels: Vec<VesselInstance> = scene
                     .vessels
                     .iter()
                     .map(|v| {
@@ -302,22 +385,26 @@ pub fn sweep(
                         } else {
                             v.rotation
                         };
-                        VesselObb {
+                        VesselInstance {
+                            model_index: v.model_index,
                             center,
                             rotation,
-                            half_extents: v.half_extents,
                             velocity: v.velocity,
                             angular_velocity_y: v.angular_velocity_y,
                         }
                     })
                     .collect();
 
-                let aabbs: Vec<Aabb> = interp_vessels.iter().map(vessel_world_aabb).collect();
+                let aabbs: Vec<Aabb> = interp_vessels
+                    .iter()
+                    .map(|v| vessel_world_aabb(v, &vessel_models[v.model_index as usize]))
+                    .collect();
                 let bvh = Bvh::build(&aabbs);
 
                 let t_vessel = bvh.nearest_hit(&ray, upper, |idx, ray, best| {
                     let v = &interp_vessels[idx as usize];
-                    ray_obb(ray, v.center, &v.rotation, v.half_extents, best)
+                    let model = &vessel_models[v.model_index as usize];
+                    ray_vessel_mesh(ray, v.center, &v.rotation, model, best)
                 });
                 let t = t_vessel.or(t_terrain);
 
@@ -328,11 +415,11 @@ pub fn sweep(
                     timestamps.push(dt);
                 }
             } else {
-                // --- Static path (no interpolation) ---
                 let t_vessel = static_vessel_bvh.as_ref().and_then(|bvh| {
                     bvh.nearest_hit(&ray, upper, |idx, ray, best| {
                         let v = &scene.vessels[idx as usize];
-                        ray_obb(ray, v.center, &v.rotation, v.half_extents, best)
+                        let model = &vessel_models[v.model_index as usize];
+                        ray_vessel_mesh(ray, v.center, &v.rotation, model, best)
                     })
                 });
                 let t = t_vessel.or(t_terrain);
@@ -362,12 +449,9 @@ mod wasm {
     use std::cell::RefCell;
     use wasm_bindgen::prelude::*;
 
-    // Single thread-local terrain BVH — the kernel is single-instance
-    // per Bino node. Multi-instance support (e.g. multiple lidars
-    // sharing a single terrain) is a follow-up; for now the wrapper
-    // can call `lidar_init_terrain` once and reuse.
     thread_local! {
         static TERRAIN: RefCell<Option<TerrainBvh>> = const { RefCell::new(None) };
+        static VESSEL_MODELS: RefCell<Vec<VesselModelBvh>> = const { RefCell::new(Vec::new()) };
     }
 
     #[wasm_bindgen]
@@ -375,6 +459,17 @@ mod wasm {
         let triangles: Vec<TerrainTriangle> = serde_wasm_bindgen::from_value(triangles)?;
         let bvh = TerrainBvh::build(triangles);
         TERRAIN.with(|t| *t.borrow_mut() = Some(bvh));
+        Ok(())
+    }
+
+    #[wasm_bindgen]
+    pub fn lidar_init_vessel_models(models: JsValue) -> Result<(), JsValue> {
+        let raw: Vec<Vec<TerrainTriangle>> = serde_wasm_bindgen::from_value(models)?;
+        let built: Vec<VesselModelBvh> = raw
+            .into_iter()
+            .map(VesselModelBvh::build)
+            .collect();
+        VESSEL_MODELS.with(|vm| *vm.borrow_mut() = built);
         Ok(())
     }
 
@@ -392,8 +487,11 @@ mod wasm {
             let terrain = borrow
                 .as_ref()
                 .ok_or_else(|| JsValue::from_str("terrain BVH not initialised"))?;
-            let result = sweep(terrain, &scene, &sensor, &config);
-            Ok(serde_wasm_bindgen::to_value(&result)?)
+            VESSEL_MODELS.with(|vm| {
+                let models = vm.borrow();
+                let result = sweep(terrain, &models, &scene, &sensor, &config);
+                Ok(serde_wasm_bindgen::to_value(&result)?)
+            })
         })
     }
 }
@@ -420,6 +518,7 @@ mod tests {
             fov_h_deg: fov_h,
             range_m: range,
             sweep_duration_s: 0.0,
+            water_level_y: None,
         }
     }
 
@@ -430,11 +529,50 @@ mod tests {
         }
     }
 
-    fn vessel_obb(center: [f32; 3], half_extents: [f32; 3]) -> VesselObb {
-        VesselObb {
+    /// Build a box model from 12 triangles (6 faces × 2).
+    fn box_triangles(half: [f32; 3]) -> Vec<TerrainTriangle> {
+        let [hx, hy, hz] = half;
+        let c = [
+            [-hx, -hy, -hz],
+            [hx, -hy, -hz],
+            [hx, hy, -hz],
+            [-hx, hy, -hz],
+            [-hx, -hy, hz],
+            [hx, -hy, hz],
+            [hx, hy, hz],
+            [-hx, hy, hz],
+        ];
+        let faces: [(usize, usize, usize); 12] = [
+            (0, 2, 1),
+            (0, 3, 2),
+            (5, 7, 4),
+            (5, 6, 7),
+            (1, 6, 5),
+            (1, 2, 6),
+            (4, 3, 0),
+            (4, 7, 3),
+            (3, 6, 2),
+            (3, 7, 6),
+            (4, 1, 5),
+            (4, 0, 1),
+        ];
+        faces
+            .iter()
+            .map(|&(a, b, cc)| TerrainTriangle {
+                v: [c[a], c[b], c[cc]],
+            })
+            .collect()
+    }
+
+    fn box_model(half: [f32; 3]) -> VesselModelBvh {
+        VesselModelBvh::build(box_triangles(half))
+    }
+
+    fn vessel_instance(model_index: u32, center: [f32; 3]) -> VesselInstance {
+        VesselInstance {
+            model_index,
             center,
             rotation: identity_rotation(),
-            half_extents,
             velocity: [0.0; 3],
             angular_velocity_y: 0.0,
         }
@@ -445,6 +583,7 @@ mod tests {
         let scene = SceneSnapshot { vessels: vec![] };
         let frame = sweep(
             &empty_terrain(),
+            &[],
             &scene,
             &sensor_at_origin(),
             &cfg(8, 16, 30.0, 90.0, 100.0),
@@ -456,14 +595,13 @@ mod tests {
 
     #[test]
     fn vessel_directly_ahead_lights_some_points() {
-        // Sensor-local forward = -z. Place a vessel at z = -50 (50 m
-        // ahead) with a 10m half-length box. Expect the centre-most
-        // ray to hit the near face at z ≈ -40.
+        let model = box_model([10.0, 5.0, 10.0]);
         let scene = SceneSnapshot {
-            vessels: vec![vessel_obb([0.0, 0.0, -50.0], [10.0, 5.0, 10.0])],
+            vessels: vec![vessel_instance(0, [0.0, 0.0, -50.0])],
         };
         let frame = sweep(
             &empty_terrain(),
+            &[model],
             &scene,
             &sensor_at_origin(),
             &cfg(16, 16, 30.0, 30.0, 200.0),
@@ -482,11 +620,13 @@ mod tests {
 
     #[test]
     fn vessel_outside_range_produces_no_points() {
+        let model = box_model([10.0, 5.0, 10.0]);
         let scene = SceneSnapshot {
-            vessels: vec![vessel_obb([0.0, 0.0, -500.0], [10.0, 5.0, 10.0])],
+            vessels: vec![vessel_instance(0, [0.0, 0.0, -500.0])],
         };
         let frame = sweep(
             &empty_terrain(),
+            &[model],
             &scene,
             &sensor_at_origin(),
             &cfg(8, 16, 30.0, 30.0, 100.0),
@@ -496,13 +636,13 @@ mod tests {
 
     #[test]
     fn vessel_off_axis_stays_unhit_with_narrow_fov() {
-        // Vessel directly to the +x side (90° off forward). With 10°
-        // horizontal FOV, no ray reaches it.
+        let model = box_model([5.0, 5.0, 5.0]);
         let scene = SceneSnapshot {
-            vessels: vec![vessel_obb([50.0, 0.0, 0.0], [5.0, 5.0, 5.0])],
+            vessels: vec![vessel_instance(0, [50.0, 0.0, 0.0])],
         };
         let frame = sweep(
             &empty_terrain(),
+            &[model],
             &scene,
             &sensor_at_origin(),
             &cfg(4, 8, 10.0, 10.0, 100.0),
@@ -512,8 +652,6 @@ mod tests {
 
     #[test]
     fn ground_plane_triangle_hits_under_downward_pitch() {
-        // Single large terrain triangle at y = -10. Sensor pitched 90°
-        // down; centre ray should hit at distance ≈ 10.
         let triangles = vec![TerrainTriangle {
             v: [
                 [-100.0, -10.0, -100.0],
@@ -523,17 +661,12 @@ mod tests {
         }];
         let terrain = TerrainBvh::build(triangles);
         let scene = SceneSnapshot { vessels: vec![] };
-
-        // Row-major rotation that maps sensor -z (forward) to world -y:
-        //   local x = (1,0,0) → world x = (1,0,0)
-        //   local y = (0,1,0) → world y = (0,0,-1)  (pitch nose down)
-        //   local z = (0,0,1) → world z = (0,1,0)
         let pitch_down: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0];
         let sensor = SensorPose {
             origin: [0.0, 0.0, 0.0],
             rotation: pitch_down,
         };
-        let frame = sweep(&terrain, &scene, &sensor, &cfg(4, 4, 10.0, 10.0, 100.0));
+        let frame = sweep(&terrain, &[], &scene, &sensor, &cfg(4, 4, 10.0, 10.0, 100.0));
         assert!(frame.count > 0, "expected ground-plane hits when pitched down");
         let mid_dist = frame
             .points
@@ -548,8 +681,6 @@ mod tests {
 
     #[test]
     fn vessel_in_front_of_terrain_hides_terrain() {
-        // Floor at y=-10, vessel at y=-5 directly below sensor — the
-        // vessel's near face should be the reported hit, not the floor.
         let triangles = vec![TerrainTriangle {
             v: [
                 [-100.0, -10.0, -100.0],
@@ -558,15 +689,22 @@ mod tests {
             ],
         }];
         let terrain = TerrainBvh::build(triangles);
+        let model = box_model([2.0, 1.0, 2.0]);
         let scene = SceneSnapshot {
-            vessels: vec![vessel_obb([0.0, -5.0, 0.0], [2.0, 1.0, 2.0])],
+            vessels: vec![vessel_instance(0, [0.0, -5.0, 0.0])],
         };
         let pitch_down: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0];
         let sensor = SensorPose {
             origin: [0.0, 0.0, 0.0],
             rotation: pitch_down,
         };
-        let frame = sweep(&terrain, &scene, &sensor, &cfg(4, 4, 5.0, 5.0, 100.0));
+        let frame = sweep(
+            &terrain,
+            &[model],
+            &scene,
+            &sensor,
+            &cfg(4, 4, 5.0, 5.0, 100.0),
+        );
         let nearest = frame
             .points
             .chunks_exact(3)
@@ -580,13 +718,13 @@ mod tests {
 
     #[test]
     fn backward_compat_sweep_duration_zero() {
-        // With sweep_duration_s = 0, results should be identical to the
-        // pre-S16 static path: same hit count, no timestamps.
+        let model = box_model([10.0, 5.0, 10.0]);
         let scene = SceneSnapshot {
-            vessels: vec![vessel_obb([0.0, 0.0, -50.0], [10.0, 5.0, 10.0])],
+            vessels: vec![vessel_instance(0, [0.0, 0.0, -50.0])],
         };
         let frame = sweep(
             &empty_terrain(),
+            &[model],
             &scene,
             &sensor_at_origin(),
             &cfg(16, 16, 30.0, 30.0, 200.0),
@@ -596,7 +734,6 @@ mod tests {
             frame.timestamps.is_empty(),
             "timestamps should be empty when sweep_duration_s == 0"
         );
-        // Verify near-z is still correct.
         let near_z = frame
             .points
             .chunks_exact(3)
@@ -610,19 +747,12 @@ mod tests {
 
     #[test]
     fn temporal_interpolation_shifts_vessel() {
-        // Vessel at (0, 0, -50) moving at (10, 0, 0) m/s.
-        // Sweep duration 0.1s (10 Hz). 1 channel, 8 azimuths, fov_h = 10 deg.
-        // With sensor at origin looking down -z:
-        // - Azimuth 0 (t_frac=0/8=0): vessel at (0, 0, -50) — centred
-        // - Azimuth 7 (t_frac=7/8): vessel at (10*0.0875=0.875m in +x, 0, -50)
-        //
-        // The hit x-coords at later azimuths should reflect the vessel
-        // shifting rightward.
+        let model = box_model([10.0, 5.0, 10.0]);
         let scene = SceneSnapshot {
-            vessels: vec![VesselObb {
+            vessels: vec![VesselInstance {
+                model_index: 0,
                 center: [0.0, 0.0, -50.0],
                 rotation: identity_rotation(),
-                half_extents: [10.0, 5.0, 10.0],
                 velocity: [10.0, 0.0, 0.0],
                 angular_velocity_y: 0.0,
             }],
@@ -630,7 +760,7 @@ mod tests {
         let mut config = cfg(1, 8, 0.0, 10.0, 200.0);
         config.sweep_duration_s = 0.1;
 
-        let frame = sweep(&empty_terrain(), &scene, &sensor_at_origin(), &config);
+        let frame = sweep(&empty_terrain(), &[model], &scene, &sensor_at_origin(), &config);
         assert!(frame.count > 0, "expected hits");
         assert_eq!(
             frame.timestamps.len(),
@@ -638,8 +768,11 @@ mod tests {
             "one timestamp per hit"
         );
 
-        // Timestamps should span from 0 up to near sweep_duration_s.
-        let t_min = frame.timestamps.iter().cloned().fold(f32::INFINITY, f32::min);
+        let t_min = frame
+            .timestamps
+            .iter()
+            .cloned()
+            .fold(f32::INFINITY, f32::min);
         let t_max = frame
             .timestamps
             .iter()
@@ -655,16 +788,12 @@ mod tests {
             "timestamp should not exceed sweep_duration_s"
         );
 
-        // The hit points' x-coordinates should show the vessel's lateral
-        // shift. Group hits by their timestamp — earlier hits should have
-        // x closer to 0, later hits should be shifted toward +x.
         let hit_points: Vec<[f32; 3]> = frame
             .points
             .chunks_exact(3)
             .map(|c| [c[0], c[1], c[2]])
             .collect();
 
-        // Find the x of the first-timestamp hit and last-timestamp hit.
         let first_idx = frame
             .timestamps
             .iter()
@@ -682,10 +811,6 @@ mod tests {
 
         let x_first = hit_points[first_idx][0];
         let x_last = hit_points[last_idx][0];
-        // The vessel shifts +x over time, so hits at later azimuths
-        // should reflect a more positive x position on the vessel face.
-        // The difference should be roughly 10 m/s * 0.1s * 7/8 ~ 0.875m.
-        // We just check the sign/direction — x_last should be more positive.
         assert!(
             x_last > x_first,
             "later-azimuth hit x ({x_last}) should be > earlier ({x_first}) due to +x velocity"
@@ -737,5 +862,63 @@ mod tests {
                 (a, b) => panic!("BVH/linear disagree: bvh={a:?}, linear={b:?}"),
             }
         }
+    }
+
+    // --- Water plane tests ---
+
+    #[test]
+    fn water_plane_blocks_seabed_hits() {
+        // Sensor at y=10 looking straight down. Seabed at y=-20.
+        // Without water, hit at 30m. With water at y=0, no hit (ray
+        // absorbed at 10m distance).
+        let triangles = vec![TerrainTriangle {
+            v: [
+                [-100.0, -20.0, -100.0],
+                [100.0, -20.0, -100.0],
+                [0.0, -20.0, 100.0],
+            ],
+        }];
+        let terrain = TerrainBvh::build(triangles);
+        let scene = SceneSnapshot { vessels: vec![] };
+        let pitch_down: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0];
+        let sensor = SensorPose {
+            origin: [0.0, 10.0, 0.0],
+            rotation: pitch_down,
+        };
+
+        // Without water — should hit seabed
+        let config_no_water = cfg(1, 1, 0.0, 0.0, 100.0);
+        let frame = sweep(&terrain, &[], &scene, &sensor, &config_no_water);
+        assert!(frame.count > 0, "should hit seabed without water");
+
+        // With water at y=0 — ray absorbed, no hit
+        let mut config_water = cfg(1, 1, 0.0, 0.0, 100.0);
+        config_water.water_level_y = Some(0.0);
+        let frame = sweep(&terrain, &[], &scene, &sensor, &config_water);
+        assert_eq!(frame.count, 0, "water plane should block seabed hit");
+    }
+
+    #[test]
+    fn water_plane_allows_above_water_hits() {
+        // Land (above water) should still be hit even with water plane.
+        // Triangle must extend past the sensor in z so that downward
+        // rays reach it before water_clip truncates them.
+        let triangles = vec![TerrainTriangle {
+            v: [
+                [-100.0, 5.0, -200.0],
+                [100.0, 5.0, -200.0],
+                [0.0, 5.0, 100.0],
+            ],
+        }];
+        let terrain = TerrainBvh::build(triangles);
+        let scene = SceneSnapshot { vessels: vec![] };
+        let sensor = SensorPose {
+            origin: [0.0, 20.0, 50.0],
+            rotation: identity_rotation(),
+        };
+        let mut config = cfg(4, 4, 30.0, 30.0, 200.0);
+        config.water_level_y = Some(0.0);
+        let frame = sweep(&terrain, &[], &scene, &sensor, &config);
+        assert!(frame.count > 0, "above-water terrain should still be hit");
     }
 }

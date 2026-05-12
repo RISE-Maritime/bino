@@ -69,30 +69,6 @@ pub fn ray_aabb(ray: &Ray, aabb: &Aabb, max_t: f32) -> Option<f32> {
     Some(t_min)
 }
 
-/// Ray-OBB: bring the ray into vessel-local frame via Rᵀ then run the
-/// AABB slab test against the centred axis-aligned box `[-half, +half]`.
-pub fn ray_obb(
-    ray: &Ray,
-    center: [f32; 3],
-    rotation: &[f32; 9],
-    half: [f32; 3],
-    max_t: f32,
-) -> Option<f32> {
-    let rel = [
-        ray.origin[0] - center[0],
-        ray.origin[1] - center[1],
-        ray.origin[2] - center[2],
-    ];
-    let local_origin = mat3t_apply(rotation, rel);
-    let local_dir = mat3t_apply(rotation, ray.dir);
-    let local_ray = Ray::new(local_origin, local_dir);
-    let aabb = Aabb {
-        min: [-half[0], -half[1], -half[2]],
-        max: [half[0], half[1], half[2]],
-    };
-    ray_aabb(&local_ray, &aabb, max_t)
-}
-
 /// Möller-Trumbore ray-triangle intersection. Returns Some(t) for the
 /// nearest non-negative hit ≤ max_t. Backface culling disabled — lidar
 /// returns from terrain regardless of triangle winding.

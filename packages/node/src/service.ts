@@ -108,6 +108,7 @@ function buildSceneFromScenario(
             sensorNode,
             config: sensor,
             terrain: built.terrain,
+            waterLevelY: 0,
           }),
           phaseOffset_s: sensor.phase_offset_s,
         });

@@ -5,19 +5,22 @@ import {
   buildScene,
   compileScenario,
   createCameraKernel,
-  createLidarKernelWasm,
-  createRadarKernel,
+  colMajorToRowMajor3x3,
+  extractTriangles,
+  loadModel,
   geodeticToEnu,
   prepareTerrain,
   type CameraFrame,
   type CameraKernel,
   type LidarFrame,
   type RadarFrame,
-  type RadarKernel,
   type PoseStream,
   type Anchor,
   type BuildingData,
+  type Environment,
 } from "@bino/core";
+import type { LidarWorkerResult } from "./lidar-worker.js";
+import type { RadarWorkerResult } from "./radar-worker.js";
 import { v01Scenario } from "./scenario.js";
 
 export interface ViewerStats {
@@ -44,6 +47,7 @@ export interface MountOptions {
   canvas: HTMLCanvasElement;
   poses: PoseStream;
   onStats?: (stats: ViewerStats) => void;
+  onProgress?: (stage: string) => void;
   /** Preview canvases keyed by sensor ID. Each tick, the matching
    *  kernel's output is rendered to the canvas: camera frames as RGBA
    *  (Y-flipped), lidar points as a top-down scatter, radar sweeps as
@@ -68,9 +72,18 @@ interface PpiCache {
  */
 export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   const { canvas, poses, onStats } = opts;
+  const progress = opts.onProgress ?? (() => {});
 
+  progress("Compiling scenario");
   const compiled = compileScenario(v01Scenario);
-  const terrain = compiled.terrain ? await prepareTerrain(compiled.terrain.bbox) : undefined;
+
+  let terrain: Awaited<ReturnType<typeof prepareTerrain>> | undefined;
+  if (compiled.terrain) {
+    progress("Fetching terrain (coastline, bathymetry, buildings, seamarks)");
+    terrain = await prepareTerrain(compiled.terrain.bbox);
+  }
+
+  progress("Building 3D scene");
   const built = buildScene(compiled, terrain ? { terrain } : {});
 
   const buildingObstacles = terrain?.buildings
@@ -112,7 +125,13 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     step(time: number): CameraFrame | LidarFrame | RadarFrame;
     dispose(): void;
   }
-  const kernels: AnyKernel[] = [];
+  interface ScheduledKernel {
+    kernel: AnyKernel;
+    interval: number;
+    lastFire: number;
+    cached: CameraFrame | LidarFrame | RadarFrame | null;
+  }
+  const kernels: ScheduledKernel[] = [];
   const cameraHelpers: THREE.CameraHelper[] = [];
   const radarOverlays: Array<{ ring: THREE.LineLoop }> = [];
   /** Per-sensor preview wiring. The same map across all three sensor
@@ -164,7 +183,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   interface RadarPreview {
     type: "radar";
     id: string;
-    kernel: RadarKernel;
+    kernel: AnyKernel;
     canvas: HTMLCanvasElement;
     range: number;
     ppiCache: PpiCache;
@@ -215,6 +234,11 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     });
   }
 
+  progress("Initializing sensors");
+
+  const lidarWorkerKernels: ReturnType<typeof createLidarWorkerKernel>[] = [];
+  const radarWorkerKernels: ReturnType<typeof createRadarWorkerKernel>[] = [];
+
   for (const vessel of compiled.vessels) {
     const vesselNode = built.entities.get(vessel.id);
     if (!vesselNode) continue;
@@ -229,7 +253,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           sensorNode,
           config: sensor,
         });
-        kernels.push(kernel);
+        kernels.push({ kernel, interval: 1 / sensor.rate_hz, lastFire: -Infinity, cached: null });
         const helper = new THREE.CameraHelper(kernel.camera);
         built.scene.add(helper);
         cameraHelpers.push(helper);
@@ -248,15 +272,14 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           });
         }
       } else if (sensor.type === "lidar") {
-        const kernel = createLidarKernelWasm({
-          scene: built.scene,
+        const kernel = createLidarWorkerKernel(
+          built.scene,
           sensorNode,
-          config: sensor,
-          terrain: built.terrain,
-          fov_h_deg: sensor.fov_h_deg ?? 360,
-          azimuths: sensor.azimuths ?? sensor.channels * 8,
-        });
-        kernels.push(kernel);
+          sensor,
+          built.terrain,
+        );
+        lidarWorkerKernels.push(kernel);
+        kernels.push({ kernel, interval: 1 / sensor.rate_hz, lastFire: -Infinity, cached: null });
         createOverlay(sensor.id, sensorNode, "lidar", sensor.range_m, kernel, 65536);
         if (previewCanvas) {
           const range = sensor.range_m;
@@ -326,14 +349,15 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           });
         }
       } else if (sensor.type === "radar_marine") {
-        const kernel = createRadarKernel({
-          scene: built.scene,
+        const kernel = createRadarWorkerKernel(
+          built.scene,
           sensorNode,
-          config: sensor,
-          environment: compiled.environment,
-          staticObstacles: buildingObstacles,
-        });
-        kernels.push(kernel);
+          sensor,
+          compiled.environment,
+          buildingObstacles,
+        );
+        radarWorkerKernels.push(kernel);
+        kernels.push({ kernel, interval: 1 / sensor.rotation_rate_hz, lastFire: -Infinity, cached: null });
         const ring = makeRadarRing(sensor.range_m);
         sensorNode.add(ring);
         radarOverlays.push({ ring });
@@ -394,12 +418,23 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     }
     const radarStats: Record<string, { spokes: number; bins: number }> = {};
     const latestByKernel = new Map<unknown, CameraFrame | LidarFrame | RadarFrame>();
-    for (const k of kernels) {
-      const out = k.step(t);
-      latestByKernel.set(k, out);
+    let frameLidarPoints = 0;
+    for (const sk of kernels) {
+      let out: CameraFrame | LidarFrame | RadarFrame;
+      if (t - sk.lastFire >= sk.interval) {
+        out = sk.kernel.step(t);
+        sk.lastFire = t;
+        sk.cached = out;
+      } else if (sk.cached) {
+        out = sk.cached;
+      } else {
+        continue;
+      }
+      latestByKernel.set(sk.kernel, out);
       if ("pixels" in out) cameraFrames += 1;
-      else if ("count" in out) lidarPoints = out.count;
+      else if ("count" in out) frameLidarPoints += out.count;
     }
+    lidarPoints = frameLidarPoints;
     // Radar stats are keyed by sensor id, not kernel — pull them from
     // the preview wiring (which is the only place id↔kernel is bound).
     for (const p of previews) {
@@ -460,6 +495,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     }
     rafId = requestAnimationFrame(tick);
   };
+  progress("");
   rafId = requestAnimationFrame(tick);
 
   return {
@@ -490,7 +526,9 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         ov.geometry.dispose();
         (ov.points.material as THREE.Material).dispose();
       }
-      for (const k of kernels) k.dispose();
+      for (const k of kernels) k.kernel.dispose();
+      for (const lw of lidarWorkerKernels) lw.dispose();
+      for (const rw of radarWorkerKernels) rw.dispose();
       renderer.dispose();
     },
     stats: () => ({
@@ -847,4 +885,251 @@ function buildingsToObstacles(
       half_extents: [halfX, halfY, halfZ] as [number, number, number],
     };
   });
+}
+
+// ── Lidar Web Worker kernel ─────────────────────────────────────
+
+type TriangleData = Array<{
+  v: [[number, number, number], [number, number, number], [number, number, number]];
+}>;
+
+function createLidarWorkerKernel(
+  scene: THREE.Scene,
+  sensorNode: THREE.Object3D,
+  config: { channels: number; range_m: number; rate_hz: number; fov_h_deg?: number; azimuths?: number },
+  terrain?: THREE.Group,
+) {
+  const worker = new Worker(
+    new URL("./lidar-worker.ts", import.meta.url),
+    { type: "module" },
+  );
+
+  const terrainTris: TriangleData = terrain ? extractTriangles(terrain) : [];
+
+  const modelRegistry = new Map<string, number>();
+  const modelTriangles: TriangleData[] = [];
+  for (const child of scene.children) {
+    if (!(child instanceof THREE.Group)) continue;
+    if (!child.userData?.model) continue;
+    if (child === sensorNode.parent) continue;
+    const name = child.userData.model as string;
+    if (!modelRegistry.has(name)) {
+      const idx = modelTriangles.length;
+      modelRegistry.set(name, idx);
+      const g = loadModel(name);
+      g.updateMatrixWorld(true);
+      modelTriangles.push(extractTriangles(g));
+    }
+  }
+
+  worker.postMessage({ type: "init", terrain: terrainTris, models: modelTriangles });
+
+  const fov = 90;
+  const wasmConfig = {
+    channels: config.channels,
+    azimuths: config.azimuths ?? config.channels * 8,
+    fov_v_deg: fov,
+    fov_h_deg: config.fov_h_deg ?? 360,
+    range_m: config.range_m,
+    sweep_duration_s: 1 / config.rate_hz,
+    water_level_y: 0.0,
+  };
+
+  let latestFrame: LidarFrame = { points: new Float32Array(0), count: 0, time: 0 };
+  let sweepInFlight = false;
+
+  worker.onmessage = (e: MessageEvent<LidarWorkerResult>) => {
+    if (e.data.type === "frame") {
+      const ts = e.data.timestamps.length > 0 ? e.data.timestamps : undefined;
+      latestFrame = {
+        points: e.data.points,
+        count: e.data.count,
+        time: latestFrame.time,
+        ...(ts ? { timestamps: ts } : {}),
+      };
+      sweepInFlight = false;
+    }
+  };
+
+  const tmpVec = new THREE.Vector3();
+
+  const kernel = {
+    step(time: number): LidarFrame {
+      if (!sweepInFlight) {
+        sweepInFlight = true;
+        const vessels: Array<{
+          model_index: number;
+          center: [number, number, number];
+          rotation: number[];
+          velocity: [number, number, number];
+          angular_velocity_y: number;
+        }> = [];
+        for (const child of scene.children) {
+          if (!(child instanceof THREE.Group)) continue;
+          if (!child.userData?.model) continue;
+          if (child === sensorNode.parent) continue;
+          const name = child.userData.model as string;
+          let idx = modelRegistry.get(name);
+          if (idx === undefined) {
+            idx = modelTriangles.length;
+            modelRegistry.set(name, idx);
+            const g = loadModel(name);
+            g.updateMatrixWorld(true);
+            modelTriangles.push(extractTriangles(g));
+            worker.postMessage({ type: "init", terrain: terrainTris, models: modelTriangles });
+          }
+          child.getWorldPosition(tmpVec);
+          const m = child.matrixWorld.elements;
+          vessels.push({
+            model_index: idx,
+            center: [tmpVec.x, tmpVec.y, tmpVec.z],
+            rotation: colMajorToRowMajor3x3(m),
+            velocity: child.userData.velocity ?? [0, 0, 0],
+            angular_velocity_y: child.userData.angularVelocityY ?? 0,
+          });
+        }
+        sensorNode.getWorldPosition(tmpVec);
+        const sm = sensorNode.matrixWorld.elements;
+        worker.postMessage({
+          type: "sweep",
+          scene: { vessels },
+          sensor: { origin: [tmpVec.x, tmpVec.y, tmpVec.z], rotation: colMajorToRowMajor3x3(sm) },
+          config: wasmConfig,
+        });
+      }
+      latestFrame.time = time;
+      return latestFrame;
+    },
+    dispose() {
+      worker.terminate();
+    },
+  };
+
+  return kernel;
+}
+
+// ── Radar Web Worker kernel ─────────────────────────────────────
+
+interface VesselBox {
+  position: [number, number, number];
+  heading: number;
+  half_extents: [number, number, number];
+  velocity?: [number, number, number];
+  angular_velocity_y?: number;
+}
+
+const RADAR_DEFAULT_HALF_EXTENTS: [number, number, number] = [10, 2, 3];
+
+function buildRadarEnvConfig(
+  config: { mount: { y: number }; beam_width_deg: number },
+  env?: Environment,
+) {
+  if (!env) return undefined;
+  const seaState = env.sea_state;
+  return {
+    sea_clutter: seaState
+      ? { hs: seaState.significant_wave_height, radar_height_m: config.mount.y, enabled: true, sweep_index: 0 }
+      : undefined,
+    antenna: { beam_width_deg: config.beam_width_deg },
+    weather:
+      (env.rain_rate_mm_h ?? 0) > 0
+        ? { rain_rate_mm_h: env.rain_rate_mm_h!, frequency_ghz: 9.4 }
+        : undefined,
+  };
+}
+
+function createRadarWorkerKernel(
+  scene: THREE.Scene,
+  sensorNode: THREE.Object3D,
+  config: {
+    range_m: number;
+    rotation_rate_hz: number;
+    spokes_per_rev: number;
+    range_bins: number;
+    beam_width_deg: number;
+    mount: { x: number; y: number; z: number };
+  },
+  environment: Environment,
+  staticObstacles: VesselBox[],
+) {
+  const worker = new Worker(
+    new URL("./radar-worker.ts", import.meta.url),
+    { type: "module" },
+  );
+
+  const radarConfig = {
+    range_m: config.range_m,
+    spokes_per_rev: config.spokes_per_rev,
+    range_bins: config.range_bins,
+    sweep_duration_s: 1 / config.rotation_rate_hz,
+  };
+  const baseEnvConfig = buildRadarEnvConfig(config, environment);
+
+  const tmpQuat = new THREE.Quaternion();
+  const tmpEuler = new THREE.Euler();
+  const tmpVec = new THREE.Vector3();
+
+  let sweepIndex = 0;
+  let latestFrame: RadarFrame = { spokes: [], time: 0 };
+  let sweepInFlight = false;
+
+  worker.onmessage = (e: MessageEvent<RadarWorkerResult>) => {
+    if (e.data.type === "frame") {
+      latestFrame = { spokes: e.data.spokes, time: latestFrame.time };
+      sweepInFlight = false;
+    }
+  };
+
+  const kernel = {
+    step(time: number): RadarFrame {
+      if (!sweepInFlight) {
+        sweepInFlight = true;
+        const vessels: VesselBox[] = [...staticObstacles];
+        for (const child of scene.children) {
+          if (!(child instanceof THREE.Group)) continue;
+          if (child === sensorNode.parent) continue;
+          if (!child.userData?.model) continue;
+          child.getWorldPosition(tmpVec);
+          child.getWorldQuaternion(tmpQuat);
+          tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
+          vessels.push({
+            position: [tmpVec.x, tmpVec.y, tmpVec.z],
+            heading: tmpEuler.y,
+            half_extents: RADAR_DEFAULT_HALF_EXTENTS,
+            velocity: child.userData.velocity ?? [0, 0, 0],
+            angular_velocity_y: child.userData.angularVelocityY ?? 0,
+          });
+        }
+
+        sensorNode.getWorldPosition(tmpVec);
+        sensorNode.getWorldQuaternion(tmpQuat);
+        tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
+
+        const currentEnv = baseEnvConfig
+          ? {
+              ...baseEnvConfig,
+              sea_clutter: baseEnvConfig.sea_clutter
+                ? { ...baseEnvConfig.sea_clutter, sweep_index: sweepIndex }
+                : undefined,
+            }
+          : undefined;
+        sweepIndex++;
+
+        worker.postMessage({
+          type: "sweep",
+          scene: { vessels },
+          host: { position: [tmpVec.x, tmpVec.y, tmpVec.z], heading: tmpEuler.y },
+          config: radarConfig,
+          envConfig: currentEnv,
+        });
+      }
+      latestFrame.time = time;
+      return latestFrame;
+    },
+    dispose() {
+      worker.terminate();
+    },
+  };
+
+  return kernel;
 }

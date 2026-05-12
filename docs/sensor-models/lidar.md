@@ -147,5 +147,4 @@ All configurations are well within the 10 Hz frame budget (100 ms). See `package
 - No atmospheric attenuation: rain, fog, and other weather conditions do not affect returns.
 - No per-channel timing skew: all channels within an azimuth column fire simultaneously.
 - No multi-return: only the single nearest hit per ray is reported.
-- Vessel geometry is OBB-only: hull shape is approximated as a box, not a detailed mesh.
 - No beam divergence or spot-size modelling: rays are infinitesimally thin.

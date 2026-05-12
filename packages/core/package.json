@@ -9,7 +9,9 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./wasm/lidar": "./wasm/lidar.js",
+    "./wasm/radar": "./wasm/radar.js"
   },
   "files": [
     "dist",
