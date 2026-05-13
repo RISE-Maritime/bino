@@ -18,6 +18,7 @@
     lidarPoints: 0,
     radar: {},
     staleEntities: [],
+    tileSource: undefined,
   });
 
   type PreviewSpec = {
@@ -122,6 +123,7 @@
         loadingStage = stage;
       },
       previewCanvases: previewCanvasMap,
+      tileSource: params.get("tiles") ?? undefined,
     });
   });
 
@@ -139,7 +141,7 @@
     <h1>Bino viewer</h1>
     <span class="stats">
       {stats.fps.toFixed(1)} fps · {stats.frames} frames · cam {stats.cameraFrames} · lidar {stats.lidarPoints}
-      pts · src: {source}
+      pts · src: {source}{#if stats.tileSource} · tiles: {stats.tileSource}{/if}
       {#if stats.staleEntities.length > 0}
         · <span class="stale">stale: {stats.staleEntities.join(", ")}</span>
       {/if}

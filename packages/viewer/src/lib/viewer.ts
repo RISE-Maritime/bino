@@ -22,6 +22,7 @@ import {
 import type { LidarWorkerResult } from "./lidar-worker.js";
 import type { RadarWorkerResult } from "./radar-worker.js";
 import { v01Scenario } from "./scenario.js";
+import { createTiles, parseTileSource, type TilesHandle } from "./tiles.js";
 
 export interface ViewerStats {
   frames: number;
@@ -32,6 +33,8 @@ export interface ViewerStats {
   radar: Record<string, { spokes: number; bins: number }>;
   /** Entities whose last pose update is older than the staleness threshold. */
   staleEntities: string[];
+  /** Active 3D Tiles source label, if any. */
+  tileSource?: string;
 }
 
 const STALE_THRESHOLD_MS = 5000;
@@ -53,6 +56,10 @@ export interface MountOptions {
    *  (Y-flipped), lidar points as a top-down scatter, radar sweeps as
    *  a PPI polar plot. Sensors not in the map produce no preview. */
   previewCanvases?: Map<string, HTMLCanvasElement>;
+  /** 3D Tiles source string (parsed by parseTileSource).
+   *  "demo", "cesium:TOKEN", "google:KEY", or a direct URL.
+   *  When set, streams tiles as a visual layer (lidar keeps proxy terrain). */
+  tileSource?: string;
 }
 
 interface PpiCache {
@@ -90,6 +97,9 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     ? buildingsToObstacles(terrain.buildings, compiled.anchor)
     : [];
 
+  // ── 3D Tiles (spike) ──────────────────────────────────────────
+  let tilesHandle: TilesHandle | undefined;
+
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   resize(renderer, canvas);
@@ -120,6 +130,22 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   controls.minDistance = 30;
   controls.maxDistance = 50_000;
   controls.update();
+
+  if (opts.tileSource) {
+    const source = parseTileSource(opts.tileSource);
+    progress(`Loading ${source.type === "google" ? "Google" : "3D"} Tiles`);
+    tilesHandle = createTiles({
+      source,
+      anchor: compiled.anchor,
+      camera: debugCamera,
+      renderer,
+      // Kiel geoid undulation (EGM2008): ~43 m
+      geoidOffset: 43,
+    });
+    built.scene.add(tilesHandle.group);
+    // Hide the proxy terrain visually — lidar still reads its geometry
+    if (built.terrain) built.terrain.visible = false;
+  }
 
   interface AnyKernel {
     step(time: number): CameraFrame | LidarFrame | RadarFrame;
@@ -466,6 +492,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     }
 
     for (const h of cameraHelpers) h.update();
+    tilesHandle?.update();
 
     renderer.setRenderTarget(null);
     renderer.render(built.scene, debugCamera);
@@ -491,6 +518,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         lidarPoints,
         radar: radarStats,
         staleEntities,
+        tileSource: tilesHandle?.source,
       });
     }
     rafId = requestAnimationFrame(tick);
@@ -529,6 +557,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
       for (const k of kernels) k.kernel.dispose();
       for (const lw of lidarWorkerKernels) lw.dispose();
       for (const rw of radarWorkerKernels) rw.dispose();
+      tilesHandle?.dispose();
       renderer.dispose();
     },
     stats: () => ({

@@ -13,6 +13,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "3d-tiles-renderer": "0.3.46",
     "@bino/core": "workspace:*",
     "@eclipse-zenoh/zenoh-ts": "^1.9.0",
     "three": "0.160.1"
