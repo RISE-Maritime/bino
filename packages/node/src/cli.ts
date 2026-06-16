@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { argv, exit, stderr, stdout } from "node:process";
+import { argv, env, exit, stderr, stdout } from "node:process";
 import { Config, open } from "@eclipse-zenoh/zenoh-ts";
 import {
   MemoryPoseStream,
@@ -11,6 +11,7 @@ import {
 } from "@bino/core";
 import { loadScenario } from "./yaml.js";
 import { createNodeService } from "./service.js";
+import { createFileTerrainCache } from "./terrain-cache.js";
 
 interface CliArgs {
   scenarioPath: string;
@@ -57,11 +58,16 @@ async function main(): Promise<void> {
 
   let terrain: TerrainData | undefined;
   if (scene.terrain) {
+    // Cache prepared terrain by bbox so a location is fetched once.
+    // Override the directory with BINO_TERRAIN_CACHE; set it empty to disable.
+    const cacheDir = env.BINO_TERRAIN_CACHE ?? ".bino-cache/terrain";
+    const cache = cacheDir ? createFileTerrainCache(cacheDir) : undefined;
     stdout.write(
-      `terrain: fetching coastline + bathymetry for ${JSON.stringify(scene.terrain.bbox)}…\n`,
+      `terrain: preparing coastline + bathymetry for ${JSON.stringify(scene.terrain.bbox)}` +
+        `${cache ? ` (cache: ${cacheDir})` : ""}…\n`,
     );
     const t0 = performance.now();
-    terrain = await prepareTerrain(scene.terrain.bbox);
+    terrain = await prepareTerrain(scene.terrain.bbox, cache ? { cache } : {});
     stdout.write(
       `terrain: ready in ${(performance.now() - t0).toFixed(0)} ms ` +
         `(${terrain.coastline.length} chains, ${terrain.bathymetry.width}x${terrain.bathymetry.height} grid)\n`,

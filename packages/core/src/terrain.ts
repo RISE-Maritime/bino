@@ -200,18 +200,49 @@ export interface TerrainData {
   seamarks?: SeamarkData[];
 }
 
+/** A store for prepared terrain, keyed by bbox+options. Lets a host
+ *  fetch each location once and reuse it offline. The filesystem
+ *  implementation lives in @bino/node; the browser can supply an
+ *  IndexedDB-backed one (or none). Core stays environment-agnostic. */
+export interface TerrainCache {
+  get(key: string): Promise<TerrainData | undefined>;
+  set(key: string, data: TerrainData): Promise<void>;
+}
+
+/** Stable cache key for a bbox + fetch options. Bbox is rounded to
+ *  ~1 m so trivially-different floats still hit the same entry. */
+export function terrainCacheKey(bbox: Bbox, opts: PrepareTerrainOptions = {}): string {
+  const coords = bbox.map((n) => n.toFixed(5)).join("_");
+  const buildings = opts.buildings !== false ? 1 : 0;
+  const seamarks = opts.seamarks !== false ? 1 : 0;
+  return `terrain_${coords}_b${buildings}_s${seamarks}`;
+}
+
 /** Async preparation step the service/viewer runs before
  *  buildScene. Keeps compileScenario sync and isolates network /
  *  filesystem effects from the pure compile path. */
 export interface PrepareTerrainOptions {
   buildings?: boolean;
   seamarks?: boolean;
+  /** When set, prepared terrain is read from / written to this cache,
+   *  keyed by bbox+options — so a location is fetched only once. */
+  cache?: TerrainCache;
 }
 
 export async function prepareTerrain(
   bbox: Bbox,
   opts: PrepareTerrainOptions = {},
 ): Promise<TerrainData> {
+  const { cache } = opts;
+  const key = terrainCacheKey(bbox, opts);
+  if (cache) {
+    const hit = await cache.get(key).catch((e) => {
+      console.warn("terrain cache read failed:", e);
+      return undefined;
+    });
+    if (hit) return hit;
+  }
+
   const fetchBuildings = opts.buildings !== false;
   const fetchSeamarks = opts.seamarks !== false;
   const [coastline, bathymetry, buildings, seamarks] = await Promise.all([
@@ -230,7 +261,11 @@ export async function prepareTerrain(
         })
       : ([] as SeamarkData[]),
   ]);
-  return { coastline, bathymetry, buildings, seamarks };
+  const data: TerrainData = { coastline, bathymetry, buildings, seamarks };
+  if (cache) {
+    await cache.set(key, data).catch((e) => console.warn("terrain cache write failed:", e));
+  }
+  return data;
 }
 
 /** Build terrain group: seabed mesh + landmask + buildings + seamarks. */

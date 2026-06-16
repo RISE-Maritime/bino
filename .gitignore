@@ -10,6 +10,7 @@ packages/*/wasm/
 *.tsbuildinfo
 .DS_Store
 .devcontainer/devcontainer-lock.json
+.bino-cache/
 .env
 .env.local
 coverage/

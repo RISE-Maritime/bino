@@ -3,8 +3,11 @@ import * as THREE from "three";
 import {
   parseCoastlineElements,
   buildTerrainMesh,
+  prepareTerrain,
+  terrainCacheKey,
   type BathymetryGrid,
   type CoastlineChain,
+  type TerrainCache,
   type TerrainData,
 } from "../src/terrain.js";
 
@@ -161,5 +164,33 @@ describe("buildTerrainMesh", () => {
       return { compiled };
     })();
     expect(built.compiled).toBeDefined();
+  });
+});
+
+describe("prepareTerrain caching", () => {
+  const bbox: [number, number, number, number] = [10.05, 54.28, 10.25, 54.38];
+  const cached: TerrainData = {
+    coastline: [],
+    bathymetry: {
+      heights: new Float32Array([1, 2, 3, 4]),
+      width: 2,
+      height: 2,
+      bbox,
+      cellSizeM: 50,
+    },
+  };
+
+  it("returns the cached entry without fetching on a hit", async () => {
+    // No network: the test passes only because a hit short-circuits fetch.
+    let writes = 0;
+    const cache: TerrainCache = {
+      get: async (k) => (k === terrainCacheKey(bbox) ? cached : undefined),
+      set: async () => {
+        writes++;
+      },
+    };
+    const result = await prepareTerrain(bbox, { cache });
+    expect(result).toBe(cached);
+    expect(writes).toBe(0);
   });
 });

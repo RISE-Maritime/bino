@@ -8,6 +8,7 @@ export {
   type SensorOutput,
 } from "./runner.js";
 export { createNodeService, type NodeService, type NodeServiceOptions } from "./service.js";
+export { createFileTerrainCache } from "./terrain-cache.js";
 export {
   createSensorPublisher,
   type PublishSession,
