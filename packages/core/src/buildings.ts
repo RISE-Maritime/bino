@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Anchor } from "./dsl.js";
 import type { BuildingData } from "./overpass.js";
 import { geodeticToEnu } from "./geo.js";
-import type { VesselBox } from "./radar.js";
+import type { VesselBox } from "./scene-marshal.js";
 
 const BUILDING_COLOR = 0xb8b0a0;
 const BUILDING_Y = 0.5; // base sits on landmask level

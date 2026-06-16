@@ -3,6 +3,7 @@ export * from "./geo.js";
 export * from "./sensor.js";
 export * from "./compile.js";
 export * from "./scene.js";
+export * from "./scene-marshal.js";
 export * from "./pose.js";
 export * from "./camera.js";
 export * from "./lidar-wasm.js";

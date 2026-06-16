@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { radar_sweep } from "../wasm/radar.js";
 import type { Environment, RadarSensor } from "./dsl.js";
+import { marshalRadarVessels, marshalRadarSensorPose, type VesselBox } from "./scene-marshal.js";
 
 export interface RadarSpoke {
   azimuth: number;
@@ -33,21 +34,8 @@ export interface RadarKernelOptions {
   staticObstacles?: VesselBox[];
 }
 
-export interface VesselBox {
-  position: [number, number, number];
-  heading: number;
-  half_extents: [number, number, number];
-  velocity?: [number, number, number];
-  angular_velocity_y?: number;
-}
-
-export const DEFAULT_HALF_EXTENTS: [number, number, number] = [10, 2, 3];
-
 export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
   const { scene, sensorNode, config, environment } = opts;
-  const tmpQuat = new THREE.Quaternion();
-  const tmpEuler = new THREE.Euler();
-  const tmpVec = new THREE.Vector3();
   const staticObs = opts.staticObstacles ?? [];
 
   let sweepIndex = 0;
@@ -56,26 +44,9 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
 
   return {
     step(time: number): RadarFrame {
-      const vessels: VesselBox[] = [...staticObs];
-      for (const child of scene.children) {
-        if (!(child instanceof THREE.Group)) continue;
-        if (child === sensorNode.parent) continue;
-        if (!child.userData?.model) continue;
-        child.getWorldPosition(tmpVec);
-        child.getWorldQuaternion(tmpQuat);
-        tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
-        vessels.push({
-          position: [tmpVec.x, tmpVec.y, tmpVec.z],
-          heading: tmpEuler.y,
-          half_extents: DEFAULT_HALF_EXTENTS,
-          velocity: child.userData.velocity ?? [0, 0, 0],
-          angular_velocity_y: child.userData.angularVelocityY ?? 0,
-        });
-      }
-
-      sensorNode.getWorldPosition(tmpVec);
-      sensorNode.getWorldQuaternion(tmpQuat);
-      tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
+      // Static obstacles first, matching the viewer worker's merge order.
+      const vessels: VesselBox[] = [...staticObs, ...marshalRadarVessels(scene, sensorNode)];
+      const host = marshalRadarSensorPose(sensorNode);
 
       // Update sweep index for deterministic clutter seeding.
       const currentEnv = envConfig
@@ -94,10 +65,7 @@ export function createRadarKernel(opts: RadarKernelOptions): RadarKernel {
       try {
         result = radar_sweep(
           { vessels },
-          {
-            position: [tmpVec.x, tmpVec.y, tmpVec.z],
-            heading: tmpEuler.y,
-          },
+          host,
           buildRadarWasmConfig(
             config,
             opts.sweepDuration_s !== undefined

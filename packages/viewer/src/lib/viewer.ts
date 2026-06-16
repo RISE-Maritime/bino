@@ -10,10 +10,12 @@ import {
   buildScene,
   compileScenario,
   createCameraKernel,
-  colMajorToRowMajor3x3,
-  DEFAULT_HALF_EXTENTS,
   extractTriangles,
   loadModel,
+  marshalLidarVessels,
+  marshalLidarSensorPose,
+  marshalRadarVessels,
+  marshalRadarSensorPose,
   prepareTerrain,
   type CameraFrame,
   type CameraKernel,
@@ -929,49 +931,31 @@ function createLidarWorkerKernel(
     }
   };
 
-  const tmpVec = new THREE.Vector3();
+  // Register a model on demand: push its triangles and re-init the worker.
+  // This is the one piece the node kernel does differently (it re-inits the
+  // in-process WASM model registry), so it's injected into the shared
+  // marshalling rather than duplicated.
+  const resolveModelIndex = (name: string): number => {
+    let idx = modelRegistry.get(name);
+    if (idx === undefined) {
+      idx = modelTriangles.length;
+      modelRegistry.set(name, idx);
+      const g = loadModel(name);
+      g.updateMatrixWorld(true);
+      modelTriangles.push(extractTriangles(g));
+      worker.postMessage({ type: "init", terrain: terrainTris, models: modelTriangles });
+    }
+    return idx;
+  };
 
   const kernel = {
     step(time: number): LidarFrame {
       if (!sweepInFlight && workerReady) {
         sweepInFlight = true;
-        const vessels: Array<{
-          model_index: number;
-          center: [number, number, number];
-          rotation: number[];
-          velocity: [number, number, number];
-          angular_velocity_y: number;
-        }> = [];
-        for (const child of scene.children) {
-          if (!(child instanceof THREE.Group)) continue;
-          if (!child.userData?.model) continue;
-          if (child === sensorNode.parent) continue;
-          const name = child.userData.model as string;
-          let idx = modelRegistry.get(name);
-          if (idx === undefined) {
-            idx = modelTriangles.length;
-            modelRegistry.set(name, idx);
-            const g = loadModel(name);
-            g.updateMatrixWorld(true);
-            modelTriangles.push(extractTriangles(g));
-            worker.postMessage({ type: "init", terrain: terrainTris, models: modelTriangles });
-          }
-          child.getWorldPosition(tmpVec);
-          const m = child.matrixWorld.elements;
-          vessels.push({
-            model_index: idx,
-            center: [tmpVec.x, tmpVec.y, tmpVec.z],
-            rotation: colMajorToRowMajor3x3(m),
-            velocity: child.userData.velocity ?? [0, 0, 0],
-            angular_velocity_y: child.userData.angularVelocityY ?? 0,
-          });
-        }
-        sensorNode.getWorldPosition(tmpVec);
-        const sm = sensorNode.matrixWorld.elements;
         worker.postMessage({
           type: "sweep",
-          scene: { vessels },
-          sensor: { origin: [tmpVec.x, tmpVec.y, tmpVec.z], rotation: colMajorToRowMajor3x3(sm) },
+          scene: { vessels: marshalLidarVessels(scene, sensorNode, resolveModelIndex) },
+          sensor: marshalLidarSensorPose(sensorNode),
           config: wasmConfig,
           env: envConfig,
         });
@@ -1002,10 +986,6 @@ function createRadarWorkerKernel(
   const radarConfig = buildRadarWasmConfig(config);
   const baseEnvConfig = buildRadarEnvConfig(config, environment);
 
-  const tmpQuat = new THREE.Quaternion();
-  const tmpEuler = new THREE.Euler();
-  const tmpVec = new THREE.Vector3();
-
   let sweepIndex = 0;
   let latestFrame: RadarFrame = { spokes: [], time: 0 };
   let sweepInFlight = false;
@@ -1030,26 +1010,10 @@ function createRadarWorkerKernel(
     step(time: number): RadarFrame {
       if (!sweepInFlight && workerReady) {
         sweepInFlight = true;
-        const vessels: VesselBox[] = [];
-        for (const child of scene.children) {
-          if (!(child instanceof THREE.Group)) continue;
-          if (child === sensorNode.parent) continue;
-          if (!child.userData?.model) continue;
-          child.getWorldPosition(tmpVec);
-          child.getWorldQuaternion(tmpQuat);
-          tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
-          vessels.push({
-            position: [tmpVec.x, tmpVec.y, tmpVec.z],
-            heading: tmpEuler.y,
-            half_extents: DEFAULT_HALF_EXTENTS,
-            velocity: child.userData.velocity ?? [0, 0, 0],
-            angular_velocity_y: child.userData.angularVelocityY ?? 0,
-          });
-        }
-
-        sensorNode.getWorldPosition(tmpVec);
-        sensorNode.getWorldQuaternion(tmpQuat);
-        tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
+        // Static obstacles are held by the worker (sent at init) and merged
+        // there, so they're not included in the per-sweep vessel list.
+        const vessels = marshalRadarVessels(scene, sensorNode);
+        const host = marshalRadarSensorPose(sensorNode);
 
         const currentEnv = baseEnvConfig
           ? {
@@ -1064,7 +1028,7 @@ function createRadarWorkerKernel(
         worker.postMessage({
           type: "sweep",
           scene: { vessels },
-          host: { position: [tmpVec.x, tmpVec.y, tmpVec.z], heading: tmpEuler.y },
+          host,
           config: radarConfig,
           envConfig: currentEnv,
         });

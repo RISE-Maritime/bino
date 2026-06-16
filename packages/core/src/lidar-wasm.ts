@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { lidar_init_terrain, lidar_init_vessel_models, lidar_sweep } from "../wasm/lidar.js";
 import type { LidarSensor, Environment } from "./dsl.js";
 import { loadModel } from "./assets.js";
+import { marshalLidarVessels, marshalLidarSensorPose } from "./scene-marshal.js";
 
 export interface LidarFrame {
   points: Float32Array;
@@ -118,15 +119,13 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
 
   lidar_init_terrain(opts.terrain ? extractTriangles(opts.terrain) : []);
 
-  // Discover all vessel models in the scene and register them
-  const vesselModelMap = new Map<THREE.Object3D, number>();
+  // Pre-register all vessel models in the scene so the first sweep
+  // doesn't pay the WASM re-init cost mid-frame.
   for (const child of scene.children) {
     if (!(child instanceof THREE.Group)) continue;
     if (!child.userData?.model) continue;
     if (child === sensorNode.parent) continue;
-    const modelName = child.userData.model as string;
-    const modelIndex = ensureModelRegistered(modelName);
-    vesselModelMap.set(child, modelIndex);
+    ensureModelRegistered(child.userData.model as string);
   }
 
   const wasmOpts: Parameters<typeof buildLidarWasmConfig>[1] = {};
@@ -137,7 +136,6 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
   if (opts.waterLevelY !== undefined) wasmOpts.waterLevelY = opts.waterLevelY;
   const wasmConfig = buildLidarWasmConfig(config, wasmOpts);
 
-  const tmpVec = new THREE.Vector3();
   const sweepInterval = 1 / config.rate_hz;
   let lastSweepTime = -Infinity;
   let cachedFrame: LidarFrame = { points: new Float32Array(0), count: 0, time: 0 };
@@ -149,31 +147,8 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
       }
       lastSweepTime = time;
 
-      const vessels: VesselInstance[] = [];
-      for (const child of scene.children) {
-        if (!(child instanceof THREE.Group)) continue;
-        if (!child.userData?.model) continue;
-        if (child === sensorNode.parent) continue;
-
-        let modelIndex = vesselModelMap.get(child);
-        if (modelIndex === undefined) {
-          modelIndex = ensureModelRegistered(child.userData.model as string);
-          vesselModelMap.set(child, modelIndex);
-        }
-
-        child.getWorldPosition(tmpVec);
-        const m = child.matrixWorld.elements;
-        vessels.push({
-          model_index: modelIndex,
-          center: [tmpVec.x, tmpVec.y, tmpVec.z],
-          rotation: colMajorToRowMajor3x3(m),
-          velocity: child.userData.velocity ?? [0, 0, 0],
-          angular_velocity_y: child.userData.angularVelocityY ?? 0,
-        });
-      }
-
-      sensorNode.getWorldPosition(tmpVec);
-      const sm = sensorNode.matrixWorld.elements;
+      const vessels = marshalLidarVessels(scene, sensorNode, ensureModelRegistered);
+      const sensorPose = marshalLidarSensorPose(sensorNode);
 
       let result: {
         points: number[] | Float32Array;
@@ -181,12 +156,7 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
         timestamps?: number[] | Float32Array;
       };
       try {
-        result = lidar_sweep(
-          { vessels },
-          { origin: [tmpVec.x, tmpVec.y, tmpVec.z], rotation: colMajorToRowMajor3x3(sm) },
-          wasmConfig,
-          envConfig,
-        ) as typeof result;
+        result = lidar_sweep({ vessels }, sensorPose, wasmConfig, envConfig) as typeof result;
       } catch (err) {
         console.error("[bino] lidar_sweep failed:", err);
         return { ...cachedFrame, time };
@@ -204,18 +174,6 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
     },
     dispose() {},
   };
-}
-
-export interface VesselInstance {
-  model_index: number;
-  center: [number, number, number];
-  rotation: number[];
-  velocity?: [number, number, number];
-  angular_velocity_y?: number;
-}
-
-export function colMajorToRowMajor3x3(m: ArrayLike<number>): number[] {
-  return [m[0]!, m[4]!, m[8]!, m[1]!, m[5]!, m[9]!, m[2]!, m[6]!, m[10]!];
 }
 
 export function extractTriangles(
