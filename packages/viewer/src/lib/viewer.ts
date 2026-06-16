@@ -2,28 +2,32 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   applyPoseUpdate,
+  buildingsToObstacles,
+  buildLidarEnvConfig,
+  buildLidarWasmConfig,
+  buildRadarEnvConfig,
+  buildRadarWasmConfig,
   buildScene,
   compileScenario,
   createCameraKernel,
   colMajorToRowMajor3x3,
+  DEFAULT_HALF_EXTENTS,
   extractTriangles,
   loadModel,
-  geodeticToEnu,
   prepareTerrain,
   type CameraFrame,
   type CameraKernel,
   type LidarFrame,
   type RadarFrame,
   type PoseStream,
-  type Anchor,
-  type BuildingData,
   type Environment,
+  type LidarSensor,
+  type RadarSensor,
+  type VesselBox,
 } from "@bino/core";
 import type { LidarWorkerResult } from "./lidar-worker.js";
 import type { RadarWorkerResult } from "./radar-worker.js";
 import { v01Scenario } from "./scenario.js";
-import { createTiles, parseTileSource, type TilesHandle } from "./tiles.js";
-
 export interface ViewerStats {
   frames: number;
   fps: number;
@@ -33,8 +37,6 @@ export interface ViewerStats {
   radar: Record<string, { spokes: number; bins: number }>;
   /** Entities whose last pose update is older than the staleness threshold. */
   staleEntities: string[];
-  /** Active 3D Tiles source label, if any. */
-  tileSource?: string;
 }
 
 const STALE_THRESHOLD_MS = 5000;
@@ -56,10 +58,6 @@ export interface MountOptions {
    *  (Y-flipped), lidar points as a top-down scatter, radar sweeps as
    *  a PPI polar plot. Sensors not in the map produce no preview. */
   previewCanvases?: Map<string, HTMLCanvasElement>;
-  /** 3D Tiles source string (parsed by parseTileSource).
-   *  "demo", "cesium:TOKEN", "google:KEY", or a direct URL.
-   *  When set, streams tiles as a visual layer (lidar keeps proxy terrain). */
-  tileSource?: string;
 }
 
 interface PpiCache {
@@ -97,9 +95,6 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     ? buildingsToObstacles(terrain.buildings, compiled.anchor)
     : [];
 
-  // ── 3D Tiles (spike) ──────────────────────────────────────────
-  let tilesHandle: TilesHandle | undefined;
-
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   resize(renderer, canvas);
@@ -130,22 +125,6 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   controls.minDistance = 30;
   controls.maxDistance = 50_000;
   controls.update();
-
-  if (opts.tileSource) {
-    const source = parseTileSource(opts.tileSource);
-    progress(`Loading ${source.type === "google" ? "Google" : "3D"} Tiles`);
-    tilesHandle = createTiles({
-      source,
-      anchor: compiled.anchor,
-      camera: debugCamera,
-      renderer,
-      // Kiel geoid undulation (EGM2008): ~43 m
-      geoidOffset: 43,
-    });
-    built.scene.add(tilesHandle.group);
-    // Hide the proxy terrain visually — lidar still reads its geometry
-    if (built.terrain) built.terrain.visible = false;
-  }
 
   interface AnyKernel {
     step(time: number): CameraFrame | LidarFrame | RadarFrame;
@@ -303,6 +282,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           sensorNode,
           sensor,
           built.terrain,
+          compiled.environment,
         );
         lidarWorkerKernels.push(kernel);
         kernels.push({ kernel, interval: 1 / sensor.rate_hz, lastFire: -Infinity, cached: null });
@@ -383,7 +363,12 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
           buildingObstacles,
         );
         radarWorkerKernels.push(kernel);
-        kernels.push({ kernel, interval: 1 / sensor.rotation_rate_hz, lastFire: -Infinity, cached: null });
+        kernels.push({
+          kernel,
+          interval: 1 / sensor.rotation_rate_hz,
+          lastFire: -Infinity,
+          cached: null,
+        });
         const ring = makeRadarRing(sensor.range_m);
         sensorNode.add(ring);
         radarOverlays.push({ ring });
@@ -404,6 +389,8 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
               nBins: 0,
             },
           });
+        } else {
+          console.warn("[bino] no preview canvas for radar", sensor.id);
         }
       }
     }
@@ -492,7 +479,6 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
     }
 
     for (const h of cameraHelpers) h.update();
-    tilesHandle?.update();
 
     renderer.setRenderTarget(null);
     renderer.render(built.scene, debugCamera);
@@ -518,7 +504,6 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         lidarPoints,
         radar: radarStats,
         staleEntities,
-        tileSource: tilesHandle?.source,
       });
     }
     rafId = requestAnimationFrame(tick);
@@ -557,7 +542,6 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
       for (const k of kernels) k.kernel.dispose();
       for (const lw of lidarWorkerKernels) lw.dispose();
       for (const rw of radarWorkerKernels) rw.dispose();
-      tilesHandle?.dispose();
       renderer.dispose();
     },
     stats: () => ({
@@ -883,55 +867,19 @@ function resize(renderer: THREE.WebGLRenderer, canvas: HTMLCanvasElement): void 
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
 }
 
-const BUILDING_Y = 0.5;
-
-function buildingsToObstacles(
-  buildings: BuildingData[],
-  anchor: Anchor,
-): Array<{
-  position: [number, number, number];
-  heading: number;
-  half_extents: [number, number, number];
-}> {
-  return buildings.map((bldg) => {
-    const enu = bldg.polygon.map(([lon, lat]) => geodeticToEnu({ lat, lon, height: 0 }, anchor));
-    const es = enu.map((p) => p.e);
-    const ns = enu.map((p) => p.n);
-    const minE = Math.min(...es),
-      maxE = Math.max(...es);
-    const minN = Math.min(...ns),
-      maxN = Math.max(...ns);
-    const halfX = Math.max((maxE - minE) / 2, 0.5);
-    const halfZ = Math.max((maxN - minN) / 2, 0.5);
-    const halfY = bldg.heightM / 2;
-    return {
-      position: [(minE + maxE) / 2, BUILDING_Y + halfY, -((minN + maxN) / 2)] as [
-        number,
-        number,
-        number,
-      ],
-      heading: 0,
-      half_extents: [halfX, halfY, halfZ] as [number, number, number],
-    };
-  });
-}
-
 // ── Lidar Web Worker kernel ─────────────────────────────────────
 
-type TriangleData = Array<{
-  v: [[number, number, number], [number, number, number], [number, number, number]];
-}>;
+type TriangleData = ReturnType<typeof extractTriangles>;
 
 function createLidarWorkerKernel(
   scene: THREE.Scene,
   sensorNode: THREE.Object3D,
-  config: { channels: number; range_m: number; rate_hz: number; fov_h_deg?: number; azimuths?: number },
+  config: LidarSensor,
   terrain?: THREE.Group,
+  environment?: Environment,
 ) {
-  const worker = new Worker(
-    new URL("./lidar-worker.ts", import.meta.url),
-    { type: "module" },
-  );
+  const worker = new Worker(new URL("./lidar-worker.ts", import.meta.url), { type: "module" });
+  worker.onerror = (e) => console.error("[bino] lidar worker error:", e.message);
 
   const terrainTris: TriangleData = terrain ? extractTriangles(terrain) : [];
 
@@ -951,24 +899,23 @@ function createLidarWorkerKernel(
     }
   }
 
-  worker.postMessage({ type: "init", terrain: terrainTris, models: modelTriangles });
+  const initPayload = { type: "init" as const, terrain: terrainTris, models: modelTriangles };
 
-  const fov = 90;
-  const wasmConfig = {
-    channels: config.channels,
-    azimuths: config.azimuths ?? config.channels * 8,
-    fov_v_deg: fov,
-    fov_h_deg: config.fov_h_deg ?? 360,
-    range_m: config.range_m,
-    sweep_duration_s: 1 / config.rate_hz,
-    water_level_y: 0.0,
-  };
+  const wasmConfig = buildLidarWasmConfig(config, { waterLevelY: 0.0 });
+  const envConfig = buildLidarEnvConfig(environment);
 
   let latestFrame: LidarFrame = { points: new Float32Array(0), count: 0, time: 0 };
   let sweepInFlight = false;
+  let workerReady = false;
 
-  worker.onmessage = (e: MessageEvent<LidarWorkerResult>) => {
-    if (e.data.type === "frame") {
+  worker.onmessage = (
+    e: MessageEvent<LidarWorkerResult | { type: "ready" } | { type: "error" } | { type: "loaded" }>,
+  ) => {
+    if (e.data.type === "loaded") {
+      worker.postMessage(initPayload);
+    } else if (e.data.type === "ready") {
+      workerReady = true;
+    } else if (e.data.type === "frame") {
       const ts = e.data.timestamps.length > 0 ? e.data.timestamps : undefined;
       latestFrame = {
         points: e.data.points,
@@ -977,6 +924,8 @@ function createLidarWorkerKernel(
         ...(ts ? { timestamps: ts } : {}),
       };
       sweepInFlight = false;
+    } else if (e.data.type === "error") {
+      sweepInFlight = false;
     }
   };
 
@@ -984,7 +933,7 @@ function createLidarWorkerKernel(
 
   const kernel = {
     step(time: number): LidarFrame {
-      if (!sweepInFlight) {
+      if (!sweepInFlight && workerReady) {
         sweepInFlight = true;
         const vessels: Array<{
           model_index: number;
@@ -1024,6 +973,7 @@ function createLidarWorkerKernel(
           scene: { vessels },
           sensor: { origin: [tmpVec.x, tmpVec.y, tmpVec.z], rotation: colMajorToRowMajor3x3(sm) },
           config: wasmConfig,
+          env: envConfig,
         });
       }
       latestFrame.time = time;
@@ -1039,59 +989,17 @@ function createLidarWorkerKernel(
 
 // ── Radar Web Worker kernel ─────────────────────────────────────
 
-interface VesselBox {
-  position: [number, number, number];
-  heading: number;
-  half_extents: [number, number, number];
-  velocity?: [number, number, number];
-  angular_velocity_y?: number;
-}
-
-const RADAR_DEFAULT_HALF_EXTENTS: [number, number, number] = [10, 2, 3];
-
-function buildRadarEnvConfig(
-  config: { mount: { y: number }; beam_width_deg: number },
-  env?: Environment,
-) {
-  if (!env) return undefined;
-  const seaState = env.sea_state;
-  return {
-    sea_clutter: seaState
-      ? { hs: seaState.significant_wave_height, radar_height_m: config.mount.y, enabled: true, sweep_index: 0 }
-      : undefined,
-    antenna: { beam_width_deg: config.beam_width_deg },
-    weather:
-      (env.rain_rate_mm_h ?? 0) > 0
-        ? { rain_rate_mm_h: env.rain_rate_mm_h!, frequency_ghz: 9.4 }
-        : undefined,
-  };
-}
-
 function createRadarWorkerKernel(
   scene: THREE.Scene,
   sensorNode: THREE.Object3D,
-  config: {
-    range_m: number;
-    rotation_rate_hz: number;
-    spokes_per_rev: number;
-    range_bins: number;
-    beam_width_deg: number;
-    mount: { x: number; y: number; z: number };
-  },
+  config: RadarSensor,
   environment: Environment,
   staticObstacles: VesselBox[],
 ) {
-  const worker = new Worker(
-    new URL("./radar-worker.ts", import.meta.url),
-    { type: "module" },
-  );
+  const worker = new Worker(new URL("./radar-worker.ts", import.meta.url), { type: "module" });
+  worker.onerror = (e) => console.error("[bino] radar worker error:", e.message);
 
-  const radarConfig = {
-    range_m: config.range_m,
-    spokes_per_rev: config.spokes_per_rev,
-    range_bins: config.range_bins,
-    sweep_duration_s: 1 / config.rotation_rate_hz,
-  };
+  const radarConfig = buildRadarWasmConfig(config);
   const baseEnvConfig = buildRadarEnvConfig(config, environment);
 
   const tmpQuat = new THREE.Quaternion();
@@ -1101,19 +1009,28 @@ function createRadarWorkerKernel(
   let sweepIndex = 0;
   let latestFrame: RadarFrame = { spokes: [], time: 0 };
   let sweepInFlight = false;
+  let workerReady = false;
 
-  worker.onmessage = (e: MessageEvent<RadarWorkerResult>) => {
-    if (e.data.type === "frame") {
-      latestFrame = { spokes: e.data.spokes, time: latestFrame.time };
+  worker.onmessage = (
+    e: MessageEvent<RadarWorkerResult | { type: "error" } | { type: "ready" } | { type: "loaded" }>,
+  ) => {
+    if (e.data.type === "loaded") {
+      worker.postMessage({ type: "init", staticObstacles });
+    } else if (e.data.type === "ready") {
+      workerReady = true;
+    } else if (e.data.type === "frame") {
+      latestFrame = { spokes: (e.data as RadarWorkerResult).spokes, time: latestFrame.time };
+      sweepInFlight = false;
+    } else if (e.data.type === "error") {
       sweepInFlight = false;
     }
   };
 
   const kernel = {
     step(time: number): RadarFrame {
-      if (!sweepInFlight) {
+      if (!sweepInFlight && workerReady) {
         sweepInFlight = true;
-        const vessels: VesselBox[] = [...staticObstacles];
+        const vessels: VesselBox[] = [];
         for (const child of scene.children) {
           if (!(child instanceof THREE.Group)) continue;
           if (child === sensorNode.parent) continue;
@@ -1124,7 +1041,7 @@ function createRadarWorkerKernel(
           vessels.push({
             position: [tmpVec.x, tmpVec.y, tmpVec.z],
             heading: tmpEuler.y,
-            half_extents: RADAR_DEFAULT_HALF_EXTENTS,
+            half_extents: DEFAULT_HALF_EXTENTS,
             velocity: child.userData.velocity ?? [0, 0, 0],
             angular_velocity_y: child.userData.angularVelocityY ?? 0,
           });

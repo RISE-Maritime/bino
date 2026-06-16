@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { compileScenario } from "../src/compile.js";
 import { buildScene } from "../src/scene.js";
 import { applyPoseUpdate } from "../src/pose.js";
-import { createRadarKernel } from "../src/radar.js";
+import { createRadarKernel, buildRadarEnvConfig, buildRadarWasmConfig } from "../src/radar.js";
+import type { RadarSensor } from "../src/dsl.js";
 
 const scenario = {
   name: "radar-test",
@@ -97,5 +98,72 @@ describe("createRadarKernel", () => {
       kernel.dispose();
       kernel.dispose();
     }).not.toThrow();
+  });
+
+  it("staticObstacles produce returns at obstacle bearing", () => {
+    const { scene, sensorNode } = getSensorNode();
+    const ferry = scene.children.find((c) => c.name === "ferry")!;
+    ferry.position.set(10000, 0, 10000);
+    ferry.updateMatrixWorld(true);
+
+    const kernel = createRadarKernel({
+      scene,
+      sensorNode,
+      config: radarConfig,
+      staticObstacles: [{ position: [0, 5, -60], heading: 0, half_extents: [10, 5, 10] }],
+    });
+    const frame = kernel.step(0);
+    const totalLit = frame.spokes.reduce(
+      (sum, s) => sum + s.intensity.reduce((a, b) => a + (b > 0 ? 1 : 0), 0),
+      0,
+    );
+    expect(totalLit).toBeGreaterThan(0);
+  });
+});
+
+describe("buildRadarEnvConfig", () => {
+  const compiled = compileScenario(scenario);
+  const parsedConfig = compiled.vessels[0]!.sensors[0]! as RadarSensor;
+
+  it("returns undefined when no environment", () => {
+    expect(buildRadarEnvConfig(parsedConfig)).toBeUndefined();
+  });
+
+  it("includes sea clutter when sea state is present", () => {
+    const env = {
+      visibility_m: 20000,
+      rain_rate_mm_h: 0,
+      time_of_day: "12:00",
+      sea_state: {
+        significant_wave_height: 2,
+        peak_period_s: 8,
+        direction_deg: 180,
+        spectrum: "pierson_moskowitz" as const,
+      },
+    };
+    const cfg = buildRadarEnvConfig(parsedConfig, env);
+    expect(cfg).toBeDefined();
+    expect(cfg!.sea_clutter).toBeDefined();
+    expect(cfg!.sea_clutter!.hs).toBe(2);
+  });
+
+  it("includes weather when rain rate > 0", () => {
+    const env = { visibility_m: 10000, rain_rate_mm_h: 15, time_of_day: "12:00" };
+    const cfg = buildRadarEnvConfig(parsedConfig, env);
+    expect(cfg!.weather).toBeDefined();
+    expect(cfg!.weather!.rain_rate_mm_h).toBe(15);
+  });
+});
+
+describe("buildRadarWasmConfig", () => {
+  const compiled = compileScenario(scenario);
+  const parsedConfig = compiled.vessels[0]!.sensors[0]! as RadarSensor;
+
+  it("produces correct config shape from RadarSensor", () => {
+    const cfg = buildRadarWasmConfig(parsedConfig);
+    expect(cfg.range_m).toBe(200);
+    expect(cfg.spokes_per_rev).toBe(36);
+    expect(cfg.range_bins).toBe(100);
+    expect(cfg.sweep_duration_s).toBeCloseTo(1 / 0.4);
   });
 });

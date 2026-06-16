@@ -141,10 +141,19 @@ All configurations are well within the 10 Hz frame budget (100 ms). See `package
 - **Timestamps:** `Float32Array`, per-hit time offset from sweep start. Empty when `sweep_duration_s == 0`.
 - **Publication:** Encoded as a Keelson `PointCloud` message (foxglove.PointCloud schema with PackedElementField layout).
 
+## Atmospheric Attenuation
+
+Beer-Lambert law applied to the two-way (out-and-back) optical path at near-IR wavelength (~905 nm).
+
+- **Extinction coefficient:** `α = α_vis + α_rain` where `α_vis = 3.91 / V_km / 1000` (Koschmieder, 1/m) and `α_rain = 0.01 × R_mm_h^0.6 / 1000` (empirical, 1/m).
+- **Maximum detection range:** `R_max = −ln(τ_min) / (2α)` where `τ_min` is the detection threshold (default 0.01, i.e. 1% round-trip power).
+- **Effect:** rays beyond `R_max` are dropped entirely (lidar is binary detect/no-detect). This clamps the effective range before BVH traversal, also improving performance in low-visibility conditions.
+
+Consumed DSL fields: `environment.visibility_m` (default 20 000 m), `environment.rain_rate_mm_h` (default 0). Rain extinction is small compared to fog at lidar wavelengths — visibility dominates.
+
 ## Known Limitations
 
 - No noise model: range measurements are exact, and no intensity estimation is performed.
-- No atmospheric attenuation: rain, fog, and other weather conditions do not affect returns.
 - No per-channel timing skew: all channels within an azimuth column fire simultaneously.
 - No multi-return: only the single nearest hit per ray is reported.
 - No beam divergence or spot-size modelling: rays are infinitesimally thin.

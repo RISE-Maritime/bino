@@ -3,7 +3,12 @@ import * as THREE from "three";
 import { compileScenario } from "../src/compile.js";
 import { buildScene } from "../src/scene.js";
 import { applyPoseUpdate } from "../src/pose.js";
-import { createLidarKernelWasm } from "../src/lidar-wasm.js";
+import {
+  createLidarKernelWasm,
+  buildLidarWasmConfig,
+  buildLidarEnvConfig,
+} from "../src/lidar-wasm.js";
+import type { LidarSensor, Environment } from "../src/dsl.js";
 
 const scenario = {
   name: "lidar-wasm-test",
@@ -146,6 +151,49 @@ describe("createLidarKernelWasm", () => {
     expect(minDist).toBeLessThan(55);
   });
 
+  it("heavy fog drops far returns relative to clear conditions", () => {
+    function countTerrainPoints(env?: Environment) {
+      const { scene, sensorNode, entities } = setup();
+      applyPoseUpdate(entities, {
+        entityId: "ferry",
+        pose: { position: [10000, 0, 10000], orientation: [0, 0, 0, 1] },
+        time: 0,
+      });
+      const terrainGroup = new THREE.Group();
+      terrainGroup.name = "terrain";
+      const geom = new THREE.PlaneGeometry(2000, 2000, 1, 1);
+      geom.rotateX(-Math.PI / 2);
+      const mesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial());
+      mesh.position.set(0, -10, 0);
+      terrainGroup.add(mesh);
+      scene.add(terrainGroup);
+      scene.updateMatrixWorld(true);
+
+      const kernel = createLidarKernelWasm({
+        scene,
+        sensorNode,
+        config: { ...lidarConfig, channels: 16 },
+        terrain: terrainGroup,
+        fov_deg: 120,
+        ...(env ? { environment: env } : {}),
+      });
+      return kernel.step(0).count;
+    }
+
+    const clear = countTerrainPoints({
+      visibility_m: 20000,
+      rain_rate_mm_h: 0,
+      time_of_day: "12:00",
+    });
+    const foggy = countTerrainPoints({
+      visibility_m: 100,
+      rain_rate_mm_h: 0,
+      time_of_day: "12:00",
+    });
+    expect(clear).toBeGreaterThan(0);
+    expect(foggy).toBeLessThan(clear);
+  });
+
   it("dispose is callable and idempotent", () => {
     const { scene, sensorNode } = setup();
     const kernel = createLidarKernelWasm({ scene, sensorNode, config: lidarConfig });
@@ -153,5 +201,46 @@ describe("createLidarKernelWasm", () => {
       kernel.dispose();
       kernel.dispose();
     }).not.toThrow();
+  });
+});
+
+describe("buildLidarEnvConfig", () => {
+  it("returns undefined when no environment", () => {
+    expect(buildLidarEnvConfig(undefined)).toBeUndefined();
+  });
+
+  it("maps visibility and rain rate with a detection threshold", () => {
+    const cfg = buildLidarEnvConfig({
+      visibility_m: 500,
+      rain_rate_mm_h: 12,
+      time_of_day: "12:00",
+    });
+    expect(cfg).toEqual({ visibility_m: 500, rain_rate_mm_h: 12, detection_threshold: 0.01 });
+  });
+});
+
+describe("buildLidarWasmConfig", () => {
+  const compiled = compileScenario(scenario);
+  const parsedConfig = compiled.vessels[0]!.sensors[0]! as LidarSensor;
+
+  it("reads fov_h_deg from config (DSL defaults to 360)", () => {
+    const cfg = buildLidarWasmConfig(parsedConfig);
+    expect(cfg.fov_h_deg).toBe(360);
+  });
+
+  it("reads azimuths from config when set", () => {
+    const cfg = buildLidarWasmConfig({ ...parsedConfig, azimuths: 512 });
+    expect(cfg.azimuths).toBe(512);
+  });
+
+  it("falls back to config.channels when azimuths not set", () => {
+    const cfg = buildLidarWasmConfig(parsedConfig);
+    expect(cfg.azimuths).toBe(parsedConfig.channels);
+  });
+
+  it("override opts take precedence over config", () => {
+    const cfg = buildLidarWasmConfig(parsedConfig, { fov_h_deg: 90, azimuths: 64 });
+    expect(cfg.fov_h_deg).toBe(90);
+    expect(cfg.azimuths).toBe(64);
   });
 });

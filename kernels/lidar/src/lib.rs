@@ -14,9 +14,9 @@
 //!   * **Sensor-local frame** — +x right, +y up, -z forward (matches the
 //!     three.js camera convention `lidar.ts` already exposes).
 //!
-//! No noise, no atmospheric attenuation, no per-channel timing skew —
-//! v1.0 territory. v0.4b only needs to be **correct + fast enough to
-//! beat the GL depth-pass on terrain-rich scenes**.
+//! Atmospheric attenuation: Beer-Lambert law applied via
+//! `LidarEnvironment`. Points beyond the effective detection range
+//! (two-way transmission below threshold) are dropped.
 
 #![cfg_attr(not(test), allow(dead_code))]
 
@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 
 mod bvh;
 mod geom;
+mod weather;
 
 use bvh::Bvh;
 use geom::{mat3_apply, mat3t_apply, Ray};
@@ -146,6 +147,29 @@ pub struct LidarConfig {
     /// from above are terminated (water absorbs lidar energy).
     #[serde(default)]
     pub water_level_y: Option<f32>,
+}
+
+/// Atmospheric environment affecting lidar detection range.
+/// When provided to `sweep()`, points beyond the effective detection
+/// range (where two-way transmission falls below threshold) are dropped.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LidarEnvironment {
+    /// Meteorological visibility in metres.
+    #[serde(default = "default_visibility")]
+    pub visibility_m: f32,
+    /// Rain rate in mm/h.
+    #[serde(default)]
+    pub rain_rate_mm_h: f32,
+    /// Minimum two-way transmission for a return to be detected.
+    #[serde(default = "default_threshold")]
+    pub detection_threshold: f32,
+}
+
+fn default_visibility() -> f32 {
+    20_000.0
+}
+fn default_threshold() -> f32 {
+    0.01
 }
 
 /// Output frame — XYZ interleaved in sensor-local frame, packed densely
@@ -310,11 +334,20 @@ pub fn sweep(
     scene: &SceneSnapshot,
     sensor: &SensorPose,
     config: &LidarConfig,
+    env: Option<&LidarEnvironment>,
 ) -> LidarFrame {
     let chans = config.channels.max(1) as usize;
     let azis = config.azimuths.max(1) as usize;
     let mut points: Vec<f32> = Vec::with_capacity(chans * azis * 3);
     let mut timestamps: Vec<f32> = Vec::new();
+
+    let atmos_max_range = env
+        .map(|e| {
+            let alpha =
+                weather::extinction_coefficient(e.visibility_m, e.rain_rate_mm_h);
+            weather::max_detection_range(alpha, e.detection_threshold)
+        })
+        .unwrap_or(f32::INFINITY);
 
     let has_vessels = !scene.vessels.is_empty()
         && scene
@@ -361,8 +394,13 @@ pub fn sweep(
             let world_dir = mat3_apply(&sensor.rotation, local_dir);
             let ray = Ray::new(sensor.origin, world_dir);
 
-            let effective_range =
-                water_clip(sensor.origin[1], world_dir[1], config.water_level_y, config.range_m);
+            let effective_range = water_clip(
+                sensor.origin[1],
+                world_dir[1],
+                config.water_level_y,
+                config.range_m,
+            )
+            .min(atmos_max_range);
 
             let t_terrain = terrain.nearest_hit(&ray, effective_range);
             let upper = t_terrain.unwrap_or(effective_range);
@@ -478,10 +516,13 @@ mod wasm {
         scene: JsValue,
         sensor: JsValue,
         config: JsValue,
+        env: JsValue,
     ) -> Result<JsValue, JsValue> {
         let scene: SceneSnapshot = serde_wasm_bindgen::from_value(scene)?;
         let sensor: SensorPose = serde_wasm_bindgen::from_value(sensor)?;
         let config: LidarConfig = serde_wasm_bindgen::from_value(config)?;
+        let env: Option<LidarEnvironment> =
+            serde_wasm_bindgen::from_value(env).ok();
         TERRAIN.with(|t| -> Result<JsValue, JsValue> {
             let borrow = t.borrow();
             let terrain = borrow
@@ -489,7 +530,7 @@ mod wasm {
                 .ok_or_else(|| JsValue::from_str("terrain BVH not initialised"))?;
             VESSEL_MODELS.with(|vm| {
                 let models = vm.borrow();
-                let result = sweep(terrain, &models, &scene, &sensor, &config);
+                let result = sweep(terrain, &models, &scene, &sensor, &config, env.as_ref());
                 Ok(serde_wasm_bindgen::to_value(&result)?)
             })
         })
@@ -587,6 +628,7 @@ mod tests {
             &scene,
             &sensor_at_origin(),
             &cfg(8, 16, 30.0, 90.0, 100.0),
+            None,
         );
         assert_eq!(frame.count, 0);
         assert!(frame.points.is_empty());
@@ -605,6 +647,7 @@ mod tests {
             &scene,
             &sensor_at_origin(),
             &cfg(16, 16, 30.0, 30.0, 200.0),
+            None,
         );
         assert!(frame.count > 0, "expected hits on a centred 10m box");
         let near_z = frame
@@ -630,6 +673,7 @@ mod tests {
             &scene,
             &sensor_at_origin(),
             &cfg(8, 16, 30.0, 30.0, 100.0),
+            None,
         );
         assert_eq!(frame.count, 0);
     }
@@ -646,6 +690,7 @@ mod tests {
             &scene,
             &sensor_at_origin(),
             &cfg(4, 8, 10.0, 10.0, 100.0),
+            None,
         );
         assert_eq!(frame.count, 0);
     }
@@ -666,7 +711,7 @@ mod tests {
             origin: [0.0, 0.0, 0.0],
             rotation: pitch_down,
         };
-        let frame = sweep(&terrain, &[], &scene, &sensor, &cfg(4, 4, 10.0, 10.0, 100.0));
+        let frame = sweep(&terrain, &[], &scene, &sensor, &cfg(4, 4, 10.0, 10.0, 100.0), None);
         assert!(frame.count > 0, "expected ground-plane hits when pitched down");
         let mid_dist = frame
             .points
@@ -704,6 +749,7 @@ mod tests {
             &scene,
             &sensor,
             &cfg(4, 4, 5.0, 5.0, 100.0),
+            None,
         );
         let nearest = frame
             .points
@@ -728,6 +774,7 @@ mod tests {
             &scene,
             &sensor_at_origin(),
             &cfg(16, 16, 30.0, 30.0, 200.0),
+            None,
         );
         assert!(frame.count > 0, "expected hits on a centred 10m box");
         assert!(
@@ -760,7 +807,7 @@ mod tests {
         let mut config = cfg(1, 8, 0.0, 10.0, 200.0);
         config.sweep_duration_s = 0.1;
 
-        let frame = sweep(&empty_terrain(), &[model], &scene, &sensor_at_origin(), &config);
+        let frame = sweep(&empty_terrain(), &[model], &scene, &sensor_at_origin(), &config, None);
         assert!(frame.count > 0, "expected hits");
         assert_eq!(
             frame.timestamps.len(),
@@ -888,13 +935,13 @@ mod tests {
 
         // Without water — should hit seabed
         let config_no_water = cfg(1, 1, 0.0, 0.0, 100.0);
-        let frame = sweep(&terrain, &[], &scene, &sensor, &config_no_water);
+        let frame = sweep(&terrain, &[], &scene, &sensor, &config_no_water, None);
         assert!(frame.count > 0, "should hit seabed without water");
 
         // With water at y=0 — ray absorbed, no hit
         let mut config_water = cfg(1, 1, 0.0, 0.0, 100.0);
         config_water.water_level_y = Some(0.0);
-        let frame = sweep(&terrain, &[], &scene, &sensor, &config_water);
+        let frame = sweep(&terrain, &[], &scene, &sensor, &config_water, None);
         assert_eq!(frame.count, 0, "water plane should block seabed hit");
     }
 
@@ -918,7 +965,139 @@ mod tests {
         };
         let mut config = cfg(4, 4, 30.0, 30.0, 200.0);
         config.water_level_y = Some(0.0);
-        let frame = sweep(&terrain, &[], &scene, &sensor, &config);
+        let frame = sweep(&terrain, &[], &scene, &sensor, &config, None);
         assert!(frame.count > 0, "above-water terrain should still be hit");
+    }
+
+    // --- Atmospheric attenuation tests ---
+
+    fn ground_plane_terrain() -> TerrainBvh {
+        TerrainBvh::build(vec![TerrainTriangle {
+            v: [
+                [-500.0, -10.0, -500.0],
+                [500.0, -10.0, -500.0],
+                [0.0, -10.0, 500.0],
+            ],
+        }])
+    }
+
+    fn downward_sensor() -> SensorPose {
+        SensorPose {
+            origin: [0.0, 50.0, 0.0],
+            rotation: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0],
+        }
+    }
+
+    #[test]
+    fn fog_reduces_point_count() {
+        let terrain = ground_plane_terrain();
+        let scene = SceneSnapshot { vessels: vec![] };
+        let sensor = downward_sensor();
+        let config = cfg(16, 64, 45.0, 360.0, 500.0);
+
+        let clear = sweep(&terrain, &[], &scene, &sensor, &config, None);
+        let foggy = sweep(
+            &terrain,
+            &[],
+            &scene,
+            &sensor,
+            &config,
+            Some(&LidarEnvironment {
+                visibility_m: 50.0,
+                rain_rate_mm_h: 0.0,
+                detection_threshold: 0.01,
+            }),
+        );
+
+        assert!(clear.count > 0, "clear should have hits");
+        assert!(
+            foggy.count < clear.count,
+            "fog should reduce points: clear={} foggy={}",
+            clear.count,
+            foggy.count
+        );
+    }
+
+    #[test]
+    fn rain_contributes_to_extinction() {
+        // Rain extinction is small for near-IR lidar (dominated by fog),
+        // but it should still increase the total extinction coefficient.
+        let dry = weather::extinction_coefficient(1000.0, 0.0);
+        let wet = weather::extinction_coefficient(1000.0, 50.0);
+        assert!(wet > dry, "rain should increase extinction");
+        let r_dry = weather::max_detection_range(dry, 0.01);
+        let r_wet = weather::max_detection_range(wet, 0.01);
+        assert!(r_wet < r_dry, "rain should reduce max range");
+    }
+
+    #[test]
+    fn clear_weather_matches_no_env() {
+        let model = box_model([10.0, 5.0, 10.0]);
+        let scene = SceneSnapshot {
+            vessels: vec![vessel_instance(0, [0.0, 0.0, -50.0])],
+        };
+        let config = cfg(16, 16, 30.0, 30.0, 200.0);
+
+        let no_env = sweep(
+            &empty_terrain(),
+            &[model],
+            &scene,
+            &sensor_at_origin(),
+            &config,
+            None,
+        );
+        let model2 = box_model([10.0, 5.0, 10.0]);
+        let clear = sweep(
+            &empty_terrain(),
+            &[model2],
+            &scene,
+            &sensor_at_origin(),
+            &config,
+            Some(&LidarEnvironment {
+                visibility_m: 20_000.0,
+                rain_rate_mm_h: 0.0,
+                detection_threshold: 0.01,
+            }),
+        );
+
+        assert_eq!(
+            no_env.count, clear.count,
+            "20km visibility should not affect 200m range"
+        );
+    }
+
+    #[test]
+    fn visibility_sweep_parametric() {
+        let terrain = ground_plane_terrain();
+        let scene = SceneSnapshot { vessels: vec![] };
+        let sensor = downward_sensor();
+        let config = cfg(16, 64, 45.0, 360.0, 500.0);
+
+        let visibilities = [20_000.0, 2000.0, 500.0, 100.0, 50.0];
+        let mut prev_count = u32::MAX;
+        for vis in visibilities {
+            let frame = sweep(
+                &terrain,
+                &[],
+                &scene,
+                &sensor,
+                &config,
+                Some(&LidarEnvironment {
+                    visibility_m: vis,
+                    rain_rate_mm_h: 0.0,
+                    detection_threshold: 0.01,
+                }),
+            );
+            assert!(
+                frame.count <= prev_count,
+                "count should decrease: vis={vis} count={} prev={prev_count}",
+                frame.count
+            );
+            prev_count = frame.count;
+        }
+        assert!(
+            prev_count < 100,
+            "50m vis should heavily reduce points, got {prev_count}"
+        );
     }
 }

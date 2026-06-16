@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { lidar_init_terrain, lidar_init_vessel_models, lidar_sweep } from "../wasm/lidar.js";
-import type { LidarSensor } from "./dsl.js";
+import type { LidarSensor, Environment } from "./dsl.js";
 import { loadModel } from "./assets.js";
 
 export interface LidarFrame {
@@ -32,12 +32,14 @@ export interface LidarKernelWasmOptions {
   /** Water surface Y-coordinate. Rays crossing this plane from above
    *  are absorbed (no sub-water hits). Undefined disables the test. */
   waterLevelY?: number | undefined;
+  /** Atmospheric environment for Beer-Lambert attenuation. When
+   *  undefined, no atmospheric effects are applied. */
+  environment?: Environment | undefined;
 }
 
 /** Registry of model name → model index for the WASM kernel.
  *  Built lazily; shared across all lidar kernel instances. */
 const modelRegistry = new Map<string, number>();
-let modelsInitialized = false;
 
 function ensureModelRegistered(modelName: string): number {
   const existing = modelRegistry.get(modelName);
@@ -65,14 +67,54 @@ function ensureModelRegistered(modelName: string): number {
     }
   }
   lidar_init_vessel_models(allModels);
-  modelsInitialized = true;
 
   return index;
 }
 
+export function buildLidarEnvConfig(env?: Environment) {
+  if (!env) return undefined;
+  return {
+    visibility_m: env.visibility_m,
+    rain_rate_mm_h: env.rain_rate_mm_h,
+    detection_threshold: 0.01,
+  };
+}
+
+export interface LidarWasmConfig {
+  channels: number;
+  azimuths: number;
+  fov_v_deg: number;
+  fov_h_deg: number;
+  range_m: number;
+  sweep_duration_s: number;
+  water_level_y?: number;
+}
+
+export function buildLidarWasmConfig(
+  config: LidarSensor,
+  opts?: {
+    fov_deg?: number;
+    fov_h_deg?: number;
+    azimuths?: number;
+    sweepDuration_s?: number;
+    waterLevelY?: number;
+  },
+): LidarWasmConfig {
+  const fov = opts?.fov_deg ?? DEFAULT_FOV_DEG;
+  return {
+    channels: config.channels,
+    azimuths: opts?.azimuths ?? config.azimuths ?? config.channels,
+    fov_v_deg: fov,
+    fov_h_deg: opts?.fov_h_deg ?? config.fov_h_deg ?? fov,
+    range_m: config.range_m,
+    sweep_duration_s: opts?.sweepDuration_s ?? 1 / config.rate_hz,
+    ...(opts?.waterLevelY !== undefined ? { water_level_y: opts.waterLevelY } : {}),
+  };
+}
+
 export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
   const { scene, sensorNode, config } = opts;
-  const fov = opts.fov_deg ?? DEFAULT_FOV_DEG;
+  const envConfig = buildLidarEnvConfig(opts.environment);
 
   lidar_init_terrain(opts.terrain ? extractTriangles(opts.terrain) : []);
 
@@ -87,15 +129,13 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
     vesselModelMap.set(child, modelIndex);
   }
 
-  const wasmConfig = {
-    channels: config.channels,
-    azimuths: opts.azimuths ?? config.channels,
-    fov_v_deg: fov,
-    fov_h_deg: opts.fov_h_deg ?? fov,
-    range_m: config.range_m,
-    sweep_duration_s: opts.sweepDuration_s ?? 1 / config.rate_hz,
-    ...(opts.waterLevelY !== undefined ? { water_level_y: opts.waterLevelY } : {}),
-  };
+  const wasmOpts: Parameters<typeof buildLidarWasmConfig>[1] = {};
+  if (opts.fov_deg !== undefined) wasmOpts.fov_deg = opts.fov_deg;
+  if (opts.fov_h_deg !== undefined) wasmOpts.fov_h_deg = opts.fov_h_deg;
+  if (opts.azimuths !== undefined) wasmOpts.azimuths = opts.azimuths;
+  if (opts.sweepDuration_s !== undefined) wasmOpts.sweepDuration_s = opts.sweepDuration_s;
+  if (opts.waterLevelY !== undefined) wasmOpts.waterLevelY = opts.waterLevelY;
+  const wasmConfig = buildLidarWasmConfig(config, wasmOpts);
 
   const tmpVec = new THREE.Vector3();
   const sweepInterval = 1 / config.rate_hz;
@@ -135,15 +175,22 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
       sensorNode.getWorldPosition(tmpVec);
       const sm = sensorNode.matrixWorld.elements;
 
-      const result = lidar_sweep(
-        { vessels },
-        { origin: [tmpVec.x, tmpVec.y, tmpVec.z], rotation: colMajorToRowMajor3x3(sm) },
-        wasmConfig,
-      ) as {
+      let result: {
         points: number[] | Float32Array;
         count: number;
         timestamps?: number[] | Float32Array;
       };
+      try {
+        result = lidar_sweep(
+          { vessels },
+          { origin: [tmpVec.x, tmpVec.y, tmpVec.z], rotation: colMajorToRowMajor3x3(sm) },
+          wasmConfig,
+          envConfig,
+        ) as typeof result;
+      } catch (err) {
+        console.error("[bino] lidar_sweep failed:", err);
+        return { ...cachedFrame, time };
+      }
 
       const points =
         result.points instanceof Float32Array ? result.points : new Float32Array(result.points);
@@ -159,7 +206,7 @@ export function createLidarKernelWasm(opts: LidarKernelWasmOptions) {
   };
 }
 
-interface VesselInstance {
+export interface VesselInstance {
   model_index: number;
   center: [number, number, number];
   rotation: number[];

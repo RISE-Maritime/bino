@@ -1,0 +1,60 @@
+# Validation — storm: fog + rain + heavy sea state. All sensors degraded.
+scenario:
+  name: val_storm
+  anchor:
+    lat: 54.3700
+    lon: 10.1850
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 3.0
+      peak_period: 8.0
+      direction_deg: 270
+      spectrum: pierson_moskowitz
+    time_of_day: "06:00"
+    visibility_m: 500
+    rain_rate_mm_h: 25
+
+  terrain:
+    bbox: [10.05, 54.28, 10.25, 54.38]
+
+  vessels:
+    - id: ego
+      model: tanker_120m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: bow_camera
+          type: camera
+          mount: { x: 60, y: 18, z: 0 }
+          fov_deg: 90
+          resolution: [640, 480]
+          rate_hz: 10
+        - id: main_lidar
+          type: lidar
+          mount: { x: 0, y: 15, z: 0 }
+          channels: 32
+          range_m: 200
+          rate_hz: 10
+        - id: main_radar
+          type: radar_marine
+          mount: { x: 0, y: 35, z: 0 }
+          range_m: 4000
+          rotation_rate_hz: 0.4
+          beam_width_deg: 1.2
+          spokes_per_rev: 360
+          range_bins: 256
+
+    - id: ferry
+      model: ferry_60m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors: []
+
+  modes:
+    rendering: replace
+    clock: stepped
+    determinism: strict

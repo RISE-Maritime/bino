@@ -18,7 +18,6 @@
     lidarPoints: 0,
     radar: {},
     staleEntities: [],
-    tileSource: undefined,
   });
 
   type PreviewSpec = {
@@ -123,7 +122,6 @@
         loadingStage = stage;
       },
       previewCanvases: previewCanvasMap,
-      tileSource: params.get("tiles") ?? undefined,
     });
   });
 
@@ -141,7 +139,7 @@
     <h1>Bino viewer</h1>
     <span class="stats">
       {stats.fps.toFixed(1)} fps · {stats.frames} frames · cam {stats.cameraFrames} · lidar {stats.lidarPoints}
-      pts · src: {source}{#if stats.tileSource} · tiles: {stats.tileSource}{/if}
+      pts · src: {source}
       {#if stats.staleEntities.length > 0}
         · <span class="stale">stale: {stats.staleEntities.join(", ")}</span>
       {/if}
@@ -152,29 +150,29 @@
           <button
             class="overlay-btn"
             class:active={overlayState[spec.id]}
-            onclick={() => toggleOverlay(spec.id)}
-          >{spec.id}</button>
+            onclick={() => toggleOverlay(spec.id)}>{spec.id}</button
+          >
         {/each}
         <button
           class="overlay-btn master"
           class:active={lidarSpecs.every((s) => overlayState[s.id])}
-          onclick={() => toggleAllOverlays("lidar")}
-        >[L] all</button>
+          onclick={() => toggleAllOverlays("lidar")}>[L] all</button
+        >
       {:else}
         {#each lidarSpecs as spec (spec.id)}
           <button
             class="overlay-btn"
             class:active={overlayState[spec.id]}
-            onclick={() => toggleOverlay(spec.id)}
-          >[L]idar</button>
+            onclick={() => toggleOverlay(spec.id)}>[L]idar</button
+          >
         {/each}
       {/if}
       {#each radarSpecs as spec (spec.id)}
         <button
           class="overlay-btn"
           class:active={overlayState[spec.id]}
-          onclick={() => toggleOverlay(spec.id)}
-        >[R]adar</button>
+          onclick={() => toggleOverlay(spec.id)}>[R]adar</button
+        >
       {/each}
     </span>
     {#if zenohError}
@@ -212,8 +210,8 @@
               onclick={(e) => {
                 e.stopPropagation();
                 previewVisible[spec.id] = !previewVisible[spec.id];
-              }}
-            >{hidden ? "+" : "-"}</button>
+              }}>{hidden ? "+" : "-"}</button
+            >
           {/if}
           <span
             onclick={() => {
@@ -304,12 +302,16 @@
     position: absolute;
     bottom: 16px;
     right: 16px;
+    top: 48px;
     display: flex;
-    flex-direction: column;
+    flex-direction: column-reverse;
     gap: 8px;
     align-items: flex-end;
+    overflow-y: auto;
+    pointer-events: none;
   }
   .preview-panel {
+    pointer-events: auto;
     background: rgba(10, 22, 38, 0.85);
     border: 1px solid #1f2a3c;
     border-radius: 6px;
@@ -393,6 +395,8 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>

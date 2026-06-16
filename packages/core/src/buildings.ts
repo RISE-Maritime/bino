@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Anchor } from "./dsl.js";
 import type { BuildingData } from "./overpass.js";
 import { geodeticToEnu } from "./geo.js";
+import type { VesselBox } from "./radar.js";
 
 const BUILDING_COLOR = 0xb8b0a0;
 const BUILDING_Y = 0.5; // base sits on landmask level
@@ -108,4 +109,28 @@ function mergeGeometries(geometries: THREE.BufferGeometry[]): THREE.BufferGeomet
   }
 
   return merged;
+}
+
+export function buildingsToObstacles(buildings: BuildingData[], anchor: Anchor): VesselBox[] {
+  return buildings.map((bldg) => {
+    const enu = bldg.polygon.map(([lon, lat]) => geodeticToEnu({ lat, lon, height: 0 }, anchor));
+    const es = enu.map((p) => p.e);
+    const ns = enu.map((p) => p.n);
+    const minE = Math.min(...es),
+      maxE = Math.max(...es);
+    const minN = Math.min(...ns),
+      maxN = Math.max(...ns);
+    const halfX = Math.max((maxE - minE) / 2, 0.5);
+    const halfZ = Math.max((maxN - minN) / 2, 0.5);
+    const halfY = bldg.heightM / 2;
+    return {
+      position: [(minE + maxE) / 2, BUILDING_Y + halfY, -((minN + maxN) / 2)] as [
+        number,
+        number,
+        number,
+      ],
+      heading: 0,
+      half_extents: [halfX, halfY, halfZ] as [number, number, number],
+    };
+  });
 }

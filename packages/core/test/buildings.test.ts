@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { buildBuildingsMesh } from "../src/buildings.js";
+import { buildBuildingsMesh, buildingsToObstacles } from "../src/buildings.js";
 import type { BuildingData } from "../src/overpass.js";
 
 const ANCHOR = { lat: 54.1, lon: 10.1, height: 0 };
@@ -73,5 +73,33 @@ describe("buildBuildingsMesh", () => {
     const group = buildBuildingsMesh([fakeBuilding()], ANCHOR);
     const mesh = group.children[0] as THREE.Mesh;
     expect(mesh.position.y).toBeGreaterThan(0);
+  });
+});
+
+describe("buildingsToObstacles", () => {
+  it("returns empty array for empty input", () => {
+    expect(buildingsToObstacles([], ANCHOR)).toEqual([]);
+  });
+
+  it("converts a building to a VesselBox with correct extents", () => {
+    const obs = buildingsToObstacles([fakeBuilding(4)], ANCHOR);
+    expect(obs).toHaveLength(1);
+    const box = obs[0]!;
+    expect(box.heading).toBe(0);
+    expect(box.half_extents[1]).toBeCloseTo((4 * 3) / 2);
+    expect(box.half_extents[0]).toBeGreaterThan(0);
+    expect(box.half_extents[2]).toBeGreaterThan(0);
+  });
+
+  it("Y position includes BUILDING_Y offset plus half height", () => {
+    const obs = buildingsToObstacles([fakeBuilding(2)], ANCHOR);
+    const box = obs[0]!;
+    const halfY = (2 * 3) / 2;
+    expect(box.position[1]).toBeCloseTo(0.5 + halfY);
+  });
+
+  it("produces one obstacle per building", () => {
+    const obs = buildingsToObstacles([fakeBuilding(3), fakeBuilding(5)], ANCHOR);
+    expect(obs).toHaveLength(2);
   });
 });

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import {
   buildScene,
+  buildingsToObstacles,
   createCameraKernel,
   createClock,
   createLidarKernelWasm,
@@ -68,6 +69,9 @@ function buildSceneFromScenario(
 ): NodeService {
   const scenario = opts.scenario;
   const built = buildScene(scenario, opts.terrain ? { terrain: opts.terrain } : {});
+  const buildingObstacles = opts.terrain?.buildings
+    ? buildingsToObstacles(opts.terrain.buildings, scenario.anchor)
+    : [];
   const scheduled: ScheduledKernel[] = [];
   const sensorMeta: SensorMeta[] = [];
 
@@ -109,6 +113,7 @@ function buildSceneFromScenario(
             config: sensor,
             terrain: built.terrain,
             waterLevelY: 0,
+            environment: scenario.environment,
           }),
           phaseOffset_s: sensor.phase_offset_s,
         });
@@ -130,6 +135,7 @@ function buildSceneFromScenario(
             sensorNode,
             config: sensor,
             environment: scenario.environment,
+            staticObstacles: buildingObstacles,
           }),
           phaseOffset_s: sensor.phase_offset_s,
         });
