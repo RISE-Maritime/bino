@@ -9,6 +9,7 @@ packages/*/wasm/
 *.timestamp-*.mjs
 *.tsbuildinfo
 .DS_Store
+.devcontainer/devcontainer-lock.json
 .env
 .env.local
 coverage/
