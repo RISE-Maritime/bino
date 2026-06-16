@@ -13,6 +13,7 @@ import {
 } from "@bino/core";
 import { createHeadlessRenderer, type HeadlessRendererHandle } from "./headless-gl.js";
 import { BinoRunner, type ScheduledKernel } from "./runner.js";
+import { createLidarThreadKernel, createRadarThreadKernel } from "./thread-kernel.js";
 import {
   createSensorPublisher,
   type PublishSession,
@@ -38,6 +39,10 @@ export interface NodeServiceOptions {
    *  a terrain.bbox the caller is expected to pass this in;
    *  createNodeService stays synchronous to keep the test ergonomic. */
   terrain?: TerrainData;
+  /** Run lidar/radar compute in dedicated worker threads (one per sensor)
+   *  instead of serially on the main thread. Trades a frame of latency for
+   *  parallelism, so it's ignored under strict determinism. Default false. */
+  workers?: boolean;
 }
 
 export interface NodeService {
@@ -75,6 +80,13 @@ function buildSceneFromScenario(
   const scheduled: ScheduledKernel[] = [];
   const sensorMeta: SensorMeta[] = [];
 
+  // Worker offload trades a frame of latency for parallelism, so it's
+  // incompatible with strict (synchronous, ordered) determinism.
+  const useWorkers = (opts.workers ?? false) && scenario.modes.determinism !== "strict";
+  if (opts.workers && !useWorkers) {
+    console.warn("[bino] workers requested but ignored under strict determinism");
+  }
+
   for (const vessel of scenario.vessels) {
     const vesselNode = built.entities.get(vessel.id);
     if (!vesselNode) continue;
@@ -107,7 +119,7 @@ function buildSceneFromScenario(
         scheduled.push({
           sensorId,
           rate_hz: sensor.rate_hz,
-          kernel: createLidarKernelWasm({
+          kernel: (useWorkers ? createLidarThreadKernel : createLidarKernelWasm)({
             scene: built.scene,
             sensorNode,
             config: sensor,
@@ -130,7 +142,7 @@ function buildSceneFromScenario(
         scheduled.push({
           sensorId,
           rate_hz: sensor.rotation_rate_hz,
-          kernel: createRadarKernel({
+          kernel: (useWorkers ? createRadarThreadKernel : createRadarKernel)({
             scene: built.scene,
             sensorNode,
             config: sensor,

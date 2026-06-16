@@ -16,21 +16,25 @@ import { createFileTerrainCache } from "./terrain-cache.js";
 interface CliArgs {
   scenarioPath: string;
   zenoh?: string;
+  workers?: boolean;
 }
 
 function parseArgs(args: string[]): CliArgs | null {
   let scenarioPath: string | undefined;
   let zenoh: string | undefined;
+  let workers = false;
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
     if (a === "--zenoh" || a === "-z") {
       zenoh = args[++i];
+    } else if (a === "--workers") {
+      workers = true;
     } else if (!scenarioPath) {
       scenarioPath = a;
     }
   }
   if (!scenarioPath) return null;
-  return zenoh ? { scenarioPath, zenoh } : { scenarioPath };
+  return { scenarioPath, ...(zenoh ? { zenoh } : {}), ...(workers ? { workers } : {}) };
 }
 
 function zenohVessels(scenario: CompiledScene): Array<{ vesselId: string; topic: string }> {
@@ -46,7 +50,7 @@ function zenohVessels(scenario: CompiledScene): Array<{ vesselId: string; topic:
 async function main(): Promise<void> {
   const parsed = parseArgs(argv.slice(2));
   if (!parsed) {
-    stderr.write("usage: bino-node <scenario.yaml> [--zenoh ws://host:port]\n");
+    stderr.write("usage: bino-node <scenario.yaml> [--zenoh ws://host:port] [--workers]\n");
     exit(1);
   }
 
@@ -95,7 +99,11 @@ async function main(): Promise<void> {
     scenario: scene,
     ...(zenohSession ? { zenohSession } : {}),
     ...(terrain ? { terrain } : {}),
+    ...(parsed.workers ? { workers: true } : {}),
   });
+  if (parsed.workers) {
+    stdout.write("compute: lidar/radar offloaded to worker threads\n");
+  }
   if (service.publisher) {
     stdout.write("zenoh: sensor publishing enabled\n");
   }
