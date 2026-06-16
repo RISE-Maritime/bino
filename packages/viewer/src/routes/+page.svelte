@@ -1,11 +1,16 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
-  import { type PoseStream } from "@bino/core";
+  import { type PoseStream, type Scenario } from "@bino/core";
   import { mountViewer, type ViewerHandle, type ViewerStats } from "$lib/viewer.js";
   import { connectZenohPoses, vesselsForZenoh, type ZenohConnection } from "$lib/zenoh.js";
   import { startScriptedPoses, type ScriptedHandle } from "$lib/scripted.js";
-  import { v01Scenario } from "$lib/scenario.js";
+  import { v01Scenario, fetchScenario } from "$lib/scenario.js";
+
+  // The scenario being rendered. Defaults to the bundled demo so the
+  // no-param path is unchanged; a `?scenario=<url>` override replaces it
+  // before the viewer mounts.
+  let scenario: Scenario = $state(v01Scenario);
 
   let canvas: HTMLCanvasElement | undefined = $state();
   let handle: ViewerHandle | undefined;
@@ -27,20 +32,22 @@
     h: number;
     label: string;
   };
-  const previewSpecs: PreviewSpec[] = (v01Scenario.vessels[0]?.sensors ?? [])
-    .map((s): PreviewSpec | null => {
-      if (s.type === "camera")
-        return { id: s.id, type: "camera", w: 240, h: 180, label: `camera · ${s.id}` };
-      if (s.type === "lidar")
-        return { id: s.id, type: "lidar", w: 200, h: 200, label: `lidar · ${s.id}` };
-      if (s.type === "radar_marine")
-        return { id: s.id, type: "radar", w: 220, h: 220, label: `PPI · ${s.id}` };
-      return null;
-    })
-    .filter((s): s is PreviewSpec => s !== null);
+  const previewSpecs: PreviewSpec[] = $derived(
+    (scenario.vessels[0]?.sensors ?? [])
+      .map((s): PreviewSpec | null => {
+        if (s.type === "camera")
+          return { id: s.id, type: "camera", w: 240, h: 180, label: `camera · ${s.id}` };
+        if (s.type === "lidar")
+          return { id: s.id, type: "lidar", w: 200, h: 200, label: `lidar · ${s.id}` };
+        if (s.type === "radar_marine")
+          return { id: s.id, type: "radar", w: 220, h: 220, label: `PPI · ${s.id}` };
+        return null;
+      })
+      .filter((s): s is PreviewSpec => s !== null),
+  );
 
-  const lidarSpecs = previewSpecs.filter((s) => s.type === "lidar");
-  const radarSpecs = previewSpecs.filter((s) => s.type === "radar");
+  const lidarSpecs = $derived(previewSpecs.filter((s) => s.type === "lidar"));
+  const radarSpecs = $derived(previewSpecs.filter((s) => s.type === "radar"));
 
   const previewCanvasMap = new SvelteMap<string, HTMLCanvasElement>();
   function bindPreview(node: HTMLCanvasElement, id: string) {
@@ -53,15 +60,14 @@
   }
   let expandedPreview: string | null = $state(null);
 
-  // Per-sensor overlay visibility
-  let overlayState: Record<string, boolean> = $state(
-    Object.fromEntries([...lidarSpecs, ...radarSpecs].map((s) => [s.id, false])),
-  );
-
-  // Per-sensor preview visibility (lidars only — toggle in preview label)
-  let previewVisible: Record<string, boolean> = $state(
-    Object.fromEntries(lidarSpecs.map((s) => [s.id, true])),
-  );
+  // Per-sensor overlay visibility, (re)seeded whenever the sensor set
+  // changes (e.g. a different scenario is loaded).
+  let overlayState: Record<string, boolean> = $state({});
+  let previewVisible: Record<string, boolean> = $state({});
+  $effect(() => {
+    overlayState = Object.fromEntries([...lidarSpecs, ...radarSpecs].map((s) => [s.id, false]));
+    previewVisible = Object.fromEntries(lidarSpecs.map((s) => [s.id, true]));
+  });
 
   function toggleOverlay(id: string) {
     overlayState[id] = !overlayState[id];
@@ -92,12 +98,25 @@
     const params = new URLSearchParams(window.location.search);
     const zenohUrl = params.get("zenoh");
 
+    const scenarioUrl = params.get("scenario");
+    if (scenarioUrl) {
+      loadingStage = "Loading scenario";
+      try {
+        scenario = await fetchScenario(scenarioUrl);
+        // Let the reactive preview panel rebuild for the new sensor set
+        // before mountViewer wires kernels to the preview canvases.
+        await tick();
+      } catch (err) {
+        zenohError = `scenario load failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
     let poses: PoseStream;
     if (zenohUrl) {
       loadingStage = "Connecting to zenoh";
       source = "connecting";
       try {
-        zenoh = await connectZenohPoses(zenohUrl, vesselsForZenoh(v01Scenario.vessels));
+        zenoh = await connectZenohPoses(zenohUrl, vesselsForZenoh(scenario.vessels));
         poses = zenoh.stream;
         source = "zenoh";
       } catch (err) {
@@ -115,6 +134,7 @@
     handle = await mountViewer({
       canvas,
       poses,
+      scenario,
       onStats: (s) => {
         stats = s;
       },

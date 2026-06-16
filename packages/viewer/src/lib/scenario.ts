@@ -1,4 +1,25 @@
 import type { Scenario } from "@bino/core";
+import { parse as yamlParse } from "yaml";
+
+/** Parse a scenario document (the same `scenario:`-wrapped YAML the node
+ *  CLI loads) into a raw Scenario. Validation happens later in
+ *  compileScenario; this only unwraps and shape-checks the top level. */
+export function parseScenarioDoc(text: string): Scenario {
+  const data = yamlParse(text) as unknown;
+  if (data === null || typeof data !== "object" || !("scenario" in data)) {
+    throw new Error("scenario document missing top-level 'scenario:' key");
+  }
+  return (data as { scenario: Scenario }).scenario;
+}
+
+/** Fetch and parse a scenario from a URL (e.g. the `?scenario=` param). */
+export async function fetchScenario(url: string): Promise<Scenario> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`scenario fetch failed: ${res.status} ${res.statusText}`);
+  }
+  return parseScenarioDoc(await res.text());
+}
 
 // v0.1 demo scenario — Kiel approach, one tanker (ego) + one ferry,
 // bow camera + main lidar. Same shape as the smoke test but in the

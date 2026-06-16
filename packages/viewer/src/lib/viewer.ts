@@ -25,6 +25,7 @@ import {
   type Environment,
   type LidarSensor,
   type RadarSensor,
+  type Scenario,
   type VesselBox,
 } from "@bino/core";
 import type { LidarWorkerResult } from "./lidar-worker.js";
@@ -53,6 +54,8 @@ export interface ViewerHandle {
 export interface MountOptions {
   canvas: HTMLCanvasElement;
   poses: PoseStream;
+  /** Scenario to render. Defaults to the bundled v0.1 demo scenario. */
+  scenario?: Scenario;
   onStats?: (stats: ViewerStats) => void;
   onProgress?: (stage: string) => void;
   /** Preview canvases keyed by sensor ID. Each tick, the matching
@@ -82,7 +85,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   const progress = opts.onProgress ?? (() => {});
 
   progress("Compiling scenario");
-  const compiled = compileScenario(v01Scenario);
+  const compiled = compileScenario(opts.scenario ?? v01Scenario);
 
   let terrain: Awaited<ReturnType<typeof prepareTerrain>> | undefined;
   if (compiled.terrain) {
