@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { compileScenario } from "../src/compile.js";
+import { Keelson } from "../src/dsl.js";
+import { DEFAULT_NAMING } from "../src/keelson.js";
 
 const minimal = (overrides: Record<string, unknown> = {}) => ({
   name: "minimal",
@@ -25,6 +27,21 @@ describe("compileScenario", () => {
 
   it("throws on invalid input", () => {
     expect(() => compileScenario({ name: "broken" })).toThrow();
+  });
+
+  it("defaults keelson naming to DEFAULT_NAMING", () => {
+    // Guards against the DSL defaults drifting from keelson.ts.
+    expect(Keelson.parse({})).toEqual(DEFAULT_NAMING);
+    const scene = compileScenario(minimal());
+    expect(scene.keelson).toEqual(DEFAULT_NAMING);
+  });
+
+  it("carries an explicit keelson naming override", () => {
+    const scene = compileScenario(minimal({ keelson: { base_path: "myorg", source_id: "rig7" } }));
+    expect(scene.keelson.base_path).toBe("myorg");
+    expect(scene.keelson.source_id).toBe("rig7");
+    // Unspecified fields still fall back to the default.
+    expect(scene.keelson.parent_frame_id).toBe(DEFAULT_NAMING.parent_frame_id);
   });
 
   it("throws when strict determinism is combined with wall clock", () => {

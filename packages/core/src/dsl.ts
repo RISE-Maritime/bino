@@ -162,6 +162,16 @@ export const Terrain = z.object({
 });
 export type Terrain = z.infer<typeof Terrain>;
 
+/** Keelson topic naming. Defaults mirror keelson.ts DEFAULT_NAMING;
+ *  a drift test keeps them in sync. Lets a scenario publish into the
+ *  consumer's namespace without code changes. */
+export const Keelson = z.object({
+  base_path: z.string().min(1).default("bino"),
+  source_id: z.string().min(1).default("sim"),
+  parent_frame_id: z.string().min(1).default("world"),
+});
+export type Keelson = z.infer<typeof Keelson>;
+
 export const Scenario = z
   .object({
     name: z.string().min(1),
@@ -170,6 +180,7 @@ export const Scenario = z
     modes: Modes,
     environment: Environment.default({}),
     terrain: Terrain.optional(),
+    keelson: Keelson.default({}),
   })
   .superRefine((s, ctx) => {
     const ids = new Set<string>();

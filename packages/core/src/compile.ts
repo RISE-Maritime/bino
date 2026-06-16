@@ -7,6 +7,7 @@ export interface CompiledScene {
   modes: ScenarioT["modes"];
   environment: ScenarioT["environment"];
   terrain?: ScenarioT["terrain"];
+  keelson: ScenarioT["keelson"];
 }
 
 export function compileScenario(input: unknown): CompiledScene {
@@ -29,5 +30,6 @@ export function compileScenario(input: unknown): CompiledScene {
     modes: parsed.modes,
     environment: parsed.environment,
     ...(parsed.terrain ? { terrain: parsed.terrain } : {}),
+    keelson: parsed.keelson,
   };
 }

@@ -174,11 +174,14 @@ function buildSceneFromScenario(
       : {}),
   });
 
+  // Explicit naming override wins; otherwise use the scenario's keelson
+  // block (which defaults to DEFAULT_NAMING when unspecified).
+  const naming = opts.naming ?? scenario.keelson;
   const publisher = opts.zenohSession
     ? createSensorPublisher({
         session: opts.zenohSession,
         sensors: sensorMeta,
-        ...(opts.naming ? { naming: opts.naming } : {}),
+        naming,
       })
     : undefined;
 

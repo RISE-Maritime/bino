@@ -104,4 +104,5 @@ export const v01Scenario: Scenario = {
     buildings: true,
     seamarks: true,
   },
+  keelson: { base_path: "bino", source_id: "sim", parent_frame_id: "world" },
 };
