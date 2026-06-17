@@ -50,6 +50,29 @@ node packages/node/dist/cli.js scenarios/v04_kiel.yaml
 See the [tutorial](docs/tutorial.md) for a full walkthrough including
 Zenoh integration and scenario authoring.
 
+## Container images
+
+Two images are built from one multi-stage `Dockerfile` (the Rust→WASM
+kernels are compiled inside the build, so no local toolchain is needed):
+
+```bash
+# Headless service — software GL (Xvfb + bundled SwiftShader), runs anywhere
+docker build --target node -t bino-node .
+docker run --rm -v "$PWD/scenarios:/scenarios" bino-node \
+  /scenarios/v04_kiel.yaml --zenoh ws://host:7447
+
+# Browser viewer — static site served by nginx (renders client-side)
+docker build --target viewer -t bino-viewer .
+docker run --rm -p 8080:80 bino-viewer        # http://localhost:8080
+```
+
+- Mount a volume at `/cache` (or set `BINO_TERRAIN_CACHE`) to persist or
+  pre-seed fetched terrain for offline runs.
+- A GPU-accelerated node variant is deferred; the camera render is the only
+  GPU-bound path, and software GL is more reproducible for deterministic runs.
+
+Tagged releases publish both images to GHCR via the `release-images` workflow.
+
 ## Architecture
 
 ```mermaid

@@ -1,0 +1,24 @@
+# Build artifacts and deps are rebuilt inside the image.
+**/node_modules
+**/dist
+**/build
+**/.svelte-kit
+**/*.tsbuildinfo
+**/*.timestamp-*.mjs
+
+# WASM kernels are gitignored and MUST be rebuilt in the builder stage —
+# never copy a host-built copy in (that masks a broken kernels build).
+packages/core/wasm
+
+# Rust build output and terrain cache.
+target
+**/.bino-cache
+
+# Repo cruft not needed for the build.
+.git
+.github
+.devcontainer
+docs
+spikes
+tests
+*.md
