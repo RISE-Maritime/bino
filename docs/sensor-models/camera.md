@@ -36,6 +36,9 @@ When `exposure_time_s = 0` (default): both timestamps equal `time`.
 
 - RGBA Uint8Array: `width * height * 4` bytes
 - Published as Keelson `RawImage` (foxglove.RawImage: bytes, width, height, encoding="rgba8", step, timestamp, frame_id)
+- **Row order is GL read-back: origin bottom-left** (the first row is the
+  bottom of the image). Top-left-origin consumers must flip vertically.
+  See the sensor-data frame conventions in `docs/dsl-reference.md`.
 
 ## Known limitations
 

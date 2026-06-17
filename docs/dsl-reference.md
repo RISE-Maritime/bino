@@ -246,3 +246,39 @@ Use `frame_id` per sensor to override the in-payload frame id
 This is the hook for **inject mode**: stamp the real platform's
 `child_frame_id` on the synthetic return so it merges into the real
 sensor's frame downstream.
+
+## Sensor-data frame conventions
+
+Bino publishes **no transforms** (no `world→vessel`, no static
+`vessel→sensor`). Every sensor payload is therefore expressed in its own
+**sensor-local** frame and tagged only with a `frame_id`; the consumer
+resolves where that frame sits from the sensor mounting it already knows
+(shared scenario config in replace/inject_all, or the real `platform`
+connector in inject mode). The conventions below are the implicit
+contract — they are what a consumer receives.
+
+**Lidar (`point_cloud`).** XYZ points in the **sensor-local** frame:
+**+X right, +Y up, −Z forward** (the three.js camera convention). Packed
+densely as `float32` x/y/z, `point_stride = 12`. No pose is set on the
+PointCloud.
+
+**Radar (`radar_sweep`).** One `RadarSpoke` per azimuth. `azimuth` is in
+radians, **sensor-relative**: 0 along the sensor's heading reference,
+increasing **clockwise** viewed from above, one full revolution
+(`0 … 2π`) per sweep. Each spoke carries `range_bins` intensity bytes
+(`uint8`), uniform from `0` to `range_m` (bin `j` centred at
+`(j + 0.5) · range_m / range_bins`). Per-spoke `timestamp` reflects the
+intra-sweep acquisition time (see the rotation timing note below). No
+pose is set on the spokes.
+
+**Camera (`image_raw`).** `rgba8`, `step = width · 4`. Rows follow the GL
+read-back order — **origin bottom-left** (first row is the bottom of the
+image), so top-left-origin viewers must flip vertically. The view is a
+pinhole camera looking down sensor-local −Z at `fov_deg`.
+
+Caveats worth knowing: the radar azimuth reference is the sensor heading
+as the engine derives it internally (a horizontal-plane angle), which is
+not the same axis as the lidar/camera bow=−Z forward — they are separate
+sensor-local conventions, not a shared vessel frame. Aligning them is a
+candidate for a future revision; today each is self-consistent within its
+own sensor.

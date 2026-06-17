@@ -212,8 +212,13 @@ compatibility.
 
 Each spoke carries:
 
-- `azimuth` -- bearing in radians from bow (clockwise).
-- `intensity` -- vector of `u8` values, one per range bin.
+- `azimuth` -- spoke bearing in radians, **sensor-relative**, increasing
+  clockwise; one full revolution (`0 … 2π`) per sweep. The zero reference is
+  the sensor heading axis as the kernel derives it (a world X–Z plane angle),
+  which is **not** the same axis as the −Z-forward lidar/camera convention —
+  see the sensor-data frame conventions and caveat in `docs/dsl-reference.md`.
+- `intensity` -- vector of `u8` values, one per range bin, uniform from `0` to
+  `range_m`.
 - `timestamp` -- seconds elapsed from sweep start (0.0 when `sweep_duration_s` is not set).
 
 The sweep is published as a `RadarSweep` message containing a vector of
