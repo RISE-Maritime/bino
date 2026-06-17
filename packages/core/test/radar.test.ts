@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
 import { compileScenario } from "../src/compile.js";
 import { buildScene } from "../src/scene.js";
 import { applyPoseUpdate } from "../src/pose.js";
@@ -74,6 +75,61 @@ describe("createRadarKernel", () => {
     );
     const totalLit = litCounts.reduce((a, b) => a + b, 0);
     expect(totalLit).toBeGreaterThan(0);
+  });
+
+  it("places a dead-ahead target at azimuth 0, stable under vessel heading", () => {
+    // A target dead-ahead of the ego should land on azimuth ≈ 0 (bow-relative
+    // bearing) regardless of which way the ego points. spokes_per_rev=36 →
+    // 10° spacing, so allow one spoke of tolerance (and wrap-around at 2π).
+    const tol = (2 * Math.PI) / 36;
+    const distFromZero = (az: number): number => Math.min(az, 2 * Math.PI - az);
+    const brightestAzimuth = (scene: THREE.Scene, sensorNode: THREE.Object3D): number => {
+      const kernel = createRadarKernel({ scene, sensorNode, config: radarConfig });
+      const frame = kernel.step(0);
+      let best = 0;
+      let bestSum = 0;
+      frame.spokes.forEach((s, i) => {
+        const sum = s.intensity.reduce((a, b) => a + b, 0);
+        if (sum > bestSum) {
+          bestSum = sum;
+          best = i;
+        }
+      });
+      kernel.dispose();
+      expect(bestSum).toBeGreaterThan(0);
+      return frame.spokes[best]!.azimuth;
+    };
+
+    // Ego at identity (bow = −Z = North); target due ahead (North).
+    {
+      const { scene, sensorNode, entities } = getSensorNode();
+      applyPoseUpdate(entities, {
+        entityId: "ferry",
+        pose: { position: [0, 0, -80], orientation: [0, 0, 0, 1] },
+        time: 0,
+      });
+      scene.updateMatrixWorld(true);
+      expect(distFromZero(brightestAzimuth(scene, sensorNode))).toBeLessThan(tol);
+    }
+
+    // Ego yawed 90° so the bow points East (+X); target placed due East.
+    // A dead-ahead target must still read azimuth ≈ 0.
+    {
+      const { scene, sensorNode, entities } = getSensorNode();
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0, "YXZ"));
+      applyPoseUpdate(entities, {
+        entityId: "ego",
+        pose: { position: [0, 0, 0], orientation: [q.x, q.y, q.z, q.w] },
+        time: 0,
+      });
+      applyPoseUpdate(entities, {
+        entityId: "ferry",
+        pose: { position: [80, 0, 0], orientation: [0, 0, 0, 1] },
+        time: 0,
+      });
+      scene.updateMatrixWorld(true);
+      expect(distFromZero(brightestAzimuth(scene, sensorNode))).toBeLessThan(tol);
+    }
   });
 
   it("returns no hits when scene is empty of other vessels", () => {

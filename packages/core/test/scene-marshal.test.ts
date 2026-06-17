@@ -109,9 +109,21 @@ describe("marshalLidarVessels", () => {
 });
 
 describe("marshalRadarVessels", () => {
-  it("excludes ego, derives heading from world quaternion, uses default extents", () => {
+  it("excludes ego, derives bow X–Z bearing from world quaternion, uses default extents", () => {
     const { scene, sensorNode, entities } = setup();
-    // Yaw the ferry 90° about Y; YXZ Euler.y should read ~π/2.
+    // Identity orientation: bow is local −Z → X–Z bearing atan2(−1, 0) = −π/2.
+    applyPoseUpdate(entities, {
+      entityId: "ferry",
+      pose: { position: [0, 0, -40], orientation: [0, 0, 0, 1] },
+      time: 0,
+    });
+    scene.updateMatrixWorld(true);
+    let vessels = marshalRadarVessels(scene, sensorNode);
+    expect(vessels.length).toBe(1);
+    expect(vessels[0]!.heading).toBeCloseTo(-Math.PI / 2, 3);
+    expect(vessels[0]!.half_extents).toEqual(DEFAULT_HALF_EXTENTS);
+
+    // Yaw 90° about +Y rotates the bow to −X → bearing atan2(0, −1) = ±π.
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0, "YXZ"));
     applyPoseUpdate(entities, {
       entityId: "ferry",
@@ -119,10 +131,8 @@ describe("marshalRadarVessels", () => {
       time: 0,
     });
     scene.updateMatrixWorld(true);
-    const vessels = marshalRadarVessels(scene, sensorNode);
-    expect(vessels.length).toBe(1);
-    expect(vessels[0]!.heading).toBeCloseTo(Math.PI / 2, 3);
-    expect(vessels[0]!.half_extents).toEqual(DEFAULT_HALF_EXTENTS);
+    vessels = marshalRadarVessels(scene, sensorNode);
+    expect(Math.abs(vessels[0]!.heading)).toBeCloseTo(Math.PI, 3);
   });
 
   it("does NOT include static obstacles (callers prepend them)", () => {

@@ -50,7 +50,21 @@ export function colMajorToRowMajor3x3(m: ArrayLike<number>): number[] {
 // synchronously on a single thread, one sensor at a time.
 const tmpVec = new THREE.Vector3();
 const tmpQuat = new THREE.Quaternion();
-const tmpEuler = new THREE.Euler();
+const tmpFwd = new THREE.Vector3();
+const FORWARD = new THREE.Vector3(0, 0, -1);
+
+/** Bearing of an entity's bow in the world X–Z plane.
+ *
+ *  The radar kernel works in that plane with ray direction `[cos θ, sin θ]`
+ *  where θ = atan2(Δz, Δx). To make azimuth 0 the bow (and to orient target
+ *  boxes correctly), `heading` must be the bow's bearing in that same
+ *  convention — NOT the three.js +Y Euler angle, which is a rotation angle in
+ *  a different convention. The bow is the entity's local −Z (see frames.ts /
+ *  the lidar+camera forward convention). */
+export function bowBearingXZ(quat: THREE.Quaternion): number {
+  tmpFwd.copy(FORWARD).applyQuaternion(quat);
+  return Math.atan2(tmpFwd.z, tmpFwd.x);
+}
 
 /** A scene child is a vessel iff it's a model-bearing Group that isn't
  *  the ego hull the sensor is mounted on. */
@@ -101,10 +115,9 @@ export function marshalRadarVessels(scene: THREE.Scene, sensorNode: THREE.Object
     if (!isVesselGroup(child, sensorNode)) continue;
     child.getWorldPosition(tmpVec);
     child.getWorldQuaternion(tmpQuat);
-    tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
     vessels.push({
       position: [tmpVec.x, tmpVec.y, tmpVec.z],
-      heading: tmpEuler.y,
+      heading: bowBearingXZ(tmpQuat),
       half_extents: DEFAULT_HALF_EXTENTS,
       velocity: child.userData.velocity ?? [0, 0, 0],
       angular_velocity_y: child.userData.angularVelocityY ?? 0,
@@ -116,6 +129,5 @@ export function marshalRadarVessels(scene: THREE.Scene, sensorNode: THREE.Object
 export function marshalRadarSensorPose(sensorNode: THREE.Object3D): RadarSensorPose {
   sensorNode.getWorldPosition(tmpVec);
   sensorNode.getWorldQuaternion(tmpQuat);
-  tmpEuler.setFromQuaternion(tmpQuat, "YXZ");
-  return { position: [tmpVec.x, tmpVec.y, tmpVec.z], heading: tmpEuler.y };
+  return { position: [tmpVec.x, tmpVec.y, tmpVec.z], heading: bowBearingXZ(tmpQuat) };
 }

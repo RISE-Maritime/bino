@@ -16,6 +16,7 @@ import {
   marshalLidarSensorPose,
   marshalRadarVessels,
   marshalRadarSensorPose,
+  bowBearingXZ,
   prepareTerrain,
   type CameraFrame,
   type CameraKernel,
@@ -677,7 +678,6 @@ function drawLidarPreview3d(
 
 const _ovVec = new THREE.Vector3();
 const _ovQuat = new THREE.Quaternion();
-const _ovEuler = new THREE.Euler();
 
 function updateLidarOverlay(
   ov: {
@@ -724,8 +724,9 @@ function updateRadarOverlay(
   const bins = sweep.spokes[0]?.intensity.length ?? 0;
   ov.sensorNode.getWorldPosition(_ovVec);
   ov.sensorNode.getWorldQuaternion(_ovQuat);
-  _ovEuler.setFromQuaternion(_ovQuat, "YXZ");
-  const heading = _ovEuler.y;
+  // Must match the kernel's marshaled radar heading (bow X–Z bearing) so the
+  // overlay draws returns at their true world bearing. See scene-marshal.ts.
+  const heading = bowBearingXZ(_ovQuat);
   const sx = _ovVec.x,
     sy = _ovVec.y,
     sz = _ovVec.z;
