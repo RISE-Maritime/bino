@@ -31,9 +31,11 @@ export type {
   FrameTransform,
   RawImage,
   PointCloud,
+  LocationFix,
 } from "@rise-maritime/keelson-js/dist/payloads/index.foxglove.js";
 
 export type {
   RadarSweep,
   RadarSpoke,
+  TimestampedFloat,
 } from "@rise-maritime/keelson-js/dist/payloads/index.keelson.js";

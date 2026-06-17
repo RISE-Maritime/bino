@@ -10,7 +10,14 @@ import {
 // Generated payload types from the SDK — used to type the decode paths so a
 // schema drift fails at compile time rather than silently at runtime. All
 // SDK-internal imports are centralized in keelson-sdk.ts.
-import type { FrameTransform, RawImage, PointCloud, RadarSweep } from "./keelson-sdk.js";
+import type {
+  FrameTransform,
+  RawImage,
+  PointCloud,
+  RadarSweep,
+  LocationFix,
+  TimestampedFloat,
+} from "./keelson-sdk.js";
 
 import type { PoseUpdate } from "./pose.js";
 import type { CameraFrame } from "./camera.js";
@@ -22,10 +29,20 @@ const SUBJECT_IMAGE_RAW = "image_raw";
 const SUBJECT_POINT_CLOUD = "point_cloud";
 const SUBJECT_RADAR_SWEEP = "radar_sweep";
 
+// Decomposed navigation subjects (input). A real maritime feed (AIS, NMEA,
+// MAVLink) publishes a vessel's nav state as these separate scalars rather
+// than a bundled pose.
+export const SUBJECT_LOCATION_FIX = "location_fix";
+export const SUBJECT_HEADING = "heading_true_north_deg";
+export const SUBJECT_PITCH = "pitch_deg";
+export const SUBJECT_ROLL = "roll_deg";
+
 const TYPE_FRAME_TRANSFORM = "foxglove.FrameTransform";
 const TYPE_RAW_IMAGE = "foxglove.RawImage";
 const TYPE_POINT_CLOUD = "foxglove.PointCloud";
 const TYPE_RADAR_SWEEP = "keelson.RadarSweep";
+const TYPE_LOCATION_FIX = "foxglove.LocationFix";
+const TYPE_TIMESTAMPED_FLOAT = "keelson.TimestampedFloat";
 
 export interface KeelsonNaming {
   base_path: string;
@@ -287,6 +304,46 @@ export function decodePointCloudEnvelope(bytes: Uint8Array): DecodedPointCloud |
     count,
     time: pc.timestamp ? dateToSeconds(pc.timestamp) : dateToSeconds(env.enclosedAt),
     frameId: pc.frameId ?? "",
+  };
+}
+
+export interface DecodedLocationFix {
+  lat: number;
+  lon: number;
+  altitude: number;
+  time: number;
+}
+
+/** Decode a foxglove.LocationFix envelope (subject `location_fix`). */
+export function decodeLocationFixEnvelope(bytes: Uint8Array): DecodedLocationFix | null {
+  const env = unwrapEnvelope(bytes);
+  if (!env) return null;
+  const fix = decodePayloadFromTypeName(TYPE_LOCATION_FIX, env.payload) as LocationFix | undefined;
+  if (!fix || typeof fix.latitude !== "number" || typeof fix.longitude !== "number") return null;
+  return {
+    lat: fix.latitude,
+    lon: fix.longitude,
+    altitude: fix.altitude ?? 0,
+    time: fix.timestamp ? dateToSeconds(fix.timestamp) : dateToSeconds(env.enclosedAt),
+  };
+}
+
+export interface DecodedTimestampedFloat {
+  value: number;
+  time: number;
+}
+
+/** Decode a keelson.TimestampedFloat envelope (heading/pitch/roll subjects). */
+export function decodeTimestampedFloatEnvelope(bytes: Uint8Array): DecodedTimestampedFloat | null {
+  const env = unwrapEnvelope(bytes);
+  if (!env) return null;
+  const tf = decodePayloadFromTypeName(TYPE_TIMESTAMPED_FLOAT, env.payload) as
+    | TimestampedFloat
+    | undefined;
+  if (!tf || typeof tf.value !== "number") return null;
+  return {
+    value: tf.value,
+    time: tf.timestamp ? dateToSeconds(tf.timestamp) : dateToSeconds(env.enclosedAt),
   };
 }
 
