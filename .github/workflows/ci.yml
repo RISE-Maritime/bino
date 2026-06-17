@@ -40,6 +40,8 @@ jobs:
           name: wasm-kernels
           path: packages/core/wasm
       - run: pnpm install --frozen-lockfile
+      # @bino/node and @bino/viewer resolve @bino/core to its built dist.
+      - run: pnpm --filter @bino/core build
       - run: pnpm typecheck
 
   test:
@@ -61,6 +63,8 @@ jobs:
           name: wasm-kernels
           path: packages/core/wasm
       - run: pnpm install --frozen-lockfile
+      # @bino/node tests import the built @bino/core package.
+      - run: pnpm --filter @bino/core build
       - run: pnpm --filter @bino/${{ matrix.package }} test
 
   kernels:
