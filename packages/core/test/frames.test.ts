@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { enuToScene, sceneToEnu, geodeticToScene } from "../src/frames.js";
+import * as THREE from "three";
+import { enuToScene, sceneToEnu, geodeticToScene, navToSceneQuaternion } from "../src/frames.js";
 import type { Anchor } from "../src/dsl.js";
+
+/** Forward (bow) vector for a scene quaternion: rotate local −Z by it. */
+function forwardOf(q: [number, number, number, number]): THREE.Vector3 {
+  return new THREE.Vector3(0, 0, -1).applyQuaternion(
+    new THREE.Quaternion(q[0], q[1], q[2], q[3]),
+  );
+}
 
 describe("ENU ↔ three.js scene frame", () => {
   it("maps East→+X, Up→+Y, North→−Z", () => {
@@ -38,5 +46,45 @@ describe("ENU ↔ three.js scene frame", () => {
     expect(east[0]).toBeGreaterThan(0); // east → +X
     expect(Math.abs(east[0])).toBeCloseTo(100, 0);
     expect(east[2]).toBeCloseTo(0, 1); // no north offset
+  });
+});
+
+describe("navToSceneQuaternion — heading → bow direction", () => {
+  it("heading 0 points the bow due North (−Z)", () => {
+    const f = forwardOf(navToSceneQuaternion(0));
+    expect(f.x).toBeCloseTo(0, 6);
+    expect(f.z).toBeCloseTo(-1, 6); // North
+  });
+
+  it("heading 90° points the bow due East (+X)", () => {
+    const f = forwardOf(navToSceneQuaternion(90));
+    expect(f.x).toBeCloseTo(1, 6); // East
+    expect(f.z).toBeCloseTo(0, 6);
+  });
+
+  it("heading 180° points the bow due South (+Z)", () => {
+    const f = forwardOf(navToSceneQuaternion(180));
+    expect(f.z).toBeCloseTo(1, 6); // South
+  });
+
+  it("heading 270° points the bow due West (−X)", () => {
+    const f = forwardOf(navToSceneQuaternion(270));
+    expect(f.x).toBeCloseTo(-1, 6); // West
+  });
+
+  it("reads back through the engine's YXZ Euler.y convention as −heading", () => {
+    // scene-marshal derives heading as the YXZ Euler.y of the world quaternion.
+    const q = navToSceneQuaternion(90);
+    const e = new THREE.Euler().setFromQuaternion(
+      new THREE.Quaternion(q[0], q[1], q[2], q[3]),
+      "YXZ",
+    );
+    expect(e.y).toBeCloseTo(-Math.PI / 2, 6);
+  });
+
+  it("positive pitch lifts the bow (+Y)", () => {
+    const f = forwardOf(navToSceneQuaternion(0, 10, 0));
+    expect(f.y).toBeGreaterThan(0); // bow up
+    expect(f.z).toBeCloseTo(-Math.cos((10 * Math.PI) / 180), 6);
   });
 });
