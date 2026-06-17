@@ -45,24 +45,24 @@ const TYPE_LOCATION_FIX = "foxglove.LocationFix";
 const TYPE_TIMESTAMPED_FLOAT = "keelson.TimestampedFloat";
 
 export interface KeelsonNaming {
+  /** First key segment (realm) of every published sensor topic. */
   base_path: string;
-  source_id: string;
-  parent_frame_id: string;
 }
 
 export const DEFAULT_NAMING: KeelsonNaming = {
   base_path: "bino",
-  source_id: "sim",
-  parent_frame_id: "world",
 };
 
+// frame_transform is an INPUT subject for Bino (pose injection) — Bino never
+// publishes it. encodePoseUpdate / poseTopicKey exist only to fabricate
+// frame_transform envelopes in tests, so the source/parent segments they need
+// are fixed constants rather than configuration. (Sensor output keys use the
+// sensor id as the keelson source segment; see cameraTopicKey et al.)
+const POSE_SOURCE_ID = "sim";
+const POSE_PARENT_FRAME_ID = "world";
+
 export function poseTopicKey(naming: KeelsonNaming, vesselId: string): string {
-  return construct_pubSub_key(
-    naming.base_path,
-    vesselId,
-    SUBJECT_FRAME_TRANSFORM,
-    naming.source_id,
-  );
+  return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_FRAME_TRANSFORM, POSE_SOURCE_ID);
 }
 
 export function cameraTopicKey(naming: KeelsonNaming, vesselId: string, sensorId: string): string {
@@ -137,7 +137,7 @@ export function encodePoseUpdate(
 ): EncodedTopic {
   const ft = {
     timestamp: secondsToDate(update.time),
-    parentFrameId: naming.parent_frame_id,
+    parentFrameId: POSE_PARENT_FRAME_ID,
     childFrameId: update.entityId,
     translation: {
       x: update.pose.position[0],

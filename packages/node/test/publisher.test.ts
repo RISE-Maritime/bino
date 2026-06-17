@@ -143,7 +143,7 @@ describe("createSensorPublisher", () => {
     const publisher = createSensorPublisher({
       session,
       sensors,
-      naming: { ...DEFAULT_NAMING, base_path: "rise", source_id: "bino-1" },
+      naming: { ...DEFAULT_NAMING, base_path: "rise" },
     });
     await publisher.publish(sampleFrame);
     expect(puts.find((p) => p.keyExpr.includes("image_raw"))!.keyExpr).toBe(

@@ -32,9 +32,9 @@ describe("Keelson topic keys", () => {
     );
   });
 
-  it("respects an overridden base_path and source_id", () => {
-    const naming = { ...DEFAULT_NAMING, base_path: "rise", source_id: "bino-1" };
-    expect(poseTopicKey(naming, "ego")).toBe("rise/@v0/ego/pubsub/frame_transform/bino-1");
+  it("respects an overridden base_path", () => {
+    const naming = { ...DEFAULT_NAMING, base_path: "rise" };
+    expect(poseTopicKey(naming, "ego")).toBe("rise/@v0/ego/pubsub/frame_transform/sim");
   });
 });
 

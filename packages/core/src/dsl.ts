@@ -185,13 +185,14 @@ export const Terrain = z.object({
 });
 export type Terrain = z.infer<typeof Terrain>;
 
-/** Keelson topic naming. Defaults mirror keelson.ts DEFAULT_NAMING;
+/** Keelson topic naming. `base_path` is the realm (first key segment) of
+ *  every published sensor topic; defaults mirror keelson.ts DEFAULT_NAMING,
  *  a drift test keeps them in sync. Lets a scenario publish into the
- *  consumer's namespace without code changes. */
+ *  consumer's namespace without code changes. (source_id / parent_frame_id
+ *  were dropped in ADR-002: sensor topics use the sensor id as the keelson
+ *  source segment, and Bino never publishes frame_transform.) */
 export const Keelson = z.object({
   base_path: z.string().min(1).default("bino"),
-  source_id: z.string().min(1).default("sim"),
-  parent_frame_id: z.string().min(1).default("world"),
 });
 export type Keelson = z.infer<typeof Keelson>;
 

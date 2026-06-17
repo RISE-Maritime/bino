@@ -33,7 +33,7 @@ export interface NodeServiceOptions {
   /** When set, the service exposes a publisher that emits each frame on the
    *  configured Keelson topics. */
   zenohSession?: PublishSession;
-  /** Override Keelson naming (base_path / source_id / parent_frame_id). */
+  /** Override Keelson naming (base_path — the published-topic realm). */
   naming?: KeelsonNaming;
   /** Pre-prepared terrain (from prepareTerrain). When the scenario has
    *  a terrain.bbox the caller is expected to pass this in;

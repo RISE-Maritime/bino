@@ -36,12 +36,9 @@ describe("compileScenario", () => {
     expect(scene.keelson).toEqual(DEFAULT_NAMING);
   });
 
-  it("carries an explicit keelson naming override", () => {
-    const scene = compileScenario(minimal({ keelson: { base_path: "myorg", source_id: "rig7" } }));
+  it("carries an explicit keelson base_path override", () => {
+    const scene = compileScenario(minimal({ keelson: { base_path: "myorg" } }));
     expect(scene.keelson.base_path).toBe("myorg");
-    expect(scene.keelson.source_id).toBe("rig7");
-    // Unspecified fields still fall back to the default.
-    expect(scene.keelson.parent_frame_id).toBe(DEFAULT_NAMING.parent_frame_id);
   });
 
   it("throws when strict determinism is combined with wall clock", () => {
