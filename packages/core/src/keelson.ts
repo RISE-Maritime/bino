@@ -133,10 +133,11 @@ export function encodeCameraFrame(
   vesselId: string,
   sensorId: string,
   naming: KeelsonNaming = DEFAULT_NAMING,
+  frameId: string = `${vesselId}/${sensorId}`,
 ): EncodedTopic {
   const img = {
     timestamp: secondsToDate(frame.time),
-    frameId: `${vesselId}/${sensorId}`,
+    frameId,
     width: frame.width,
     height: frame.height,
     encoding: "rgba8",
@@ -178,11 +179,12 @@ export function encodePointCloud(
   vesselId: string,
   sensorId: string,
   naming: KeelsonNaming = DEFAULT_NAMING,
+  frameId: string = `${vesselId}/${sensorId}`,
 ): EncodedTopic {
   const data = new Uint8Array(frame.points.buffer, frame.points.byteOffset, frame.count * 3 * 4);
   const pc = {
     timestamp: secondsToDate(frame.time),
-    frameId: `${vesselId}/${sensorId}`,
+    frameId,
     pose: undefined,
     pointStride: 12,
     fields: [
@@ -209,12 +211,17 @@ export function encodeRadarSweep(
   sensorId: string,
   range_m: number,
   naming: KeelsonNaming = DEFAULT_NAMING,
+  frameId: string = `${vesselId}/${sensorId}`,
 ): EncodedTopic {
-  const frameId = `${vesselId}/${sensorId}`;
   const ts = secondsToDate(frame.time);
   const sweep = {
     spokes: frame.spokes.map((s) => ({
-      timestamp: ts,
+      // Each spoke carries its own acquisition time: the kernel produces an
+      // intra-sweep offset (0..sweepDuration) relative to the frame start, so
+      // the absolute spoke time is frame.time + offset. Collapsing every spoke
+      // to frame.time would discard the rotation timing a rotating radar needs
+      // for motion de-distortion.
+      timestamp: secondsToDate(frame.time + (s.timestamp ?? 0)),
       frameId,
       pose: undefined,
       azimuth: s.azimuth,

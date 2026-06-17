@@ -39,6 +39,11 @@ export const CameraSensor = z.object({
    *  construct_pubSub_key(...). Real deployments may want non-Keelson
    *  topics; the trade-off is losing real-Keelson-tool interop. */
   publish_topic_override: z.string().min(1).optional(),
+  /** Override the in-payload frame_id. Independent of the topic key.
+   *  In inject mode the synthetic return must carry the real platform's
+   *  child_frame_id to merge into the real sensor's frame. Defaults to
+   *  "{vesselId}/{sensorId}" when unset. */
+  frame_id: z.string().min(1).optional(),
 });
 export type CameraSensor = z.infer<typeof CameraSensor>;
 
@@ -53,6 +58,8 @@ export const LidarSensor = z.object({
   fov_h_deg: z.number().positive().max(360).default(360),
   azimuths: z.number().int().positive().optional(),
   publish_topic_override: z.string().min(1).optional(),
+  /** Override the in-payload frame_id (see CameraSensor.frame_id). */
+  frame_id: z.string().min(1).optional(),
 });
 export type LidarSensor = z.infer<typeof LidarSensor>;
 
@@ -68,6 +75,8 @@ export const RadarSensor = z.object({
   spokes_per_rev: z.number().int().positive(),
   range_bins: z.number().int().positive(),
   publish_topic_override: z.string().min(1).optional(),
+  /** Override the in-payload frame_id (see CameraSensor.frame_id). */
+  frame_id: z.string().min(1).optional(),
 });
 export type RadarSensor = z.infer<typeof RadarSensor>;
 

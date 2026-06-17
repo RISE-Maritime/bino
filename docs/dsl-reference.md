@@ -123,6 +123,7 @@ Sensor placement in the vessel's body frame.
 | `phase_offset_s`         | number          | 0       | scheduling offset      |
 | `exposure_time_s`        | number          | 0       | exposure interval (s)  |
 | `publish_topic_override` | string          | --      | override Keelson topic |
+| `frame_id`               | string          | --      | override payload frame_id (default `{vessel}/{sensor}`) |
 
 ### Lidar (`type: "lidar"`)
 
@@ -136,6 +137,7 @@ Sensor placement in the vessel's body frame.
 | `fov_h_deg`              | number | 360        | (0, 360]               |
 | `azimuths`               | int    | = channels | horizontal samples     |
 | `publish_topic_override` | string | --         | override Keelson topic |
+| `frame_id`               | string | --         | override payload frame_id (default `{vessel}/{sensor}`) |
 
 ### Marine Radar (`type: "radar_marine"`)
 
@@ -149,6 +151,7 @@ Sensor placement in the vessel's body frame.
 | `spokes_per_rev`         | int    | --      | > 0                    |
 | `range_bins`             | int    | --      | > 0                    |
 | `publish_topic_override` | string | --      | override Keelson topic |
+| `frame_id`               | string | --      | override payload frame_id (default `{vessel}/{sensor}`) |
 
 ## Modes
 
@@ -210,3 +213,9 @@ Pose input topic: `{base}/@v0/{vessel_id}/pubsub/frame_transform/{source_id}`
 Use `publish_topic_override` per sensor to bypass the Keelson key
 construction. This is useful for non-Keelson consumers but loses
 interoperability with standard Keelson tooling.
+
+Use `frame_id` per sensor to override the in-payload frame id
+(default `{vessel_id}/{sensor_id}`), independently of the topic key.
+This is the hook for **inject mode**: stamp the real platform's
+`child_frame_id` on the synthetic return so it merges into the real
+sensor's frame downstream.

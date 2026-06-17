@@ -114,6 +114,7 @@ function buildSceneFromScenario(
           ...(sensor.publish_topic_override
             ? { topicOverride: sensor.publish_topic_override }
             : {}),
+          ...(sensor.frame_id ? { frameId: sensor.frame_id } : {}),
         });
       } else if (sensor.type === "lidar") {
         scheduled.push({
@@ -137,6 +138,7 @@ function buildSceneFromScenario(
           ...(sensor.publish_topic_override
             ? { topicOverride: sensor.publish_topic_override }
             : {}),
+          ...(sensor.frame_id ? { frameId: sensor.frame_id } : {}),
         });
       } else if (sensor.type === "radar_marine") {
         scheduled.push({
@@ -160,6 +162,7 @@ function buildSceneFromScenario(
           ...(sensor.publish_topic_override
             ? { topicOverride: sensor.publish_topic_override }
             : {}),
+          ...(sensor.frame_id ? { frameId: sensor.frame_id } : {}),
         });
       }
     }

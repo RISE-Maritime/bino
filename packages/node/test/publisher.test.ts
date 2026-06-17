@@ -71,6 +71,8 @@ describe("createSensorPublisher", () => {
     expect(decodedCam.width).toBe(2);
     expect(decodedCam.height).toBe(2);
     expect(decodedCam.pixels[0]).toBe(0xab);
+    // frame_id defaults to "{vesselId}/{sensorId}" when not overridden.
+    expect(decodedCam.frameId).toBe("ego/bow_camera");
 
     const decodedLid = decodePointCloudEnvelope(lid.payload)!;
     expect(decodedLid.count).toBe(2);
@@ -113,6 +115,27 @@ describe("createSensorPublisher", () => {
     });
     expect(puts).toHaveLength(1);
     expect(puts[0]!.keyExpr).toBe("custom/topic/foo");
+  });
+
+  it("stamps a frame_id override into the payload without touching the topic key", async () => {
+    const { session, puts } = makeSession();
+    const overridden: SensorMeta[] = [
+      {
+        sensorId: "ego/bow_camera",
+        vesselId: "ego",
+        topicSensorId: "bow_camera",
+        type: "camera",
+        // Inject-mode case: match the real platform's child_frame_id.
+        frameId: "ssrs18-demo-frame-camera-bow",
+      },
+    ];
+    const publisher = createSensorPublisher({ session, sensors: overridden });
+    await publisher.publish({ ...sampleFrame, outputs: [sampleFrame.outputs[0]!] });
+
+    expect(puts).toHaveLength(1);
+    // Topic key is still the Keelson-derived one — frame_id is independent.
+    expect(puts[0]!.keyExpr).toBe("bino/@v0/ego/pubsub/image_raw/bow_camera");
+    expect(decodeCameraEnvelope(puts[0]!.payload)!.frameId).toBe("ssrs18-demo-frame-camera-bow");
   });
 
   it("respects a custom KeelsonNaming", async () => {

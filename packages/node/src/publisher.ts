@@ -15,6 +15,9 @@ interface BaseSensorMeta {
   topicSensorId: string;
   /** Optional full topic-key override (from DSL publish_topic_override). */
   topicOverride?: string;
+  /** Optional in-payload frame_id override (from DSL frame_id). Falls back
+   *  to the encoder default "{vesselId}/{sensorId}" when unset. */
+  frameId?: string;
 }
 
 export type SensorMeta =
@@ -53,6 +56,7 @@ export function createSensorPublisher(opts: SensorPublisherOptions): SensorPubli
             meta.vesselId,
             meta.topicSensorId,
             naming,
+            meta.frameId,
           );
         } else if (meta.type === "lidar") {
           encoded = encodePointCloud(
@@ -60,6 +64,7 @@ export function createSensorPublisher(opts: SensorPublisherOptions): SensorPubli
             meta.vesselId,
             meta.topicSensorId,
             naming,
+            meta.frameId,
           );
         } else {
           encoded = encodeRadarSweep(
@@ -68,6 +73,7 @@ export function createSensorPublisher(opts: SensorPublisherOptions): SensorPubli
             meta.topicSensorId,
             meta.rangeM,
             naming,
+            meta.frameId,
           );
         }
         const keyExpr = meta.topicOverride ?? encoded.keyExpr;
