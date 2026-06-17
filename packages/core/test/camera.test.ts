@@ -99,6 +99,27 @@ describe("createCameraKernel", () => {
     expect(worldPos.z).toBeCloseTo(2);
   });
 
+  it("aims the camera over the bow (+X) at mount yaw 0", () => {
+    // ego at identity → bow = +X (East). A bow camera with no mount yaw must
+    // look along the bow, not abeam (its three.js −Z look axis is aimed at +X).
+    const { scene, sensorNode } = getSensorNode();
+    const kernel = createCameraKernel({
+      renderer: makeRendererStub(),
+      scene,
+      sensorNode,
+      config: scenario.vessels[0]!.sensors[0]! as Extract<
+        (typeof scenario)["vessels"][0]["sensors"][0],
+        { type: "camera" }
+      >,
+    });
+    scene.updateMatrixWorld(true);
+    const dir = new THREE.Vector3();
+    kernel.camera.getWorldDirection(dir);
+    expect(dir.x).toBeCloseTo(1, 5); // along the bow
+    expect(dir.y).toBeCloseTo(0, 5);
+    expect(dir.z).toBeCloseTo(0, 5);
+  });
+
   it("step() drives the renderer and returns a sized RGBA frame", () => {
     const { scene, sensorNode } = getSensorNode();
     const renderer = makeRendererStub();

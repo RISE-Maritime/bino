@@ -136,10 +136,12 @@ All configurations are well within the 10 Hz frame budget (100 ms). See `package
 
 ## Output Format
 
-- **Points:** `Float32Array`, XYZ interleaved in the sensor-local frame
-  (**+X right, +Y up, −Z forward** — the three.js camera convention),
-  densely packed (misses are excluded, not zero-filled). No transform is
-  published; see the sensor-data frame conventions in `docs/dsl-reference.md`.
+- **Points:** `Float32Array`, XYZ interleaved in the sensor-node frame —
+  for a neutral mount the **vessel body frame: +X bow, +Y up, +Z starboard**
+  (ADR-003) — densely packed (misses are excluded, not zero-filled). No
+  transform is published; see the frame conventions in `docs/dsl-reference.md`.
+  (The Rust kernel labels its scan axes +x/+y/−z internally, but the emitted
+  points are in the node frame.)
 - **Count:** Integer number of hits, which may be less than `channels x azimuths`.
 - **Timestamps:** `Float32Array`, per-hit time offset from sweep start. Empty when `sweep_duration_s == 0`.
 - **Publication:** Encoded as a Keelson `PointCloud` message (foxglove.PointCloud schema with PackedElementField layout).

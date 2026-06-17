@@ -6,8 +6,9 @@ import type { Anchor } from "../src/dsl.js";
 
 const anchor: Anchor = { lat: 54.32, lon: 10.14, height: 0 };
 
-function forwardOf(q: readonly [number, number, number, number]): THREE.Vector3 {
-  return new THREE.Vector3(0, 0, -1).applyQuaternion(
+/** Bow vector: rotate the body forward axis (+X) by the pose quaternion. */
+function bowOf(q: readonly [number, number, number, number]): THREE.Vector3 {
+  return new THREE.Vector3(1, 0, 0).applyQuaternion(
     new THREE.Quaternion(q[0], q[1], q[2], q[3]),
   );
 }
@@ -27,14 +28,14 @@ describe("LatestWinsNavFuser", () => {
   it("defaults to heading North (bow −Z) before any heading arrives", () => {
     const fuser = new LatestWinsNavFuser("ego", anchor);
     const { update } = fuser.fix({ lat: 54.32, lon: 10.14, altitude: 0, time: 0 });
-    expect(forwardOf(update.pose.orientation).z).toBeCloseTo(-1, 6);
+    expect(bowOf(update.pose.orientation).z).toBeCloseTo(-1, 6);
   });
 
   it("composes the latest heading into the pose (latest-wins)", () => {
     const fuser = new LatestWinsNavFuser("ego", anchor);
     fuser.setHeading({ value: 90, time: 0.9 });
     const { update } = fuser.fix({ lat: 54.32, lon: 10.14, altitude: 0, time: 1 });
-    expect(forwardOf(update.pose.orientation).x).toBeCloseTo(1, 6); // East
+    expect(bowOf(update.pose.orientation).x).toBeCloseTo(1, 6); // East
   });
 
   it("reports per-fix skew and tracks the running max", () => {

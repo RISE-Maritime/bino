@@ -35,33 +35,40 @@ export function geodeticToScene(point: Geodetic, anchor: Anchor): ScenePosition 
 export type SceneQuaternion = [number, number, number, number];
 
 const DEG = Math.PI / 180;
-const _euler = new THREE.Euler();
 const _quat = new THREE.Quaternion();
+const _qp = new THREE.Quaternion();
+const _qr = new THREE.Quaternion();
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
 /**
  * Decomposed nav attitude → three.js scene quaternion.
  *
- * Body convention in the scene frame (right-handed, Y-up): bow (forward) = −Z,
- * up = +Y, starboard = +X — the same convention the rest of the engine reads
- * back (scene-marshal derives heading as the YXZ Euler.y; radar.test.ts
- * documents −Z as forward for an unrotated entity).
+ * Body convention (right-handed, Y-up): bow (forward) = +X, up = +Y,
+ * starboard = +Z — how the hull models and mounts are authored, and what the
+ * radar reads back (scene-marshal `bowBearingXZ`). See ADR-003.
  *
  * - `headingDeg` is keelson `heading_true_north_deg`: clockwise from true North
- *   (= −Z). A positive heading rotates the bow toward East (+X), which is a
- *   *negative* rotation about three.js +Y, hence Euler.y = −heading.
- * - `pitchDeg` positive = bow up (rotation about starboard +X).
- * - `rollDeg` positive = starboard down (rotation about the bow axis).
+ *   (= world −Z). At heading 0 the bow (+X) points North; this is a base
+ *   rotation `Ry(π/2)`, and increasing heading rotates the bow toward East,
+ *   so the heading term is `Ry(π/2 − heading)`.
+ * - `pitchDeg` positive = bow up (rotation about starboard, body +Z).
+ * - `rollDeg` positive = starboard down (rotation about the bow, body +X).
  *
- * The pitch/roll signs are Bino's stated convention; if a producer's
- * `pitch_deg`/`roll_deg` sign differs this is the one place to adjust.
+ * Composed intrinsically heading → pitch → roll. The pitch/roll signs are
+ * Bino's stated convention (keelson leaves ISO-8855 sign nuances loose); if a
+ * producer differs, this is the one place to adjust.
  */
 export function navToSceneQuaternion(
   headingDeg: number,
   pitchDeg = 0,
   rollDeg = 0,
 ): SceneQuaternion {
-  _euler.set(pitchDeg * DEG, -headingDeg * DEG, -rollDeg * DEG, "YXZ");
-  _quat.setFromEuler(_euler);
+  _quat.setFromAxisAngle(Y_AXIS, Math.PI / 2 - headingDeg * DEG);
+  _qp.setFromAxisAngle(Z_AXIS, pitchDeg * DEG);
+  _qr.setFromAxisAngle(X_AXIS, rollDeg * DEG);
+  _quat.multiply(_qp).multiply(_qr);
   return [_quat.x, _quat.y, _quat.z, _quat.w];
 }
 

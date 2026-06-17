@@ -131,14 +131,31 @@ function buildSensor(sensor: Sensor): THREE.Object3D {
   const node = new THREE.Object3D();
   node.name = sensor.id;
   node.userData = { sensorType: sensor.type, config: sensor };
-  applyMount(node, sensor.mount);
+  // The camera looks down its local −Z (three.js); aim that at the bow (+X)
+  // so mount yaw 0 means "over the bow". Lidar and radar are 360°-native and
+  // emit in the vessel body frame (+X bow), so they aren't re-aimed.
+  applyMount(node, sensor.mount, sensor.type === "camera");
   return node;
 }
 
-function applyMount(node: THREE.Object3D, mount: Mount): void {
+// Body axes: forward (bow) = +X, up = +Y, starboard = +Z.
+const MOUNT_UP = new THREE.Vector3(0, 1, 0);
+const MOUNT_STARBOARD = new THREE.Vector3(0, 0, 1);
+const MOUNT_FORWARD = new THREE.Vector3(1, 0, 0);
+
+function applyMount(node: THREE.Object3D, mount: Mount, aimForwardAxis: boolean): void {
   node.position.set(mount.x, mount.y, mount.z);
   const yaw = ((mount.yaw_deg ?? 0) * Math.PI) / 180;
   const pitch = ((mount.pitch_deg ?? 0) * Math.PI) / 180;
   const roll = ((mount.roll_deg ?? 0) * Math.PI) / 180;
-  node.rotation.set(roll, pitch, yaw, "ZYX");
+  // Mount rotation in body axes: yaw about up (+Y), pitch about starboard
+  // (+Z, elevation), roll about the bow (+X), composed intrinsically.
+  const q = new THREE.Quaternion().setFromAxisAngle(MOUNT_UP, yaw);
+  q.multiply(new THREE.Quaternion().setFromAxisAngle(MOUNT_STARBOARD, pitch));
+  q.multiply(new THREE.Quaternion().setFromAxisAngle(MOUNT_FORWARD, roll));
+  if (aimForwardAxis) {
+    // Map the sensor's −Z look axis onto +X (bow): −Z → +X is Ry(−π/2).
+    q.multiply(new THREE.Quaternion().setFromAxisAngle(MOUNT_UP, -Math.PI / 2));
+  }
+  node.quaternion.copy(q);
 }

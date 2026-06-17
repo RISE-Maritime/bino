@@ -130,6 +130,10 @@ export function marshalRadarVessels(scene: THREE.Scene, sensorNode: THREE.Object
 
 export function marshalRadarSensorPose(sensorNode: THREE.Object3D): RadarSensorPose {
   sensorNode.getWorldPosition(tmpVec);
-  sensorNode.getWorldQuaternion(tmpQuat);
+  // Azimuth 0 is the vessel bow, so take the heading from the vessel body
+  // (the sensor's parent), not the sensor node — the radar mount must not
+  // rotate the azimuth reference.
+  const body = sensorNode.parent ?? sensorNode;
+  body.getWorldQuaternion(tmpQuat);
   return { position: [tmpVec.x, tmpVec.y, tmpVec.z], heading: bowBearingXZ(tmpQuat) };
 }

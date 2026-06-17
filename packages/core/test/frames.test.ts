@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { enuToScene, sceneToEnu, geodeticToScene, navToSceneQuaternion } from "../src/frames.js";
+import { bowBearingXZ } from "../src/scene-marshal.js";
 import type { Anchor } from "../src/dsl.js";
 
-/** Forward (bow) vector for a scene quaternion: rotate local −Z by it. */
-function forwardOf(q: [number, number, number, number]): THREE.Vector3 {
-  return new THREE.Vector3(0, 0, -1).applyQuaternion(
-    new THREE.Quaternion(q[0], q[1], q[2], q[3]),
-  );
+const quat = (q: [number, number, number, number]): THREE.Quaternion =>
+  new THREE.Quaternion(q[0], q[1], q[2], q[3]);
+/** Bow vector for a scene quaternion: rotate the body forward axis (+X). */
+function bowOf(q: [number, number, number, number]): THREE.Vector3 {
+  return new THREE.Vector3(1, 0, 0).applyQuaternion(quat(q));
+}
+/** Starboard vector: rotate the body +Z axis. */
+function starboardOf(q: [number, number, number, number]): THREE.Vector3 {
+  return new THREE.Vector3(0, 0, 1).applyQuaternion(quat(q));
 }
 
 describe("ENU ↔ three.js scene frame", () => {
@@ -49,42 +54,45 @@ describe("ENU ↔ three.js scene frame", () => {
   });
 });
 
-describe("navToSceneQuaternion — heading → bow direction", () => {
+describe("navToSceneQuaternion — heading → bow direction (bow = +X)", () => {
   it("heading 0 points the bow due North (−Z)", () => {
-    const f = forwardOf(navToSceneQuaternion(0));
+    const f = bowOf(navToSceneQuaternion(0));
     expect(f.x).toBeCloseTo(0, 6);
     expect(f.z).toBeCloseTo(-1, 6); // North
   });
 
   it("heading 90° points the bow due East (+X)", () => {
-    const f = forwardOf(navToSceneQuaternion(90));
+    const f = bowOf(navToSceneQuaternion(90));
     expect(f.x).toBeCloseTo(1, 6); // East
     expect(f.z).toBeCloseTo(0, 6);
   });
 
   it("heading 180° points the bow due South (+Z)", () => {
-    const f = forwardOf(navToSceneQuaternion(180));
-    expect(f.z).toBeCloseTo(1, 6); // South
+    expect(bowOf(navToSceneQuaternion(180)).z).toBeCloseTo(1, 6); // South
   });
 
   it("heading 270° points the bow due West (−X)", () => {
-    const f = forwardOf(navToSceneQuaternion(270));
-    expect(f.x).toBeCloseTo(-1, 6); // West
+    expect(bowOf(navToSceneQuaternion(270)).x).toBeCloseTo(-1, 6); // West
   });
 
-  it("reads back through the engine's YXZ Euler.y convention as −heading", () => {
-    // scene-marshal derives heading as the YXZ Euler.y of the world quaternion.
-    const q = navToSceneQuaternion(90);
-    const e = new THREE.Euler().setFromQuaternion(
-      new THREE.Quaternion(q[0], q[1], q[2], q[3]),
-      "YXZ",
-    );
-    expect(e.y).toBeCloseTo(-Math.PI / 2, 6);
+  it("is consistent with the radar bow bearing for every heading", () => {
+    // navToSceneQuaternion and scene-marshal.bowBearingXZ must agree, else a
+    // nav-driven vessel and its radar would disagree on where the bow points.
+    for (const h of [0, 45, 90, 137, 270]) {
+      const q = navToSceneQuaternion(h);
+      const f = bowOf(q);
+      expect(bowBearingXZ(quat(q))).toBeCloseTo(Math.atan2(f.z, f.x), 6);
+    }
   });
 
   it("positive pitch lifts the bow (+Y)", () => {
-    const f = forwardOf(navToSceneQuaternion(0, 10, 0));
+    const f = bowOf(navToSceneQuaternion(0, 10, 0));
     expect(f.y).toBeGreaterThan(0); // bow up
     expect(f.z).toBeCloseTo(-Math.cos((10 * Math.PI) / 180), 6);
+  });
+
+  it("positive roll drops the starboard side (−Y)", () => {
+    const s = starboardOf(navToSceneQuaternion(0, 0, 10));
+    expect(s.y).toBeLessThan(0); // starboard down
   });
 });

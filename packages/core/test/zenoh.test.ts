@@ -282,10 +282,10 @@ describe("createZenohPoseStream — decomposed nav", () => {
       for await (const u of stream) return u;
     })();
     const u = (await consumer)!;
-    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(
+    const bow = new THREE.Vector3(1, 0, 0).applyQuaternion(
       new THREE.Quaternion(...(u.pose.orientation as [number, number, number, number])),
     );
-    expect(fwd.x).toBeCloseTo(1, 3); // bow points East
+    expect(bow.x).toBeCloseTo(1, 3); // bow points East
     stream.close();
   });
 });

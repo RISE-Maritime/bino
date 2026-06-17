@@ -128,9 +128,13 @@ Sensor placement in the vessel's body frame.
 | `x`         | number | --      | Longitudinal offset from amidships (m, +fwd) |
 | `y`         | number | --      | Vertical offset from waterline (m, +up)      |
 | `z`         | number | --      | Lateral offset from centreline (m, +stbd)    |
-| `yaw_deg`   | number | 0       | Yaw rotation (degrees)                       |
-| `pitch_deg` | number | 0       | Pitch rotation (degrees)                     |
-| `roll_deg`  | number | 0       | Roll rotation (degrees)                      |
+| `yaw_deg`   | number | 0       | Pan about up (+Y); 0 = over the bow           |
+| `pitch_deg` | number | 0       | Elevation about starboard (+Z)               |
+| `roll_deg`  | number | 0       | Roll about the bow (+X)                       |
+
+Body frame: **X-forward, Y-up, Z-starboard** (ADR-003). For the camera, the
+`−Z` look axis is aimed at the bow, so `yaw = 0` looks over the bow; lidar and
+radar are 360°-native and emit in the body frame regardless of mount yaw.
 
 ### Camera (`type: "camera"`)
 
@@ -257,10 +261,10 @@ resolves where that frame sits from the sensor mounting it already knows
 connector in inject mode). The conventions below are the implicit
 contract — they are what a consumer receives.
 
-**Lidar (`point_cloud`).** XYZ points in the **sensor-local** frame:
-**+X right, +Y up, −Z forward** (the three.js camera convention). Packed
-densely as `float32` x/y/z, `point_stride = 12`. No pose is set on the
-PointCloud.
+**Lidar (`point_cloud`).** XYZ points in the **sensor-node frame**, which for
+a neutral mount is the **vessel body frame: +X bow, +Y up, +Z starboard** (a
+point off the bow is at `+X`). Packed densely as `float32` x/y/z,
+`point_stride = 12`. No pose is set on the PointCloud.
 
 **Radar (`radar_sweep`).** One `RadarSpoke` per azimuth. `azimuth` is in
 radians, **vessel-relative**: **0 = bow** (the vessel body forward, local
@@ -273,11 +277,12 @@ intra-sweep acquisition time. No pose is set on the spokes.
 
 **Camera (`image_raw`).** `rgba8`, `step = width · 4`. Rows follow the GL
 read-back order — **origin bottom-left** (first row is the bottom of the
-image), so top-left-origin viewers must flip vertically. The view is a
-pinhole camera looking down sensor-local −Z at `fov_deg`.
+image), so top-left-origin viewers must flip vertically. A pinhole camera at
+`fov_deg`; at mount `yaw = 0` it looks **over the bow (+X)** (its three.js −Z
+look axis is aimed at the bow — see ADR-003).
 
-Note two distinct "forward" conventions in play: lidar/camera emit in a
-**sensor-local** frame whose forward is **−Z** (the camera look axis), while
-radar azimuth 0 is the **vessel-body** forward, **+X** (how hulls and mounts
-are authored). None of them is placed in a shared frame on the wire — each is
-sensor-local and the consumer resolves it via the known sensor mounting.
+All three live in the one **vessel body frame** (X-forward/Y-up/Z-starboard,
+ADR-003): lidar points are body-frame, radar azimuth 0 is the bow, and the
+camera is aimed along the bow. None is placed in a shared frame on the wire —
+each is sensor-local and the consumer resolves it via the known sensor
+mounting.

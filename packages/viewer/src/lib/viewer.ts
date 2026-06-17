@@ -723,9 +723,10 @@ function updateRadarOverlay(
   const colors = ov.colorAttr.array as Float32Array;
   const bins = sweep.spokes[0]?.intensity.length ?? 0;
   ov.sensorNode.getWorldPosition(_ovVec);
-  ov.sensorNode.getWorldQuaternion(_ovQuat);
-  // Must match the kernel's marshaled radar heading (bow X–Z bearing) so the
-  // overlay draws returns at their true world bearing. See scene-marshal.ts.
+  // Heading comes from the vessel body (sensor's parent), matching
+  // marshalRadarSensorPose — azimuth 0 is the bow, independent of the mount.
+  const body = ov.sensorNode.parent ?? ov.sensorNode;
+  body.getWorldQuaternion(_ovQuat);
   const heading = bowBearingXZ(_ovQuat);
   const sx = _ovVec.x,
     sy = _ovVec.y,
