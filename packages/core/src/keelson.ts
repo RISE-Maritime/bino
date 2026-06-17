@@ -77,6 +77,34 @@ export function radarTopicKey(naming: KeelsonNaming, vesselId: string, sensorId:
   return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_RADAR_SWEEP, sensorId);
 }
 
+/** Identity of a decomposed-nav feed for one vessel (input side). */
+export interface KeelsonNavNaming {
+  base_path: string;
+  entity_id: string;
+  source_id: string;
+  /** keelson @target extension for observed (non-own-ship) entities. */
+  target_id?: string;
+}
+
+export interface NavTopicKeys {
+  locationFix: string;
+  heading: string;
+  pitch: string;
+  roll: string;
+}
+
+/** Build the per-subject keys Bino subscribes to for a decomposed-nav vessel. */
+export function navTopicKeys(n: KeelsonNavNaming): NavTopicKeys {
+  const key = (subject: string): string =>
+    construct_pubSub_key(n.base_path, n.entity_id, subject, n.source_id, n.target_id);
+  return {
+    locationFix: key(SUBJECT_LOCATION_FIX),
+    heading: key(SUBJECT_HEADING),
+    pitch: key(SUBJECT_PITCH),
+    roll: key(SUBJECT_ROLL),
+  };
+}
+
 interface EncodedTopic {
   keyExpr: string;
   bytes: Uint8Array;

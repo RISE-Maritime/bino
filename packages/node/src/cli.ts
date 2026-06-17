@@ -4,10 +4,12 @@ import { Config, open } from "@eclipse-zenoh/zenoh-ts";
 import {
   MemoryPoseStream,
   createZenohPoseStream,
+  navTopicKeys,
   prepareTerrain,
   type PoseStream,
   type CompiledScene,
   type TerrainData,
+  type ZenohNavVessel,
 } from "@bino/core";
 import { loadScenario } from "./yaml.js";
 import { createNodeService } from "./service.js";
@@ -42,6 +44,20 @@ function zenohVessels(scenario: CompiledScene): Array<{ vesselId: string; topic:
   for (const v of scenario.vessels) {
     if (v.pose_source.type === "zenoh") {
       out.push({ vesselId: v.id, topic: v.pose_source.topic });
+    }
+  }
+  return out;
+}
+
+function navVessels(scenario: CompiledScene): ZenohNavVessel[] {
+  const out: ZenohNavVessel[] = [];
+  for (const v of scenario.vessels) {
+    if (v.pose_source.type === "keelson_nav") {
+      const { base_path, entity_id, source_id, target_id } = v.pose_source;
+      out.push({
+        vesselId: v.id,
+        keys: navTopicKeys({ base_path, entity_id, source_id, ...(target_id ? { target_id } : {}) }),
+      });
     }
   }
   return out;
@@ -83,12 +99,29 @@ async function main(): Promise<void> {
 
   if (parsed.zenoh) {
     zenohSession = await open(new Config(parsed.zenoh));
+    const ftVessels = zenohVessels(scene);
+    const nav = navVessels(scene);
+    // Warn (once per vessel) when latest-wins fusion accepts a stale attitude
+    // value, so the lossiness is visible rather than silent.
+    const warnedSkew = new Set<string>();
     stream = await createZenohPoseStream({
       session: zenohSession,
-      vessels: zenohVessels(scene),
+      vessels: ftVessels,
+      nav,
+      anchor: scene.anchor,
+      onSkew: (vesselId, skew_s) => {
+        if (skew_s > 0.5 && !warnedSkew.has(vesselId)) {
+          warnedSkew.add(vesselId);
+          stdout.write(
+            `zenoh: nav fusion for '${vesselId}' pairing a fix with attitude ` +
+              `${skew_s.toFixed(2)}s stale (latest-wins)\n`,
+          );
+        }
+      },
     });
     stdout.write(
-      `zenoh: connected to ${parsed.zenoh}, ${zenohVessels(scene).length} subscription(s)\n`,
+      `zenoh: connected to ${parsed.zenoh}, ${ftVessels.length} frame_transform + ` +
+        `${nav.length} decomposed-nav vessel(s)\n`,
     );
   } else {
     stream = new MemoryPoseStream();

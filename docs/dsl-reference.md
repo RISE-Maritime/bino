@@ -78,12 +78,32 @@ bathymetry for the given bounding box.
 
 Discriminated union on `type`:
 
-**zenoh** -- poses arrive over Zenoh.
+**zenoh** -- a single `frame_transform` topic carrying a full pose in the
+three.js scene frame. For local / FMI-synthetic sources that already produce
+scene-frame coordinates.
 
 | Field   | Type      | Description                              |
 | ------- | --------- | ---------------------------------------- |
 | `type`  | `"zenoh"` |                                          |
 | `topic` | string    | Zenoh key expression for frame_transform |
+
+**keelson_nav** -- decomposed navigation subjects, the shape a real
+AIS/GNSS/MAVLink feed publishes. Bino subscribes to `location_fix` +
+`heading_true_north_deg` (+ optional `pitch_deg`/`roll_deg`), fuses them
+(latest-wins, position-triggered), and projects the fix through the scenario
+`anchor` itself. Own-ship uses bare keys; observed traffic sets `target_id`
+for keelson's `@target` extension.
+
+| Field       | Type           | Description                                            |
+| ----------- | -------------- | ----------------------------------------------------- |
+| `type`      | `"keelson_nav"`|                                                       |
+| `base_path` | string         | realm of the source feed (default `keelson`)          |
+| `entity_id` | string         | the publishing platform's entity id                   |
+| `source_id` | string         | the source producing nav (may contain `/`)            |
+| `target_id` | string         | optional — e.g. `mmsi_245060000` for observed traffic |
+
+Keys built as `{base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}` (with
+`/@target/{target_id}` appended when set), for each of the four subjects.
 
 ### VesselDimensions
 
@@ -208,7 +228,14 @@ Subjects by sensor type:
 | lidar        | `point_cloud` | foxglove.PointCloud |
 | radar_marine | `radar_sweep` | keelson.RadarSweep  |
 
-Pose input topic: `{base}/@v0/{vessel_id}/pubsub/frame_transform/{source_id}`
+Pose input (frame_transform source):
+`{base}/@v0/{vessel_id}/pubsub/frame_transform/{source_id}`
+
+Pose input (keelson_nav source): the four decomposed subjects
+`location_fix`, `heading_true_north_deg`, `pitch_deg`, `roll_deg` under
+`{base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}`. Bino owns the
+geodetic→scene projection (via `anchor`) and the heading→orientation
+conversion; the renderer never sees keelson frames.
 
 Use `publish_topic_override` per sensor to bypass the Keelson key
 construction. This is useful for non-Keelson consumers but loses

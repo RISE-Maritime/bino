@@ -22,7 +22,21 @@ export const ZenohPoseSource = z.object({
   topic: z.string().min(1),
 });
 
-export const PoseSource = z.discriminatedUnion("type", [ZenohPoseSource]);
+/** Ingest a vessel's pose from keelson's decomposed navigation subjects
+ *  (location_fix + heading_true_north_deg [+ pitch_deg/roll_deg]) — what a
+ *  real AIS/GNSS/MAVLink feed actually publishes. Bino constructs the per-
+ *  subject keys from this identity and projects the fix through the scenario
+ *  anchor itself. Own-ship uses bare keys; observed traffic sets target_id
+ *  (e.g. "mmsi_245060000") for keelson's @target extension. See ADR-002. */
+export const KeelsonNavPoseSource = z.object({
+  type: z.literal("keelson_nav"),
+  base_path: z.string().min(1).default("keelson"),
+  entity_id: z.string().min(1),
+  source_id: z.string().min(1),
+  target_id: z.string().min(1).optional(),
+});
+
+export const PoseSource = z.discriminatedUnion("type", [ZenohPoseSource, KeelsonNavPoseSource]);
 export type PoseSource = z.infer<typeof PoseSource>;
 
 export const CameraSensor = z.object({

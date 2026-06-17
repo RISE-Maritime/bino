@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import * as THREE from "three";
 import { createZenohPoseStream, type ZenohSessionLike } from "../src/zenoh.js";
-import { encodePoseUpdate } from "../src/keelson.js";
+import { encodePoseUpdate, navTopicKeys } from "../src/keelson.js";
+import { encodePayloadFromTypeName, enclose, Envelope } from "../src/keelson-sdk.js";
 import type { PoseUpdate } from "../src/pose.js";
+import type { Anchor } from "../src/dsl.js";
 
 interface FakeSample {
   payload: () => { toBytes: () => Uint8Array };
@@ -226,5 +229,63 @@ describe("createZenohPoseStream", () => {
       "bino/@v0/ego/pubsub/frame_transform/sim",
       "bino/@v0/ferry/pubsub/frame_transform/sim",
     ]);
+  });
+});
+
+describe("createZenohPoseStream — decomposed nav", () => {
+  const anchor: Anchor = { lat: 54.32, lon: 10.14, height: 0 };
+  const keys = navTopicKeys({ base_path: "keelson", entity_id: "vessel", source_id: "gnss" });
+
+  function navEnvelope(typeName: string, payload: object, t: number): Uint8Array {
+    const at = new Date(t * 1000);
+    const payloadBytes = encodePayloadFromTypeName(typeName, { ...payload, timestamp: at })!;
+    return Envelope.encode(enclose(payloadBytes, at)).finish();
+  }
+  const locFix = (lat: number, lon: number, alt: number, t: number): FakeSample =>
+    bytesPayload(navEnvelope("foxglove.LocationFix", { frameId: "gnss", latitude: lat, longitude: lon, altitude: alt }, t));
+  const floatVal = (value: number, t: number): FakeSample =>
+    bytesPayload(navEnvelope("keelson.TimestampedFloat", { value }, t));
+
+  const tick = (): Promise<void> => new Promise((r) => setImmediate(r));
+
+  it("subscribes to all four nav subjects and projects location_fix into a pose", async () => {
+    const { session, channels } = makeSession();
+    const stream = await createZenohPoseStream({ session, nav: [{ vesselId: "ego", keys }], anchor });
+
+    // All four subject keys were declared.
+    for (const k of [keys.locationFix, keys.heading, keys.pitch, keys.roll]) {
+      expect(channels.has(k)).toBe(true);
+    }
+
+    // ~100 m north of the anchor → −Z, default heading (North) before any heading.
+    channels.get(keys.locationFix)!.push(locFix(54.32 + 100 / 111_320, 10.14, 0, 5));
+    const consumer = (async () => {
+      for await (const u of stream) return u;
+    })();
+    const u = (await consumer)!;
+    expect(u.entityId).toBe("ego");
+    expect(u.time).toBeCloseTo(5, 3);
+    expect(u.pose.position[2]).toBeLessThan(0); // north → −Z
+    stream.close();
+  });
+
+  it("fuses the latest heading into the pose (location_fix triggers)", async () => {
+    const { session, channels } = makeSession();
+    const stream = await createZenohPoseStream({ session, nav: [{ vesselId: "ego", keys }], anchor });
+
+    channels.get(keys.heading)!.push(floatVal(90, 0.9)); // heading East
+    await tick();
+    await tick(); // let the heading pump apply setHeading before the fix
+    channels.get(keys.locationFix)!.push(locFix(54.32, 10.14, 0, 1));
+
+    const consumer = (async () => {
+      for await (const u of stream) return u;
+    })();
+    const u = (await consumer)!;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(
+      new THREE.Quaternion(...(u.pose.orientation as [number, number, number, number])),
+    );
+    expect(fwd.x).toBeCloseTo(1, 3); // bow points East
+    stream.close();
   });
 });
