@@ -212,10 +212,12 @@ compatibility.
 
 Each spoke carries:
 
-- `azimuth` -- spoke bearing in radians, **sensor-relative**: **0 = bow**
-  (sensor forward, local −Z — the same forward as the lidar/camera
-  convention), increasing **clockwise**, one full revolution (`0 … 2π`) per
-  sweep. A target dead-ahead lands on azimuth 0 regardless of vessel heading.
+- `azimuth` -- spoke bearing in radians, **vessel-relative**: **0 = bow**
+  (the vessel body forward, local **+X** — how the hull models and mounts are
+  authored), increasing **clockwise**, one full revolution (`0 … 2π`) per
+  sweep. A target straight off the bow reads azimuth 0 regardless of vessel
+  heading. (Note: this is the vessel-body forward, +X — distinct from the
+  lidar/camera *sensor-local* −Z look axis.)
 - `intensity` -- vector of `u8` values, one per range bin, uniform from `0` to
   `range_m`.
 - `timestamp` -- seconds elapsed from sweep start (0.0 when `sweep_duration_s` is not set).

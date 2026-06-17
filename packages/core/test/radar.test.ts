@@ -4,6 +4,7 @@ import { compileScenario } from "../src/compile.js";
 import { buildScene } from "../src/scene.js";
 import { applyPoseUpdate } from "../src/pose.js";
 import { createRadarKernel, buildRadarEnvConfig, buildRadarWasmConfig } from "../src/radar.js";
+import { marshalRadarSensorPose } from "../src/scene-marshal.js";
 import type { RadarSensor } from "../src/dsl.js";
 
 const scenario = {
@@ -77,13 +78,32 @@ describe("createRadarKernel", () => {
     expect(totalLit).toBeGreaterThan(0);
   });
 
-  it("places a dead-ahead target at azimuth 0, stable under vessel heading", () => {
-    // A target dead-ahead of the ego should land on azimuth ≈ 0 (bow-relative
-    // bearing) regardless of which way the ego points. spokes_per_rev=36 →
-    // 10° spacing, so allow one spoke of tolerance (and wrap-around at 2π).
-    const tol = (2 * Math.PI) / 36;
+  it("a bow-direction target lands on azimuth 0 for two vessel headings", () => {
+    // Bow is local +X. A target placed straight off the bow must read
+    // azimuth ≈ 0 (bow-relative bearing) regardless of vessel heading.
+    const tol = (2 * Math.PI) / 36; // one spoke (spokes_per_rev=36)
     const distFromZero = (az: number): number => Math.min(az, 2 * Math.PI - az);
-    const brightestAzimuth = (scene: THREE.Scene, sensorNode: THREE.Object3D): number => {
+
+    const probe = (
+      egoQuat: [number, number, number, number],
+      bowDirWorld: [number, number], // (X,Z) world direction of the bow
+    ): number => {
+      const { scene, sensorNode, entities } = getSensorNode();
+      applyPoseUpdate(entities, {
+        entityId: "ego",
+        pose: { position: [0, 0, 0], orientation: egoQuat },
+        time: 0,
+      });
+      scene.updateMatrixWorld(true);
+      // Place the ferry 120 m straight off the bow, measured from the sensor.
+      const host = marshalRadarSensorPose(sensorNode);
+      const ferry = scene.children.find((c) => c.name === "ferry")!;
+      ferry.position.set(
+        host.position[0] + bowDirWorld[0] * 120,
+        0,
+        host.position[2] + bowDirWorld[1] * 120,
+      );
+      ferry.updateMatrixWorld(true);
       const kernel = createRadarKernel({ scene, sensorNode, config: radarConfig });
       const frame = kernel.step(0);
       let best = 0;
@@ -100,36 +120,62 @@ describe("createRadarKernel", () => {
       return frame.spokes[best]!.azimuth;
     };
 
-    // Ego at identity (bow = −Z = North); target due ahead (North).
-    {
-      const { scene, sensorNode, entities } = getSensorNode();
-      applyPoseUpdate(entities, {
-        entityId: "ferry",
-        pose: { position: [0, 0, -80], orientation: [0, 0, 0, 1] },
-        time: 0,
-      });
-      scene.updateMatrixWorld(true);
-      expect(distFromZero(brightestAzimuth(scene, sensorNode))).toBeLessThan(tol);
-    }
+    // Identity: bow = +X.
+    expect(distFromZero(probe([0, 0, 0, 1], [1, 0]))).toBeLessThan(tol);
+    // Yaw +90° about +Y: bow (+X) rotates to −Z.
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0, "YXZ"));
+    expect(distFromZero(probe([q.x, q.y, q.z, q.w], [0, -1]))).toBeLessThan(tol);
+  });
 
-    // Ego yawed 90° so the bow points East (+X); target placed due East.
-    // A dead-ahead target must still read azimuth ≈ 0.
-    {
-      const { scene, sensorNode, entities } = getSensorNode();
-      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0, "YXZ"));
-      applyPoseUpdate(entities, {
-        entityId: "ego",
-        pose: { position: [0, 0, 0], orientation: [q.x, q.y, q.z, q.w] },
-        time: 0,
+  it("a static obstacle's return reconstructs to its true world position", () => {
+    // The viewer overlay/PPI place a return at host.position + range·[cos,sin]
+    // of (host.heading + azimuth). That reconstruction must land back on the
+    // obstacle — proving azimuth labelling and world geometry agree.
+    const probe = (obstacleXZ: [number, number]): { rx: number; rz: number } => {
+      const { scene, sensorNode } = getSensorNode(); // ego identity, bow = −Z (North)
+      const ferry = scene.children.find((c) => c.name === "ferry")!;
+      ferry.position.set(10000, 0, 10000); // move the default-spawn ferry out of the way
+      ferry.updateMatrixWorld(true);
+      const kernel = createRadarKernel({
+        scene,
+        sensorNode,
+        config: radarConfig,
+        staticObstacles: [
+          { position: [obstacleXZ[0], 5, obstacleXZ[1]], heading: 0, half_extents: [8, 5, 8] },
+        ],
       });
-      applyPoseUpdate(entities, {
-        entityId: "ferry",
-        pose: { position: [80, 0, 0], orientation: [0, 0, 0, 1] },
-        time: 0,
+      const frame = kernel.step(0);
+      const host = marshalRadarSensorPose(sensorNode);
+      let best = 0;
+      let bestSum = 0;
+      frame.spokes.forEach((s, i) => {
+        const sum = s.intensity.reduce((a, b) => a + b, 0);
+        if (sum > bestSum) {
+          bestSum = sum;
+          best = i;
+        }
       });
-      scene.updateMatrixWorld(true);
-      expect(distFromZero(brightestAzimuth(scene, sensorNode))).toBeLessThan(tol);
-    }
+      expect(bestSum).toBeGreaterThan(0);
+      const spoke = frame.spokes[best]!;
+      const bin = spoke.intensity.findIndex((v) => v > 0);
+      const range = ((bin + 0.5) / spoke.intensity.length) * radarConfig.range_m;
+      const wa = host.heading + spoke.azimuth;
+      kernel.dispose();
+      return {
+        rx: host.position[0] + Math.cos(wa) * range,
+        rz: host.position[2] + Math.sin(wa) * range,
+      };
+    };
+
+    // Obstacle at −Z: reconstructs onto the obstacle's near face (−Z).
+    const north = probe([0, -100]);
+    expect(Math.abs(north.rx)).toBeLessThan(15);
+    expect(north.rz).toBeLessThan(-80);
+
+    // Obstacle at +X: reconstructs onto the obstacle (+X).
+    const east = probe([100, 0]);
+    expect(east.rx).toBeGreaterThan(80);
+    expect(Math.abs(east.rz)).toBeLessThan(15);
   });
 
   it("returns no hits when scene is empty of other vessels", () => {

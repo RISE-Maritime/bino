@@ -263,12 +263,12 @@ densely as `float32` x/y/z, `point_stride = 12`. No pose is set on the
 PointCloud.
 
 **Radar (`radar_sweep`).** One `RadarSpoke` per azimuth. `azimuth` is in
-radians, **sensor-relative**: **0 = bow** (sensor forward, local −Z — the
-same forward axis as lidar/camera), increasing **clockwise** viewed from
-above, one full revolution (`0 … 2π`) per sweep. A target dead-ahead lands
-on azimuth 0 regardless of vessel heading. Each spoke carries `range_bins`
-intensity bytes (`uint8`), uniform from `0` to `range_m` (bin `j` centred
-at `(j + 0.5) · range_m / range_bins`). Per-spoke `timestamp` reflects the
+radians, **vessel-relative**: **0 = bow** (the vessel body forward, local
+**+X**), increasing **clockwise** viewed from above, one full revolution
+(`0 … 2π`) per sweep. A target straight off the bow reads azimuth 0
+regardless of vessel heading. Each spoke carries `range_bins` intensity
+bytes (`uint8`), uniform from `0` to `range_m` (bin `j` centred at
+`(j + 0.5) · range_m / range_bins`). Per-spoke `timestamp` reflects the
 intra-sweep acquisition time. No pose is set on the spokes.
 
 **Camera (`image_raw`).** `rgba8`, `step = width · 4`. Rows follow the GL
@@ -276,7 +276,8 @@ read-back order — **origin bottom-left** (first row is the bottom of the
 image), so top-left-origin viewers must flip vertically. The view is a
 pinhole camera looking down sensor-local −Z at `fov_deg`.
 
-All three share the same notion of forward (local −Z): lidar/camera point
-their +X/+Y/−Z axes there, and radar azimuth 0 is the bow. None of them is
-placed in a shared vessel frame on the wire — each is sensor-local and the
-consumer resolves it via the known sensor mounting.
+Note two distinct "forward" conventions in play: lidar/camera emit in a
+**sensor-local** frame whose forward is **−Z** (the camera look axis), while
+radar azimuth 0 is the **vessel-body** forward, **+X** (how hulls and mounts
+are authored). None of them is placed in a shared frame on the wire — each is
+sensor-local and the consumer resolves it via the known sensor mounting.

@@ -51,7 +51,10 @@ export function colMajorToRowMajor3x3(m: ArrayLike<number>): number[] {
 const tmpVec = new THREE.Vector3();
 const tmpQuat = new THREE.Quaternion();
 const tmpFwd = new THREE.Vector3();
-const FORWARD = new THREE.Vector3(0, 0, -1);
+// The vessel body frame is +X = bow (forward), ±Z = port/starboard, +Y = up —
+// how the hull models are authored (assets.ts: bow stations at +X) and how
+// mounts are interpreted (bow sensors at +X, beam sensors at ±Z).
+const FORWARD = new THREE.Vector3(1, 0, 0);
 
 /** Bearing of an entity's bow in the world X–Z plane.
  *
@@ -59,8 +62,7 @@ const FORWARD = new THREE.Vector3(0, 0, -1);
  *  where θ = atan2(Δz, Δx). To make azimuth 0 the bow (and to orient target
  *  boxes correctly), `heading` must be the bow's bearing in that same
  *  convention — NOT the three.js +Y Euler angle, which is a rotation angle in
- *  a different convention. The bow is the entity's local −Z (see frames.ts /
- *  the lidar+camera forward convention). */
+ *  a different convention. The bow is the entity's local +X. */
 export function bowBearingXZ(quat: THREE.Quaternion): number {
   tmpFwd.copy(FORWARD).applyQuaternion(quat);
   return Math.atan2(tmpFwd.z, tmpFwd.x);
