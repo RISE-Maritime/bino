@@ -4,13 +4,13 @@ import {
   uncover,
   encodePayloadFromTypeName,
   decodePayloadFromTypeName,
-} from "@rise-maritime/keelson-js";
-// Envelope's encode/decode methods aren't re-exported from the SDK's
-// public index — we reach into dist for them. The only alternative is
-// hand-rolling the protobuf wire format, which would silently rot if
-// the schema changes. Keep an eye on package version bumps.
-import { Envelope } from "@rise-maritime/keelson-js/dist/Envelope.js";
-import { PackedElementField_NumericType } from "@rise-maritime/keelson-js/dist/payloads/foxglove/PackedElementField.js";
+  Envelope,
+  PackedElementField_NumericType,
+} from "./keelson-sdk.js";
+// Generated payload types from the SDK — used to type the decode paths so a
+// schema drift fails at compile time rather than silently at runtime. All
+// SDK-internal imports are centralized in keelson-sdk.ts.
+import type { FrameTransform, RawImage, PointCloud, RadarSweep } from "./keelson-sdk.js";
 
 import type { PoseUpdate } from "./pose.js";
 import type { CameraFrame } from "./camera.js";
@@ -114,12 +114,7 @@ export function decodePoseEnvelope(bytes: Uint8Array): PoseUpdate | null {
   const env = unwrapEnvelope(bytes);
   if (!env) return null;
   const ft = decodePayloadFromTypeName(TYPE_FRAME_TRANSFORM, env.payload) as
-    | {
-        timestamp?: Date;
-        childFrameId?: string;
-        translation?: { x: number; y: number; z: number };
-        rotation?: { x: number; y: number; z: number; w: number };
-      }
+    | FrameTransform
     | undefined;
   if (!ft || !ft.translation || !ft.rotation || !ft.childFrameId) return null;
   const time = ft.timestamp ? dateToSeconds(ft.timestamp) : dateToSeconds(env.enclosedAt);
@@ -165,17 +160,7 @@ export interface DecodedCameraFrame {
 export function decodeCameraEnvelope(bytes: Uint8Array): DecodedCameraFrame | null {
   const env = unwrapEnvelope(bytes);
   if (!env) return null;
-  const img = decodePayloadFromTypeName(TYPE_RAW_IMAGE, env.payload) as
-    | {
-        timestamp?: Date;
-        frameId?: string;
-        width?: number;
-        height?: number;
-        encoding?: string;
-        step?: number;
-        data?: Uint8Array;
-      }
-    | undefined;
+  const img = decodePayloadFromTypeName(TYPE_RAW_IMAGE, env.payload) as RawImage | undefined;
   if (!img || !img.data) return null;
   return {
     pixels: img.data,
@@ -249,7 +234,10 @@ export function encodeRadarSweep(
 }
 
 export interface DecodedRadarSweep {
-  spokes: Array<{ azimuth: number; intensity: Uint8Array }>;
+  /** Per-spoke absolute acquisition time (seconds), preserved from the wire so
+   *  consumers can de-distort a rotating sweep. */
+  spokes: Array<{ azimuth: number; intensity: Uint8Array; time: number }>;
+  /** Frame time — the first spoke's timestamp (start of the sweep). */
   time: number;
   frameId: string;
 }
@@ -257,25 +245,17 @@ export interface DecodedRadarSweep {
 export function decodeRadarSweepEnvelope(bytes: Uint8Array): DecodedRadarSweep | null {
   const env = unwrapEnvelope(bytes);
   if (!env) return null;
-  const sweep = decodePayloadFromTypeName(TYPE_RADAR_SWEEP, env.payload) as
-    | {
-        spokes?: Array<{
-          azimuth?: number;
-          range?: number;
-          data?: Uint8Array;
-          timestamp?: Date;
-          frameId?: string;
-        }>;
-      }
-    | undefined;
+  const sweep = decodePayloadFromTypeName(TYPE_RADAR_SWEEP, env.payload) as RadarSweep | undefined;
   if (!sweep || !sweep.spokes) return null;
+  const fallback = dateToSeconds(env.enclosedAt);
   const first = sweep.spokes[0];
   return {
     spokes: sweep.spokes.map((s) => ({
       azimuth: s.azimuth ?? 0,
       intensity: s.data ?? new Uint8Array(0),
+      time: s.timestamp ? dateToSeconds(s.timestamp) : fallback,
     })),
-    time: first?.timestamp ? dateToSeconds(first.timestamp) : dateToSeconds(env.enclosedAt),
+    time: first?.timestamp ? dateToSeconds(first.timestamp) : fallback,
     frameId: first?.frameId ?? "",
   };
 }
@@ -283,14 +263,7 @@ export function decodeRadarSweepEnvelope(bytes: Uint8Array): DecodedRadarSweep |
 export function decodePointCloudEnvelope(bytes: Uint8Array): DecodedPointCloud | null {
   const env = unwrapEnvelope(bytes);
   if (!env) return null;
-  const pc = decodePayloadFromTypeName(TYPE_POINT_CLOUD, env.payload) as
-    | {
-        timestamp?: Date;
-        frameId?: string;
-        pointStride?: number;
-        data?: Uint8Array;
-      }
-    | undefined;
+  const pc = decodePayloadFromTypeName(TYPE_POINT_CLOUD, env.payload) as PointCloud | undefined;
   if (!pc || !pc.data) return null;
   const stride = pc.pointStride ?? 12;
   const count = Math.floor(pc.data.byteLength / stride);

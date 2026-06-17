@@ -116,6 +116,28 @@ describe("encodeRadarSweep / decodeRadarSweepEnvelope", () => {
     expect(Array.from(decoded!.spokes[1]!.intensity)).toEqual([0, 0, 0, 255]);
     expect(decoded!.time).toBeCloseTo(1.25, 3);
   });
+
+  it("preserves per-spoke acquisition time (frame.time + intra-sweep offset)", async () => {
+    const { encodeRadarSweep, decodeRadarSweepEnvelope } = await import("../src/keelson.js");
+    // Kernel emits intra-sweep offsets relative to frame start; absolute spoke
+    // time must come out as frame.time + offset, not collapsed to frame.time.
+    const swept = {
+      spokes: [
+        { azimuth: 0, intensity: new Uint8Array([1]), timestamp: 0 },
+        { azimuth: Math.PI / 2, intensity: new Uint8Array([2]), timestamp: 0.25 },
+        { azimuth: Math.PI, intensity: new Uint8Array([3]), timestamp: 0.5 },
+      ],
+      time: 1000,
+    };
+    const { bytes } = encodeRadarSweep(swept, "ego", "main_radar", 200);
+    const decoded = decodeRadarSweepEnvelope(bytes);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.spokes[0]!.time).toBeCloseTo(1000.0, 3);
+    expect(decoded!.spokes[1]!.time).toBeCloseTo(1000.25, 3);
+    expect(decoded!.spokes[2]!.time).toBeCloseTo(1000.5, 3);
+    // Frame time tracks the first spoke (start of sweep).
+    expect(decoded!.time).toBeCloseTo(1000.0, 3);
+  });
 });
 
 describe("encodePointCloud / decodePointCloudEnvelope", () => {
