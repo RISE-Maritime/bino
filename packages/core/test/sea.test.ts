@@ -98,6 +98,7 @@ describe("createSeaSurface", () => {
     const compiled = compileScenario({
       name: "sea-test",
       anchor: { lat: 54, lon: 10, height: 0 },
+      keelson: { base_path: "bino" },
       vessels: [{ id: "ego", model: "x", pose_source: { type: "zenoh", topic: "x" }, sensors: [] }],
       modes: { rendering: "replace", clock: "wall", determinism: "relaxed" },
     });

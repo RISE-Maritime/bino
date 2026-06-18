@@ -3,6 +3,8 @@
 
 scenario:
   name: port_approach
+  keelson:
+    base_path: bino
   anchor:
     lat: 57.6850
     lon: 11.8400

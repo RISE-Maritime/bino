@@ -1,6 +1,8 @@
 # Validation — dusk lighting, clear weather. Camera frames should be darker.
 scenario:
   name: val_dusk
+  keelson:
+    base_path: bino
   anchor:
     lat: 54.3700
     lon: 10.1850

@@ -6,6 +6,7 @@ import { buildScene } from "../src/scene.js";
 const minimal = {
   name: "smoke",
   anchor: { lat: 54.3233, lon: 10.1394, height: 0 },
+  keelson: { base_path: "bino" },
   vessels: [
     {
       id: "ego",

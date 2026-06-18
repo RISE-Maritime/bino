@@ -20,6 +20,7 @@ const itGl = glAvailable ? it : it.skip;
 const scenario = {
   name: "service-smoke",
   anchor: { lat: 54.3233, lon: 10.1394, height: 0 },
+  keelson: { base_path: "bino" },
   vessels: [
     {
       id: "ego",

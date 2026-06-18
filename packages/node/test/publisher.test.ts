@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { decodeCameraEnvelope, decodePointCloudEnvelope, DEFAULT_NAMING } from "@bino/core";
+import { decodeCameraEnvelope, decodePointCloudEnvelope } from "@bino/core";
 import { createSensorPublisher, type SensorMeta } from "../src/publisher.js";
 import type { FrameEvent } from "../src/runner.js";
 
@@ -24,8 +24,16 @@ function makeSession(): {
 }
 
 const sensors: SensorMeta[] = [
-  { sensorId: "ego/bow_camera", vesselId: "ego", topicSensorId: "bow_camera", type: "camera" },
-  { sensorId: "ego/main_lidar", vesselId: "ego", topicSensorId: "main_lidar", type: "lidar" },
+  {
+    sensorId: "ego/bow_camera",
+    identity: { base_path: "bino", entity_id: "ego", source_id: "bow_camera" },
+    type: "camera",
+  },
+  {
+    sensorId: "ego/main_lidar",
+    identity: { base_path: "bino", entity_id: "ego", source_id: "main_lidar" },
+    type: "lidar",
+  },
 ];
 
 const sampleFrame: FrameEvent = {
@@ -102,8 +110,7 @@ describe("createSensorPublisher", () => {
     const overridden: SensorMeta[] = [
       {
         sensorId: "ego/bow_camera",
-        vesselId: "ego",
-        topicSensorId: "bow_camera",
+        identity: { base_path: "bino", entity_id: "ego", source_id: "bow_camera" },
         type: "camera",
         topicOverride: "custom/topic/foo",
       },
@@ -122,8 +129,7 @@ describe("createSensorPublisher", () => {
     const overridden: SensorMeta[] = [
       {
         sensorId: "ego/bow_camera",
-        vesselId: "ego",
-        topicSensorId: "bow_camera",
+        identity: { base_path: "bino", entity_id: "ego", source_id: "bow_camera" },
         type: "camera",
         // Inject-mode case: match the real platform's child_frame_id.
         frameId: "ssrs18-demo-frame-camera-bow",
@@ -138,16 +144,17 @@ describe("createSensorPublisher", () => {
     expect(decodeCameraEnvelope(puts[0]!.payload)!.frameId).toBe("ssrs18-demo-frame-camera-bow");
   });
 
-  it("respects a custom KeelsonNaming", async () => {
+  it("honors per-sensor identity overrides in the key (ADR-004)", async () => {
     const { session, puts } = makeSession();
-    const publisher = createSensorPublisher({
-      session,
-      sensors,
-      naming: { ...DEFAULT_NAMING, base_path: "rise" },
-    });
-    await publisher.publish(sampleFrame);
-    expect(puts.find((p) => p.keyExpr.includes("image_raw"))!.keyExpr).toBe(
-      "rise/@v0/ego/pubsub/image_raw/bow_camera",
-    );
+    const overridden: SensorMeta[] = [
+      {
+        sensorId: "ego/bow_camera",
+        identity: { base_path: "rise", entity_id: "ego_platform", source_id: "cam_fwd" },
+        type: "camera",
+      },
+    ];
+    const publisher = createSensorPublisher({ session, sensors: overridden });
+    await publisher.publish({ ...sampleFrame, outputs: [sampleFrame.outputs[0]!] });
+    expect(puts[0]!.keyExpr).toBe("rise/@v0/ego_platform/pubsub/image_raw/cam_fwd");
   });
 });

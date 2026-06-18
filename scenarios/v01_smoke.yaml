@@ -7,6 +7,8 @@
 
 scenario:
   name: v01_smoke
+  keelson:
+    base_path: bino
   anchor:
     lat: 54.3233
     lon: 10.1394

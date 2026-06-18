@@ -27,17 +27,37 @@ export const ZenohPoseSource = z.object({
  *  real AIS/GNSS/MAVLink feed actually publishes. Bino constructs the per-
  *  subject keys from this identity and projects the fix through the scenario
  *  anchor itself. Own-ship uses bare keys; observed traffic sets target_id
- *  (e.g. "mmsi_245060000") for keelson's @target extension. See ADR-002. */
+ *  (e.g. "mmsi_245060000") for keelson's @target extension. See ADR-002.
+ *
+ *  Per ADR-004, `base_path` and `entity_id` are optional here and inherit
+ *  through the cascade (vessel → scenario); `entity_id` defaults to the
+ *  vessel id. Observed traffic should set `entity_id` to the *receiving*
+ *  platform (not the contact) — compile-time warns when a `target_id` feed
+ *  leaves it inherited. `source_id` stays explicit. */
 export const KeelsonNavPoseSource = z.object({
   type: z.literal("keelson_nav"),
-  base_path: z.string().min(1).default("keelson"),
-  entity_id: z.string().min(1),
+  base_path: z.string().min(1).optional(),
+  entity_id: z.string().min(1).optional(),
   source_id: z.string().min(1),
   target_id: z.string().min(1).optional(),
 });
 
 export const PoseSource = z.discriminatedUnion("type", [ZenohPoseSource, KeelsonNavPoseSource]);
 export type PoseSource = z.infer<typeof PoseSource>;
+
+/** Per-sensor keelson key-identity overrides (ADR-004). Each segment, when
+ *  set, overrides the value cascading down from the vessel / scenario. Unset
+ *  segments inherit: `base_path` and `entity_id` from the vessel (then
+ *  scenario), `source_id` defaults to the sensor id. `subject` and the `@v0`
+ *  version are always derived, never set here. To emit a deliberately
+ *  non-keelson key, use `publish_topic_override` instead (it bypasses
+ *  resolution entirely). */
+export const SensorKeelson = z.object({
+  base_path: z.string().min(1).optional(),
+  entity_id: z.string().min(1).optional(),
+  source_id: z.string().min(1).optional(),
+});
+export type SensorKeelson = z.infer<typeof SensorKeelson>;
 
 export const CameraSensor = z.object({
   id: z.string().min(1),
@@ -58,6 +78,8 @@ export const CameraSensor = z.object({
    *  child_frame_id to merge into the real sensor's frame. Defaults to
    *  "{vesselId}/{sensorId}" when unset. */
   frame_id: z.string().min(1).optional(),
+  /** Per-sensor keelson key-identity overrides (ADR-004). */
+  keelson: SensorKeelson.optional(),
 });
 export type CameraSensor = z.infer<typeof CameraSensor>;
 
@@ -74,6 +96,8 @@ export const LidarSensor = z.object({
   publish_topic_override: z.string().min(1).optional(),
   /** Override the in-payload frame_id (see CameraSensor.frame_id). */
   frame_id: z.string().min(1).optional(),
+  /** Per-sensor keelson key-identity overrides (ADR-004). */
+  keelson: SensorKeelson.optional(),
 });
 export type LidarSensor = z.infer<typeof LidarSensor>;
 
@@ -91,6 +115,8 @@ export const RadarSensor = z.object({
   publish_topic_override: z.string().min(1).optional(),
   /** Override the in-payload frame_id (see CameraSensor.frame_id). */
   frame_id: z.string().min(1).optional(),
+  /** Per-sensor keelson key-identity overrides (ADR-004). */
+  keelson: SensorKeelson.optional(),
 });
 export type RadarSensor = z.infer<typeof RadarSensor>;
 
@@ -104,6 +130,16 @@ export const VesselDimensions = z.object({
 });
 export type VesselDimensions = z.infer<typeof VesselDimensions>;
 
+/** Per-vessel keelson key-identity overrides (ADR-004). Sits between the
+ *  scenario realm and each emitter in the cascade; inherited by this vessel's
+ *  pose subscription and its sensor outputs unless an emitter overrides
+ *  further. No `source_id` — that is inherently per-emitter. */
+export const VesselKeelson = z.object({
+  base_path: z.string().min(1).optional(),
+  entity_id: z.string().min(1).optional(),
+});
+export type VesselKeelson = z.infer<typeof VesselKeelson>;
+
 export const Vessel = z
   .object({
     id: z.string().min(1),
@@ -111,6 +147,8 @@ export const Vessel = z
     pose_source: PoseSource,
     sensors: z.array(Sensor).default([]),
     dimensions: VesselDimensions.optional(),
+    /** Per-vessel keelson key-identity overrides (ADR-004). */
+    keelson: VesselKeelson.optional(),
   })
   .superRefine((v, ctx) => {
     const ids = new Set<string>();
@@ -185,14 +223,15 @@ export const Terrain = z.object({
 });
 export type Terrain = z.infer<typeof Terrain>;
 
-/** Keelson topic naming. `base_path` is the realm (first key segment) of
- *  every published sensor topic; defaults mirror keelson.ts DEFAULT_NAMING,
- *  a drift test keeps them in sync. Lets a scenario publish into the
- *  consumer's namespace without code changes. (source_id / parent_frame_id
- *  were dropped in ADR-002: sensor topics use the sensor id as the keelson
- *  source segment, and Bino never publishes frame_transform.) */
+/** Keelson topic naming — the root of the key-identity cascade (ADR-004).
+ *  `base_path` is the realm (first key segment) shared by every key Bino
+ *  touches, on both the pose-input and sensor-output paths. It is
+ *  **mandatory, with no default**: Bino emits onto a shared bus, and a silent
+ *  default is how synthetic data collides with — or is mistaken for — real
+ *  data. Declared once here and inherited by every emitter (vessel → sensor /
+ *  pose source); per-emitter override stays optional. */
 export const Keelson = z.object({
-  base_path: z.string().min(1).default("bino"),
+  base_path: z.string().min(1),
 });
 export type Keelson = z.infer<typeof Keelson>;
 
@@ -204,7 +243,7 @@ export const Scenario = z
     modes: Modes,
     environment: Environment.default({}),
     terrain: Terrain.optional(),
-    keelson: Keelson.default({}),
+    keelson: Keelson,
   })
   .superRefine((s, ctx) => {
     const ids = new Set<string>();

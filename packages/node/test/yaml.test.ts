@@ -18,6 +18,8 @@ async function withTempScenario(yaml: string, fn: (path: string) => Promise<void
 const validYaml = `
 scenario:
   name: test-loader
+  keelson:
+    base_path: bino
   anchor:
     lat: 54.3233
     lon: 10.1394

@@ -49,15 +49,79 @@ export interface KeelsonNaming {
   base_path: string;
 }
 
+/** A conventional realm for tests and the optional service-level realm
+ *  override. NOTE: as of ADR-004 this is **not** a schema default —
+ *  `scenario.keelson.base_path` is mandatory. It survives only as a test
+ *  convenience and the `poseTopicKey` default argument. */
 export const DEFAULT_NAMING: KeelsonNaming = {
   base_path: "bino",
 };
 
+/** A fully-resolved keelson key identity for one emitter — the four identity
+ *  segments of `{base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}
+ *  [/@target/{target_id}]`. Produced by the cascade resolvers below; `subject`
+ *  and the `@v0` version are supplied by the per-subject key builders, never
+ *  carried here. `target_id` is input-side only. See ADR-004. */
+export interface KeelsonKeyIdentity {
+  base_path: string;
+  entity_id: string;
+  source_id: string;
+  /** keelson @target extension for observed (non-own-ship) entities (input). */
+  target_id?: string;
+}
+
+interface IdentityOverride {
+  base_path?: string | undefined;
+  entity_id?: string | undefined;
+}
+interface SensorIdentityOverride extends IdentityOverride {
+  source_id?: string | undefined;
+}
+
+/** Resolve a sensor's OUTPUT key identity through the ADR-004 cascade:
+ *  sensor → vessel → scenario for `base_path`/`entity_id`; `source_id`
+ *  defaults to the sensor id. */
+export function resolveOutputIdentity(p: {
+  scenarioBasePath: string;
+  vesselId: string;
+  vesselKeelson?: IdentityOverride;
+  sensorId: string;
+  sensorKeelson?: SensorIdentityOverride;
+}): KeelsonKeyIdentity {
+  return {
+    base_path: p.sensorKeelson?.base_path ?? p.vesselKeelson?.base_path ?? p.scenarioBasePath,
+    entity_id: p.sensorKeelson?.entity_id ?? p.vesselKeelson?.entity_id ?? p.vesselId,
+    source_id: p.sensorKeelson?.source_id ?? p.sensorId,
+  };
+}
+
+/** Resolve a vessel's pose-INPUT (keelson_nav) key identity through the same
+ *  cascade: pose source → vessel → scenario for `base_path`/`entity_id`.
+ *  `entity_id` defaults to the vessel id (own-ship); observed traffic should
+ *  set it explicitly to the receiving platform. `source_id` is explicit. */
+export function resolveNavIdentity(p: {
+  scenarioBasePath: string;
+  vesselId: string;
+  vesselKeelson?: IdentityOverride;
+  poseSource: {
+    base_path?: string | undefined;
+    entity_id?: string | undefined;
+    source_id: string;
+    target_id?: string | undefined;
+  };
+}): KeelsonKeyIdentity {
+  return {
+    base_path: p.poseSource.base_path ?? p.vesselKeelson?.base_path ?? p.scenarioBasePath,
+    entity_id: p.poseSource.entity_id ?? p.vesselKeelson?.entity_id ?? p.vesselId,
+    source_id: p.poseSource.source_id,
+    ...(p.poseSource.target_id ? { target_id: p.poseSource.target_id } : {}),
+  };
+}
+
 // frame_transform is an INPUT subject for Bino (pose injection) — Bino never
 // publishes it. encodePoseUpdate / poseTopicKey exist only to fabricate
 // frame_transform envelopes in tests, so the source/parent segments they need
-// are fixed constants rather than configuration. (Sensor output keys use the
-// sensor id as the keelson source segment; see cameraTopicKey et al.)
+// are fixed constants rather than configuration.
 const POSE_SOURCE_ID = "sim";
 const POSE_PARENT_FRAME_ID = "world";
 
@@ -65,25 +129,16 @@ export function poseTopicKey(naming: KeelsonNaming, vesselId: string): string {
   return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_FRAME_TRANSFORM, POSE_SOURCE_ID);
 }
 
-export function cameraTopicKey(naming: KeelsonNaming, vesselId: string, sensorId: string): string {
-  return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_IMAGE_RAW, sensorId);
+export function cameraTopicKey(id: KeelsonKeyIdentity): string {
+  return construct_pubSub_key(id.base_path, id.entity_id, SUBJECT_IMAGE_RAW, id.source_id);
 }
 
-export function lidarTopicKey(naming: KeelsonNaming, vesselId: string, sensorId: string): string {
-  return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_POINT_CLOUD, sensorId);
+export function lidarTopicKey(id: KeelsonKeyIdentity): string {
+  return construct_pubSub_key(id.base_path, id.entity_id, SUBJECT_POINT_CLOUD, id.source_id);
 }
 
-export function radarTopicKey(naming: KeelsonNaming, vesselId: string, sensorId: string): string {
-  return construct_pubSub_key(naming.base_path, vesselId, SUBJECT_RADAR_SWEEP, sensorId);
-}
-
-/** Identity of a decomposed-nav feed for one vessel (input side). */
-export interface KeelsonNavNaming {
-  base_path: string;
-  entity_id: string;
-  source_id: string;
-  /** keelson @target extension for observed (non-own-ship) entities. */
-  target_id?: string;
+export function radarTopicKey(id: KeelsonKeyIdentity): string {
+  return construct_pubSub_key(id.base_path, id.entity_id, SUBJECT_RADAR_SWEEP, id.source_id);
 }
 
 export interface NavTopicKeys {
@@ -94,9 +149,9 @@ export interface NavTopicKeys {
 }
 
 /** Build the per-subject keys Bino subscribes to for a decomposed-nav vessel. */
-export function navTopicKeys(n: KeelsonNavNaming): NavTopicKeys {
+export function navTopicKeys(id: KeelsonKeyIdentity): NavTopicKeys {
   const key = (subject: string): string =>
-    construct_pubSub_key(n.base_path, n.entity_id, subject, n.source_id, n.target_id);
+    construct_pubSub_key(id.base_path, id.entity_id, subject, id.source_id, id.target_id);
   return {
     locationFix: key(SUBJECT_LOCATION_FIX),
     heading: key(SUBJECT_HEADING),
@@ -175,10 +230,8 @@ export function decodePoseEnvelope(bytes: Uint8Array): PoseUpdate | null {
 
 export function encodeCameraFrame(
   frame: CameraFrame,
-  vesselId: string,
-  sensorId: string,
-  naming: KeelsonNaming = DEFAULT_NAMING,
-  frameId: string = `${vesselId}/${sensorId}`,
+  id: KeelsonKeyIdentity,
+  frameId: string = `${id.entity_id}/${id.source_id}`,
 ): EncodedTopic {
   const img = {
     timestamp: secondsToDate(frame.time),
@@ -190,7 +243,7 @@ export function encodeCameraFrame(
     data: frame.pixels,
   };
   const bytes = envelopeBytes(TYPE_RAW_IMAGE, img, secondsToDate(frame.time));
-  return { keyExpr: cameraTopicKey(naming, vesselId, sensorId), bytes };
+  return { keyExpr: cameraTopicKey(id), bytes };
 }
 
 export interface DecodedCameraFrame {
@@ -221,10 +274,8 @@ export function decodeCameraEnvelope(bytes: Uint8Array): DecodedCameraFrame | nu
 
 export function encodePointCloud(
   frame: LidarFrame,
-  vesselId: string,
-  sensorId: string,
-  naming: KeelsonNaming = DEFAULT_NAMING,
-  frameId: string = `${vesselId}/${sensorId}`,
+  id: KeelsonKeyIdentity,
+  frameId: string = `${id.entity_id}/${id.source_id}`,
 ): EncodedTopic {
   const data = new Uint8Array(frame.points.buffer, frame.points.byteOffset, frame.count * 3 * 4);
   const pc = {
@@ -240,7 +291,7 @@ export function encodePointCloud(
     data,
   };
   const bytes = envelopeBytes(TYPE_POINT_CLOUD, pc, secondsToDate(frame.time));
-  return { keyExpr: lidarTopicKey(naming, vesselId, sensorId), bytes };
+  return { keyExpr: lidarTopicKey(id), bytes };
 }
 
 export interface DecodedPointCloud {
@@ -252,11 +303,9 @@ export interface DecodedPointCloud {
 
 export function encodeRadarSweep(
   frame: RadarFrame,
-  vesselId: string,
-  sensorId: string,
+  id: KeelsonKeyIdentity,
   range_m: number,
-  naming: KeelsonNaming = DEFAULT_NAMING,
-  frameId: string = `${vesselId}/${sensorId}`,
+  frameId: string = `${id.entity_id}/${id.source_id}`,
 ): EncodedTopic {
   const ts = secondsToDate(frame.time);
   const sweep = {
@@ -282,7 +331,7 @@ export function encodeRadarSweep(
     })),
   };
   const bytes = envelopeBytes(TYPE_RADAR_SWEEP, sweep, ts);
-  return { keyExpr: radarTopicKey(naming, vesselId, sensorId), bytes };
+  return { keyExpr: radarTopicKey(id), bytes };
 }
 
 export interface DecodedRadarSweep {

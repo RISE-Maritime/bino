@@ -8,6 +8,7 @@ import { createCameraKernel } from "../src/camera.js";
 const scenario = {
   name: "camera-test",
   anchor: { lat: 0, lon: 0, height: 0 },
+  keelson: { base_path: "bino" },
   vessels: [
     {
       id: "ego",

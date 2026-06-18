@@ -53,6 +53,7 @@ function triangleCount(group: THREE.Group): number {
 const scenario = {
   name: "lidar-bench",
   anchor: { lat: 54.37, lon: 10.185, height: 0 },
+  keelson: { base_path: "bino" },
   vessels: [
     {
       id: "ego",

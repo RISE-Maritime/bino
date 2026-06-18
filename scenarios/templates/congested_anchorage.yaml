@@ -3,6 +3,8 @@
 
 scenario:
   name: congested_anchorage
+  keelson:
+    base_path: bino
   anchor:
     lat: 1.2200
     lon: 103.7500

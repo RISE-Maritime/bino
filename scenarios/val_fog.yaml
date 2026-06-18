@@ -1,6 +1,8 @@
 # Validation — heavy fog, no rain. Lidar range should be heavily reduced.
 scenario:
   name: val_fog
+  keelson:
+    base_path: bino
   anchor:
     lat: 54.3700
     lon: 10.1850

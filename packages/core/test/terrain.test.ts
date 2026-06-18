@@ -126,6 +126,7 @@ describe("buildTerrainMesh", () => {
     const compiled = compileScenario({
       name: "with-terrain",
       anchor: KIEL,
+      keelson: { base_path: "bino" },
       vessels: [
         {
           id: "ego",
@@ -151,6 +152,7 @@ describe("buildTerrainMesh", () => {
       const compiled = {
         name: "no-terrain",
         anchor: KIEL,
+        keelson: { base_path: "bino" },
         vessels: [],
         modes: {
           rendering: "replace" as const,

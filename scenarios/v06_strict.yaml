@@ -13,6 +13,8 @@
 
 scenario:
   name: v06_strict
+  keelson:
+    base_path: bino
   anchor:
     lat: 54.32
     lon: 10.15

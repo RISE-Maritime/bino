@@ -12,6 +12,7 @@ scenario:
   anchor: Anchor # required
   vessels: [Vessel, ...] # at least one
   modes: Modes # required
+  keelson: Keelson # required (key-identity cascade root; see Keelson identity)
   environment: Environment # optional (defaults shown below)
   terrain: Terrain # optional
 ```
@@ -66,13 +67,14 @@ bathymetry for the given bounding box.
 
 ## Vessels
 
-| Field         | Type             | Description                          |
-| ------------- | ---------------- | ------------------------------------ |
-| `id`          | string           | Unique vessel identifier             |
-| `model`       | string           | Asset registry name (see below)      |
-| `pose_source` | PoseSource       | Where poses come from                |
-| `sensors`     | Sensor[]         | List of sensors (default: [])        |
-| `dimensions`  | VesselDimensions | Override model dimensions (optional) |
+| Field         | Type             | Description                                                        |
+| ------------- | ---------------- | ------------------------------------------------------------------ |
+| `id`          | string           | Unique vessel identifier                                           |
+| `model`       | string           | Asset registry name (see below)                                    |
+| `pose_source` | PoseSource       | Where poses come from                                              |
+| `sensors`     | Sensor[]         | List of sensors (default: [])                                      |
+| `dimensions`  | VesselDimensions | Override model dimensions (optional)                               |
+| `keelson`     | VesselKeelson    | Per-vessel key-identity overrides (optional; see Keelson identity) |
 
 ### PoseSource
 
@@ -94,16 +96,20 @@ AIS/GNSS/MAVLink feed publishes. Bino subscribes to `location_fix` +
 `anchor` itself. Own-ship uses bare keys; observed traffic sets `target_id`
 for keelson's `@target` extension.
 
-| Field       | Type           | Description                                            |
-| ----------- | -------------- | ----------------------------------------------------- |
-| `type`      | `"keelson_nav"`|                                                       |
-| `base_path` | string         | realm of the source feed (default `keelson`)          |
-| `entity_id` | string         | the publishing platform's entity id                   |
-| `source_id` | string         | the source producing nav (may contain `/`)            |
-| `target_id` | string         | optional — e.g. `mmsi_245060000` for observed traffic |
+| Field       | Type            | Description                                                                   |
+| ----------- | --------------- | ----------------------------------------------------------------------------- |
+| `type`      | `"keelson_nav"` |                                                                               |
+| `base_path` | string          | optional — inherits the cascade (vessel → scenario) when unset                |
+| `entity_id` | string          | optional — inherits the vessel id when unset; set to the receiver for traffic |
+| `source_id` | string          | the source producing nav, e.g. `gnss_compass`, `ais` (may contain `/`)        |
+| `target_id` | string          | optional — e.g. `mmsi_245060000` for observed traffic (`@target`)             |
 
 Keys built as `{base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}` (with
-`/@target/{target_id}` appended when set), for each of the four subjects.
+`/@target/{target_id}` appended when set), for each of the four subjects. The
+`base_path` and `entity_id` segments resolve through the cascade in
+[Keelson identity](#keelson-identity-key-cascade); compilation **warns** when a
+feed sets `target_id` (observed traffic) but leaves `entity_id` resolving to the
+vessel itself, since the receiving platform was likely meant to be named.
 
 ### VesselDimensions
 
@@ -128,9 +134,9 @@ Sensor placement in the vessel's body frame.
 | `x`         | number | --      | Longitudinal offset from amidships (m, +fwd) |
 | `y`         | number | --      | Vertical offset from waterline (m, +up)      |
 | `z`         | number | --      | Lateral offset from centreline (m, +stbd)    |
-| `yaw_deg`   | number | 0       | Pan about up (+Y); 0 = over the bow           |
+| `yaw_deg`   | number | 0       | Pan about up (+Y); 0 = over the bow          |
 | `pitch_deg` | number | 0       | Elevation about starboard (+Z)               |
-| `roll_deg`  | number | 0       | Roll about the bow (+X)                       |
+| `roll_deg`  | number | 0       | Roll about the bow (+X)                      |
 
 Body frame: **X-forward, Y-up, Z-starboard** (ADR-003). For the camera, the
 `−Z` look axis is aimed at the bow, so `yaw = 0` looks over the bow; lidar and
@@ -138,44 +144,47 @@ radar are 360°-native and emit in the body frame regardless of mount yaw.
 
 ### Camera (`type: "camera"`)
 
-| Field                    | Type            | Default | Constraints            |
-| ------------------------ | --------------- | ------- | ---------------------- |
-| `id`                     | string          | --      |                        |
-| `fov_deg`                | number          | --      | (0, 180]               |
-| `resolution`             | [width, height] | --      | positive integers      |
-| `rate_hz`                | number          | --      | > 0                    |
-| `phase_offset_s`         | number          | 0       | scheduling offset      |
-| `exposure_time_s`        | number          | 0       | exposure interval (s)  |
-| `publish_topic_override` | string          | --      | override Keelson topic |
-| `frame_id`               | string          | --      | override payload frame_id (default `{vessel}/{sensor}`) |
+| Field                    | Type            | Default | Constraints                                              |
+| ------------------------ | --------------- | ------- | -------------------------------------------------------- |
+| `id`                     | string          | --      |                                                          |
+| `fov_deg`                | number          | --      | (0, 180]                                                 |
+| `resolution`             | [width, height] | --      | positive integers                                        |
+| `rate_hz`                | number          | --      | > 0                                                      |
+| `phase_offset_s`         | number          | 0       | scheduling offset                                        |
+| `exposure_time_s`        | number          | 0       | exposure interval (s)                                    |
+| `publish_topic_override` | string          | --      | override Keelson topic (bypasses identity resolution)    |
+| `frame_id`               | string          | --      | override payload frame_id (default `{vessel}/{sensor}`)  |
+| `keelson`                | SensorKeelson   | --      | per-sensor key-identity overrides (see Keelson identity) |
 
 ### Lidar (`type: "lidar"`)
 
-| Field                    | Type   | Default    | Constraints            |
-| ------------------------ | ------ | ---------- | ---------------------- |
-| `id`                     | string | --         |                        |
-| `channels`               | int    | --         | > 0                    |
-| `range_m`                | number | --         | > 0                    |
-| `rate_hz`                | number | --         | > 0                    |
-| `phase_offset_s`         | number | 0          | scheduling offset      |
-| `fov_h_deg`              | number | 360        | (0, 360]               |
-| `azimuths`               | int    | = channels | horizontal samples     |
-| `publish_topic_override` | string | --         | override Keelson topic |
-| `frame_id`               | string | --         | override payload frame_id (default `{vessel}/{sensor}`) |
+| Field                    | Type          | Default    | Constraints                                              |
+| ------------------------ | ------------- | ---------- | -------------------------------------------------------- |
+| `id`                     | string        | --         |                                                          |
+| `channels`               | int           | --         | > 0                                                      |
+| `range_m`                | number        | --         | > 0                                                      |
+| `rate_hz`                | number        | --         | > 0                                                      |
+| `phase_offset_s`         | number        | 0          | scheduling offset                                        |
+| `fov_h_deg`              | number        | 360        | (0, 360]                                                 |
+| `azimuths`               | int           | = channels | horizontal samples                                       |
+| `publish_topic_override` | string        | --         | override Keelson topic (bypasses identity resolution)    |
+| `frame_id`               | string        | --         | override payload frame_id (default `{vessel}/{sensor}`)  |
+| `keelson`                | SensorKeelson | --         | per-sensor key-identity overrides (see Keelson identity) |
 
 ### Marine Radar (`type: "radar_marine"`)
 
-| Field                    | Type   | Default | Constraints            |
-| ------------------------ | ------ | ------- | ---------------------- |
-| `id`                     | string | --      |                        |
-| `range_m`                | number | --      | > 0                    |
-| `rotation_rate_hz`       | number | --      | > 0                    |
-| `phase_offset_s`         | number | 0       | scheduling offset      |
-| `beam_width_deg`         | number | --      | (0, 360]               |
-| `spokes_per_rev`         | int    | --      | > 0                    |
-| `range_bins`             | int    | --      | > 0                    |
-| `publish_topic_override` | string | --      | override Keelson topic |
-| `frame_id`               | string | --      | override payload frame_id (default `{vessel}/{sensor}`) |
+| Field                    | Type          | Default | Constraints                                              |
+| ------------------------ | ------------- | ------- | -------------------------------------------------------- |
+| `id`                     | string        | --      |                                                          |
+| `range_m`                | number        | --      | > 0                                                      |
+| `rotation_rate_hz`       | number        | --      | > 0                                                      |
+| `phase_offset_s`         | number        | 0       | scheduling offset                                        |
+| `beam_width_deg`         | number        | --      | (0, 360]                                                 |
+| `spokes_per_rev`         | int           | --      | > 0                                                      |
+| `range_bins`             | int           | --      | > 0                                                      |
+| `publish_topic_override` | string        | --      | override Keelson topic (bypasses identity resolution)    |
+| `frame_id`               | string        | --      | override payload frame_id (default `{vessel}/{sensor}`)  |
+| `keelson`                | SensorKeelson | --      | per-sensor key-identity overrides (see Keelson identity) |
 
 ## Modes
 
@@ -216,12 +225,38 @@ Built-in named models with default dimensions:
 Unknown model names fall back to 80 m x 14 m x 4 m with no
 superstructure.
 
+## Keelson identity (key cascade)
+
+Every key Bino touches has the shape
+`{base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}[/@target/{target_id}]`.
+The four **identity** segments resolve through one cascade — the same rules for
+sensor **output** and pose **input** (ADR-004). `subject` and the `@v0` version
+are always derived, never set.
+
+| Segment     | Resolution                                                         | Default               |
+| ----------- | ------------------------------------------------------------------ | --------------------- |
+| `base_path` | sensor/pose → vessel → **scenario** (`scenario.keelson.base_path`) | none — **mandatory**  |
+| `entity_id` | sensor/pose → vessel (`vessel.keelson.entity_id`)                  | the vessel id         |
+| `source_id` | sensor (`sensor.keelson.source_id`) / pose source (explicit)       | output: the sensor id |
+| `target_id` | pose source only (observed traffic `@target`)                      | none — not on output  |
+
+- **`scenario.keelson`** — `{ base_path: string }`. Mandatory, no default: Bino
+  emits onto a shared bus, so the realm must be declared explicitly.
+- **`vessel.keelson`** — `{ base_path?, entity_id? }`. Optional overrides for one
+  vessel; inherited by its pose subscription and all its sensors.
+- **`sensor.keelson`** — `{ base_path?, entity_id?, source_id? }`. Optional
+  per-sensor overrides.
+
+Resolved **output** keys must be unique scenario-wide — compilation fails on a
+collision. `publish_topic_override` bypasses resolution entirely and is the only
+way to emit a deliberately non-keelson key.
+
 ## Topic conventions
 
-Default Keelson topic key per sensor:
+Default Keelson output key per sensor (entity = vessel id, source = sensor id):
 
 ```
-{base}/@v0/{vessel_id}/pubsub/{subject}/{sensor_id}
+{base_path}/@v0/{vessel_id}/pubsub/{subject}/{sensor_id}
 ```
 
 Subjects by sensor type:
@@ -237,9 +272,11 @@ Pose input (frame_transform source):
 
 Pose input (keelson_nav source): the four decomposed subjects
 `location_fix`, `heading_true_north_deg`, `pitch_deg`, `roll_deg` under
-`{base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}`. Bino owns the
-geodetic→scene projection (via `anchor`) and the heading→orientation
-conversion; the renderer never sees keelson frames.
+`{base_path}/@v0/{entity_id}/pubsub/{subject}/{source_id}`, with
+`/@target/{target_id}` appended for observed traffic. `base_path` and
+`entity_id` resolve through the same [cascade](#keelson-identity-key-cascade) as
+output keys. Bino owns the geodetic→scene projection (via `anchor`) and the
+heading→orientation conversion; the renderer never sees keelson frames.
 
 Use `publish_topic_override` per sensor to bypass the Keelson key
 construction. This is useful for non-Keelson consumers but loses

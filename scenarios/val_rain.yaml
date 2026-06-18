@@ -1,6 +1,8 @@
 # Validation — heavy rain, good visibility. Radar far-range attenuation.
 scenario:
   name: val_rain
+  keelson:
+    base_path: bino
   anchor:
     lat: 54.3700
     lon: 10.1850

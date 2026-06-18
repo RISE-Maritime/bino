@@ -36,6 +36,7 @@ const itLive = url && glAvailable ? it : it.skip;
 const scenario = {
   name: "v02-e2e",
   anchor: { lat: 54.3233, lon: 10.1394, height: 0 },
+  keelson: { base_path: "bino" },
   vessels: [
     {
       id: "ego",
@@ -107,10 +108,23 @@ describe("v0.2 e2e: full duplex via Zenoh", () => {
         });
         expect(service.publisher).toBeDefined();
 
-        // Probe consumers for camera, lidar, radar.
-        const camTopic = cameraTopicKey(DEFAULT_NAMING, "ego", "bow_camera");
-        const lidTopic = lidarTopicKey(DEFAULT_NAMING, "ego", "main_lidar");
-        const radTopic = radarTopicKey(DEFAULT_NAMING, "ego", "main_radar");
+        // Probe consumers for camera, lidar, radar. Output keys resolve from
+        // the scenario realm (bino) with entity=vessel, source=sensor (ADR-004).
+        const camTopic = cameraTopicKey({
+          base_path: "bino",
+          entity_id: "ego",
+          source_id: "bow_camera",
+        });
+        const lidTopic = lidarTopicKey({
+          base_path: "bino",
+          entity_id: "ego",
+          source_id: "main_lidar",
+        });
+        const radTopic = radarTopicKey({
+          base_path: "bino",
+          entity_id: "ego",
+          source_id: "main_radar",
+        });
         const camSub = await probeSession.declareSubscriber(camTopic);
         const lidSub = await probeSession.declareSubscriber(lidTopic);
         const radSub = await probeSession.declareSubscriber(radTopic);

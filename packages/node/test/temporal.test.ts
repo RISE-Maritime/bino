@@ -25,6 +25,7 @@ describe("temporal modeling", () => {
     const compiled = compileScenario({
       name: "temporal_test",
       anchor: { lat: 0, lon: 0, height: 0 },
+      keelson: { base_path: "bino" },
       vessels: [
         {
           id: "ego",
@@ -92,6 +93,7 @@ describe("temporal modeling", () => {
     const compiled = compileScenario({
       name: "radar_temporal_test",
       anchor: { lat: 0, lon: 0, height: 0 },
+      keelson: { base_path: "bino" },
       vessels: [
         {
           id: "ego",
@@ -144,6 +146,7 @@ describe("temporal modeling", () => {
     const compiled = compileScenario({
       name: "camera_temporal_test",
       anchor: { lat: 0, lon: 0, height: 0 },
+      keelson: { base_path: "bino" },
       vessels: [
         {
           id: "ego",

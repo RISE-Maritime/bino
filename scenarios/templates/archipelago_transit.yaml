@@ -3,6 +3,8 @@
 
 scenario:
   name: archipelago_transit
+  keelson:
+    base_path: bino
   anchor:
     lat: 59.2700
     lon: 18.5500

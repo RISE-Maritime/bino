@@ -6,6 +6,7 @@ import { makeEnvironmentSnapshot } from "../src/env.js";
 const baseScenario = {
   name: "env-test",
   anchor: { lat: 54.32, lon: 10.14, height: 0 },
+  keelson: { base_path: "bino" },
   vessels: [
     {
       id: "ego",

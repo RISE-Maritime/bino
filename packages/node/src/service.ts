@@ -6,6 +6,7 @@ import {
   createClock,
   createLidarKernelWasm,
   createRadarKernel,
+  resolveOutputIdentity,
   type CompiledScene,
   type Clock,
   type KeelsonNaming,
@@ -80,6 +81,10 @@ function buildSceneFromScenario(
   const scheduled: ScheduledKernel[] = [];
   const sensorMeta: SensorMeta[] = [];
 
+  // Root of the ADR-004 key-identity cascade. An explicit service-level realm
+  // override (opts.naming) wins over the scenario's mandatory base_path.
+  const scenarioBasePath = opts.naming?.base_path ?? scenario.keelson.base_path;
+
   // Worker offload trades a frame of latency for parallelism, so it's
   // incompatible with strict (synchronous, ordered) determinism.
   const useWorkers = (opts.workers ?? false) && scenario.modes.determinism !== "strict";
@@ -94,6 +99,13 @@ function buildSceneFromScenario(
       const sensorNode = vesselNode.getObjectByName(sensor.id);
       if (!sensorNode) continue;
       const sensorId = `${vessel.id}/${sensor.id}`;
+      const identity = resolveOutputIdentity({
+        scenarioBasePath,
+        vesselId: vessel.id,
+        ...(vessel.keelson ? { vesselKeelson: vessel.keelson } : {}),
+        sensorId: sensor.id,
+        ...(sensor.keelson ? { sensorKeelson: sensor.keelson } : {}),
+      });
       if (sensor.type === "camera") {
         scheduled.push({
           sensorId,
@@ -108,8 +120,7 @@ function buildSceneFromScenario(
         });
         sensorMeta.push({
           sensorId,
-          vesselId: vessel.id,
-          topicSensorId: sensor.id,
+          identity,
           type: "camera",
           ...(sensor.publish_topic_override
             ? { topicOverride: sensor.publish_topic_override }
@@ -132,8 +143,7 @@ function buildSceneFromScenario(
         });
         sensorMeta.push({
           sensorId,
-          vesselId: vessel.id,
-          topicSensorId: sensor.id,
+          identity,
           type: "lidar",
           ...(sensor.publish_topic_override
             ? { topicOverride: sensor.publish_topic_override }
@@ -155,8 +165,7 @@ function buildSceneFromScenario(
         });
         sensorMeta.push({
           sensorId,
-          vesselId: vessel.id,
-          topicSensorId: sensor.id,
+          identity,
           type: "radar",
           rangeM: sensor.range_m,
           ...(sensor.publish_topic_override
@@ -189,14 +198,12 @@ function buildSceneFromScenario(
       : {}),
   });
 
-  // Explicit naming override wins; otherwise use the scenario's keelson
-  // block (which defaults to DEFAULT_NAMING when unspecified).
-  const naming = opts.naming ?? scenario.keelson;
+  // Each sensorMeta already carries its fully-resolved key identity (ADR-004),
+  // including the realm — no separate naming is threaded to the publisher.
   const publisher = opts.zenohSession
     ? createSensorPublisher({
         session: opts.zenohSession,
         sensors: sensorMeta,
-        naming,
       })
     : undefined;
 

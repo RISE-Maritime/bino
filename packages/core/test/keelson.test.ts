@@ -20,21 +20,25 @@ describe("Keelson topic keys", () => {
     expect(poseTopicKey(DEFAULT_NAMING, "ego")).toBe("bino/@v0/ego/pubsub/frame_transform/sim");
   });
 
-  it("constructs image_raw key for a sensor on a vessel", () => {
-    expect(cameraTopicKey(DEFAULT_NAMING, "ego", "bow_camera")).toBe(
+  it("constructs image_raw key from a resolved identity", () => {
+    expect(cameraTopicKey({ base_path: "bino", entity_id: "ego", source_id: "bow_camera" })).toBe(
       "bino/@v0/ego/pubsub/image_raw/bow_camera",
     );
   });
 
-  it("constructs point_cloud key for a sensor on a vessel", () => {
-    expect(lidarTopicKey(DEFAULT_NAMING, "ego", "main_lidar")).toBe(
+  it("constructs point_cloud key from a resolved identity", () => {
+    expect(lidarTopicKey({ base_path: "bino", entity_id: "ego", source_id: "main_lidar" })).toBe(
       "bino/@v0/ego/pubsub/point_cloud/main_lidar",
     );
   });
 
-  it("respects an overridden base_path", () => {
-    const naming = { ...DEFAULT_NAMING, base_path: "rise" };
-    expect(poseTopicKey(naming, "ego")).toBe("rise/@v0/ego/pubsub/frame_transform/sim");
+  it("honors overridden identity segments (ADR-004)", () => {
+    expect(
+      cameraTopicKey({ base_path: "rise", entity_id: "ego_platform", source_id: "cam_fwd" }),
+    ).toBe("rise/@v0/ego_platform/pubsub/image_raw/cam_fwd");
+    expect(poseTopicKey({ base_path: "rise" }, "ego")).toBe(
+      "rise/@v0/ego/pubsub/frame_transform/sim",
+    );
   });
 });
 
@@ -78,7 +82,11 @@ describe("encodeCameraFrame / decodeCameraEnvelope", () => {
   };
 
   it("roundtrips dimensions and pixels via image_raw / rgba8", () => {
-    const { keyExpr, bytes } = encodeCameraFrame(frame, "ego", "bow_camera");
+    const { keyExpr, bytes } = encodeCameraFrame(frame, {
+      base_path: "bino",
+      entity_id: "ego",
+      source_id: "bow_camera",
+    });
     expect(keyExpr).toBe("bino/@v0/ego/pubsub/image_raw/bow_camera");
 
     const decoded = decodeCameraEnvelope(bytes);
@@ -102,10 +110,11 @@ describe("encodeRadarSweep / decodeRadarSweepEnvelope", () => {
   };
 
   it("roundtrips spokes via radar_sweep", async () => {
-    const { encodeRadarSweep, decodeRadarSweepEnvelope, radarTopicKey, DEFAULT_NAMING } =
+    const { encodeRadarSweep, decodeRadarSweepEnvelope, radarTopicKey } =
       await import("../src/keelson.js");
-    const { keyExpr, bytes } = encodeRadarSweep(frame, "ego", "main_radar", 200);
-    expect(keyExpr).toBe(radarTopicKey(DEFAULT_NAMING, "ego", "main_radar"));
+    const id = { base_path: "bino", entity_id: "ego", source_id: "main_radar" };
+    const { keyExpr, bytes } = encodeRadarSweep(frame, id, 200);
+    expect(keyExpr).toBe(radarTopicKey(id));
 
     const decoded = decodeRadarSweepEnvelope(bytes);
     expect(decoded).not.toBeNull();
@@ -129,7 +138,11 @@ describe("encodeRadarSweep / decodeRadarSweepEnvelope", () => {
       ],
       time: 1000,
     };
-    const { bytes } = encodeRadarSweep(swept, "ego", "main_radar", 200);
+    const { bytes } = encodeRadarSweep(
+      swept,
+      { base_path: "bino", entity_id: "ego", source_id: "main_radar" },
+      200,
+    );
     const decoded = decodeRadarSweepEnvelope(bytes);
     expect(decoded).not.toBeNull();
     expect(decoded!.spokes[0]!.time).toBeCloseTo(1000.0, 3);
@@ -145,7 +158,11 @@ describe("encodePointCloud / decodePointCloudEnvelope", () => {
   const frame: LidarFrame = { points: pts, count: 2, time: 0.25 };
 
   it("roundtrips points (x,y,z) via point_cloud", () => {
-    const { keyExpr, bytes } = encodePointCloud(frame, "ego", "main_lidar");
+    const { keyExpr, bytes } = encodePointCloud(frame, {
+      base_path: "bino",
+      entity_id: "ego",
+      source_id: "main_lidar",
+    });
     expect(keyExpr).toBe("bino/@v0/ego/pubsub/point_cloud/main_lidar");
 
     const decoded = decodePointCloudEnvelope(bytes);

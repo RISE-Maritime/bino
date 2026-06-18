@@ -5,6 +5,7 @@ import {
   MemoryPoseStream,
   createZenohPoseStream,
   navTopicKeys,
+  resolveNavIdentity,
   prepareTerrain,
   type PoseStream,
   type CompiledScene,
@@ -51,13 +52,16 @@ function zenohVessels(scenario: CompiledScene): Array<{ vesselId: string; topic:
 
 function navVessels(scenario: CompiledScene): ZenohNavVessel[] {
   const out: ZenohNavVessel[] = [];
+  const scenarioBasePath = scenario.keelson.base_path;
   for (const v of scenario.vessels) {
     if (v.pose_source.type === "keelson_nav") {
-      const { base_path, entity_id, source_id, target_id } = v.pose_source;
-      out.push({
+      const identity = resolveNavIdentity({
+        scenarioBasePath,
         vesselId: v.id,
-        keys: navTopicKeys({ base_path, entity_id, source_id, ...(target_id ? { target_id } : {}) }),
+        ...(v.keelson ? { vesselKeelson: v.keelson } : {}),
+        poseSource: v.pose_source,
       });
+      out.push({ vesselId: v.id, keys: navTopicKeys(identity) });
     }
   }
   return out;

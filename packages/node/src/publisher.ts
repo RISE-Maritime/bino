@@ -2,21 +2,20 @@ import {
   encodeCameraFrame,
   encodePointCloud,
   encodeRadarSweep,
-  DEFAULT_NAMING,
-  type KeelsonNaming,
+  type KeelsonKeyIdentity,
 } from "@bino/core";
 import type { FrameEvent } from "./runner.js";
 
 interface BaseSensorMeta {
-  /** Matches FrameEvent.outputs[].sensorId — usually "{vesselId}/{sensorId}". */
+  /** Matches FrameEvent.outputs[].sensorId — usually "{vesselId}/{sensorId}".
+   *  Also the ADR-002 default in-payload frame_id when `frameId` is unset. */
   sensorId: string;
-  vesselId: string;
-  /** The source_id segment of the Keelson topic key (typically the sensor.id). */
-  topicSensorId: string;
+  /** Fully-resolved keelson output key identity (ADR-004 cascade). */
+  identity: KeelsonKeyIdentity;
   /** Optional full topic-key override (from DSL publish_topic_override). */
   topicOverride?: string;
   /** Optional in-payload frame_id override (from DSL frame_id). Falls back
-   *  to the encoder default "{vesselId}/{sensorId}" when unset. */
+   *  to "{vesselId}/{sensorId}" (== sensorId) when unset. */
   frameId?: string;
 }
 
@@ -32,7 +31,6 @@ export interface PublishSession {
 export interface SensorPublisherOptions {
   session: PublishSession;
   sensors: ReadonlyArray<SensorMeta>;
-  naming?: KeelsonNaming;
 }
 
 export interface SensorPublisher {
@@ -40,7 +38,6 @@ export interface SensorPublisher {
 }
 
 export function createSensorPublisher(opts: SensorPublisherOptions): SensorPublisher {
-  const naming = opts.naming ?? DEFAULT_NAMING;
   const byId = new Map(opts.sensors.map((s) => [s.sensorId, s]));
 
   return {
@@ -49,31 +46,26 @@ export function createSensorPublisher(opts: SensorPublisherOptions): SensorPubli
       for (const out of frame.outputs) {
         const meta = byId.get(out.sensorId);
         if (!meta) continue;
+        const frameId = meta.frameId ?? meta.sensorId;
         let encoded;
         if (meta.type === "camera") {
           encoded = encodeCameraFrame(
             out.output as Parameters<typeof encodeCameraFrame>[0],
-            meta.vesselId,
-            meta.topicSensorId,
-            naming,
-            meta.frameId,
+            meta.identity,
+            frameId,
           );
         } else if (meta.type === "lidar") {
           encoded = encodePointCloud(
             out.output as Parameters<typeof encodePointCloud>[0],
-            meta.vesselId,
-            meta.topicSensorId,
-            naming,
-            meta.frameId,
+            meta.identity,
+            frameId,
           );
         } else {
           encoded = encodeRadarSweep(
             out.output as Parameters<typeof encodeRadarSweep>[0],
-            meta.vesselId,
-            meta.topicSensorId,
+            meta.identity,
             meta.rangeM,
-            naming,
-            meta.frameId,
+            frameId,
           );
         }
         const keyExpr = meta.topicOverride ?? encoded.keyExpr;

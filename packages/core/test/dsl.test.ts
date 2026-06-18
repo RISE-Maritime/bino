@@ -30,6 +30,7 @@ const validScenario = {
     },
   ],
   modes: { rendering: "replace", clock: "external_fmi", determinism: "strict" },
+  keelson: { base_path: "bino" },
 };
 
 describe("Scenario schema", () => {
@@ -173,6 +174,41 @@ describe("Scenario schema", () => {
     const bad = structuredClone(validScenario);
     bad.vessels.push({ ...bad.vessels[0]! });
     expect(() => Scenario.parse(bad)).toThrow(/duplicate vessel id/);
+  });
+
+  it("requires a scenario keelson base_path (ADR-004)", () => {
+    const bad = structuredClone(validScenario) as Record<string, unknown>;
+    delete bad.keelson;
+    expect(() => Scenario.parse(bad)).toThrow();
+  });
+
+  it("accepts per-vessel and per-sensor keelson identity overrides (ADR-004)", () => {
+    const withOverrides = structuredClone(validScenario) as Record<string, unknown>;
+    const vessels = withOverrides.vessels as Array<Record<string, unknown>>;
+    vessels[0]!.keelson = { entity_id: "ego_platform" };
+    (vessels[0]!.sensors as Array<Record<string, unknown>>)[0]!.keelson = { source_id: "cam_fwd" };
+    const result = Scenario.parse(withOverrides);
+    expect(result.vessels[0]!.keelson?.entity_id).toBe("ego_platform");
+    const cam = result.vessels[0]!.sensors[0]!;
+    if (cam.type === "camera") {
+      expect(cam.keelson?.source_id).toBe("cam_fwd");
+    }
+  });
+
+  it("accepts keelson_nav with inherited base_path and entity_id (ADR-004)", () => {
+    const nav = structuredClone(validScenario) as Record<string, unknown>;
+    (nav.vessels as Array<Record<string, unknown>>)[0]!.pose_source = {
+      type: "keelson_nav",
+      source_id: "gnss_compass",
+    };
+    const result = Scenario.parse(nav);
+    const ps = result.vessels[0]!.pose_source;
+    expect(ps.type).toBe("keelson_nav");
+    if (ps.type === "keelson_nav") {
+      expect(ps.base_path).toBeUndefined();
+      expect(ps.entity_id).toBeUndefined();
+      expect(ps.source_id).toBe("gnss_compass");
+    }
   });
 
   it("allows same sensor id on different vessels", () => {

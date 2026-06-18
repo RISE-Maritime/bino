@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { compileScenario } from "../src/compile.js";
 import { Keelson } from "../src/dsl.js";
-import { DEFAULT_NAMING } from "../src/keelson.js";
 
 const minimal = (overrides: Record<string, unknown> = {}) => ({
   name: "minimal",
@@ -15,6 +14,7 @@ const minimal = (overrides: Record<string, unknown> = {}) => ({
     },
   ],
   modes: { rendering: "replace", clock: "wall", determinism: "relaxed" },
+  keelson: { base_path: "bino" },
   ...overrides,
 });
 
@@ -29,14 +29,14 @@ describe("compileScenario", () => {
     expect(() => compileScenario({ name: "broken" })).toThrow();
   });
 
-  it("defaults keelson naming to DEFAULT_NAMING", () => {
-    // Guards against the DSL defaults drifting from keelson.ts.
-    expect(Keelson.parse({})).toEqual(DEFAULT_NAMING);
-    const scene = compileScenario(minimal());
-    expect(scene.keelson).toEqual(DEFAULT_NAMING);
+  it("requires a keelson base_path — no default (ADR-004)", () => {
+    expect(() => Keelson.parse({})).toThrow();
+    const noKeelson = minimal();
+    delete (noKeelson as Record<string, unknown>).keelson;
+    expect(() => compileScenario(noKeelson)).toThrow();
   });
 
-  it("carries an explicit keelson base_path override", () => {
+  it("carries the keelson base_path through to the compiled scene", () => {
     const scene = compileScenario(minimal({ keelson: { base_path: "myorg" } }));
     expect(scene.keelson.base_path).toBe("myorg");
   });

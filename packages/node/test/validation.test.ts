@@ -71,6 +71,7 @@ function makeScenario(name: string, env: Partial<Scenario["environment"]>): Scen
     anchor,
     vessels,
     modes,
+    keelson: { base_path: "bino" },
     environment: {
       time_of_day: "12:00",
       visibility_m: 20000,

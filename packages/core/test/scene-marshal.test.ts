@@ -17,6 +17,7 @@ import { lidar_sweep } from "../wasm/lidar.js";
 const scenario = {
   name: "marshal-test",
   anchor: { lat: 0, lon: 0, height: 0 },
+  keelson: { base_path: "bino" },
   vessels: [
     {
       id: "ego",
