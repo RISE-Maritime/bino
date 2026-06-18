@@ -217,7 +217,7 @@ Each spoke carries:
   authored), increasing **clockwise**, one full revolution (`0 … 2π`) per
   sweep. A target straight off the bow reads azimuth 0 regardless of vessel
   heading. (Note: this is the vessel-body forward, +X — distinct from the
-  lidar/camera *sensor-local* −Z look axis.)
+  lidar/camera _sensor-local_ −Z look axis.)
 - `intensity` -- vector of `u8` values, one per range bin, uniform from `0` to
   `range_m`.
 - `timestamp` -- seconds elapsed from sweep start (0.0 when `sweep_duration_s` is not set).

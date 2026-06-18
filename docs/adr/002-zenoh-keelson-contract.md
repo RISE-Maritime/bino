@@ -31,7 +31,7 @@ injection in, sensor data out, nothing else.**
 
 5. **All coordinate-frame conversion is confined to one module**
    (`frames.ts`). The internal scene/render frame stays three.js Y-up;
-   conversion happens only at the keelson boundary on the *input* path.
+   conversion happens only at the keelson boundary on the _input_ path.
 
 ## Context
 
@@ -41,9 +41,9 @@ vessel, applied raw as three.js Y-up. Research into the keelson repo
 (`/tmp/keelson`, RISE-Maritime/keelson) showed that **no keelson
 connector ever emits a dynamic pose FrameTransform** — the protocol
 spec (§2.2.1 rule 1a) mandates that separable nav quantities are
-published as *decomposed scalar subjects* (`location_fix`,
+published as _decomposed scalar subjects_ (`location_fix`,
 `heading_true_north_deg`, `pitch_deg`, `roll_deg`, …), and
-`frame_transform` is reserved for *static* sensor-mount geometry
+`frame_transform` is reserved for _static_ sensor-mount geometry
 (published by the `platform` connector). So Bino subscribed to a message
 shape nothing in the ecosystem produces, in an axis convention nothing
 else uses. A real AIS/GNSS/MAVLink feed driving Bino would have required
@@ -55,21 +55,21 @@ On **output**, sensor messages carried a `frame_id` of
 so a consumer could not place returns in any frame.
 
 The instinct to "fix" output by publishing a transform tree was
-considered and **rejected**. The decisive question was: *who consumes
-Bino, and in what frame?* The primary V&V consumers — the system under
+considered and **rejected**. The decisive question was: _who consumes
+Bino, and in what frame?_ The primary V&V consumers — the system under
 test and a scoring harness — already relate geodetic↔local using their
 own nav, exactly as in production; an invented Cartesian `world` anchor
-would impose a *second datum* they must discover and reconcile. keelson
+would impose a _second datum_ they must discover and reconcile. keelson
 deliberately defines no world/datum convention for this reason. The
 vessel poses a scorer needs as ground truth are already on the bus,
 published by whatever injected them (FMI co-sim, AIS feed) — Bino
-re-emitting them would be a redundant, and in inject mode *misleading*,
+re-emitting them would be a redundant, and in inject mode _misleading_,
 second copy. Static mount geometry is shared scenario configuration
 (the scene definition is the product) or, in inject mode, owned by the
 real `platform` connector. None of it is Bino's to publish.
 
 Collapsing output to sensor-only also dissolved the thorniest sub-
-problem we had been wrestling with — whether to publish an *estimated*
+problem we had been wrestling with — whether to publish an _estimated_
 `world→ego` in inject mode. With no Cartesian world on the wire, there
 is no `world→ego` to publish; Bino consumes the real ego nav internally
 (to aim its render camera) and merges synthetic returns into the real
@@ -78,7 +78,7 @@ sensor's frame purely by stamping a matching `frame_id`.
 ## Consequences
 
 - **`frame_id` becomes load-bearing.** In inject mode the synthetic
-  return must carry the *real platform's* `child_frame_id` to merge
+  return must carry the _real platform's_ `child_frame_id` to merge
   correctly, so `frame_id` is per-sensor configurable (new DSL field),
   separate from `publish_topic_override` (which only changes the topic
   key). Default remains `"{vesselId}/{sensorId}"`.
@@ -96,10 +96,10 @@ sensor's frame purely by stamping a matching `frame_id`.
   earlier draft of this revisit proposed publishing the transform tree
   in a naval (X-fwd/Y-stbd/Z-down) body frame to match the `platform`
   connector. With no transform output, that is moot. Axis conversion
-  now matters only on the *input* path (decomposed nav → three.js).
+  now matters only on the _input_ path (decomposed nav → three.js).
 
 - **keelson's own axis inconsistency is reconciled in one place.**
-  keelson documents attitude *scalars* as ISO-8855 (`subjects.yaml`)
+  keelson documents attitude _scalars_ as ISO-8855 (`subjects.yaml`)
   while its static FrameTransform tree is naval — a real internal
   inconsistency. Confining all conversion to `frames.ts`, with a
   round-trip property test, keeps it from leaking into the renderer.

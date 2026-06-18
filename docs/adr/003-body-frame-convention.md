@@ -25,9 +25,9 @@ Concretely:
    are not re-aimed. The **radar azimuth 0 is the bow**, taken from the vessel
    body (not the sensor node), so it is independent of the radar mount.
 5. **`navToSceneQuaternion`** maps keelson attitude (`heading_true_north_deg`
-   + `pitch_deg`/`roll_deg`) into this body frame; `frames.ts` is the single
-   place the naval/ISO-8855 ↔ body conversion lives, alongside ENU↔scene for
-   position.
+   - `pitch_deg`/`roll_deg`) into this body frame; `frames.ts` is the single
+     place the naval/ISO-8855 ↔ body conversion lives, alongside ENU↔scene for
+     position.
 
 ## Context
 
@@ -53,10 +53,10 @@ The question was whether to standardize the body frame on keelson's naval FRD
 or on the three.js-native Y-up frame. **Y-up won** because:
 
 - three.js is immovably Y-up; an FRD (Z-down) body makes "identity" mean
-  *starboard-up*, forces a baked-in roll into every hull and mount, and pushes
+  _starboard-up_, forces a baked-in roll into every hull and mount, and pushes
   a naval convention through a graphics pipeline that resists it.
 - Bino publishes **no body-frame transforms** (ADR-002 — output is sensor data
-  only), so the *only* place the naval convention touches Bino is converting
+  only), so the _only_ place the naval convention touches Bino is converting
   keelson's attitude scalars on input — one function in `frames.ts`. There is
   no wire-side simplicity to gain by internalizing FRD.
 

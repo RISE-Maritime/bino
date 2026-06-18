@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  decodeLocationFixEnvelope,
-  decodeTimestampedFloatEnvelope,
-} from "../src/keelson.js";
+import { decodeLocationFixEnvelope, decodeTimestampedFloatEnvelope } from "../src/keelson.js";
 import { encodePayloadFromTypeName, enclose, Envelope } from "../src/keelson-sdk.js";
 
 // Build an enclosed envelope the way a real keelson producer would, so the

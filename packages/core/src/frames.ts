@@ -71,4 +71,3 @@ export function navToSceneQuaternion(
   _quat.multiply(_qp).multiply(_qr);
   return [_quat.x, _quat.y, _quat.z, _quat.w];
 }
-

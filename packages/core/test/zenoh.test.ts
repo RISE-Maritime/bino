@@ -242,7 +242,13 @@ describe("createZenohPoseStream — decomposed nav", () => {
     return Envelope.encode(enclose(payloadBytes, at)).finish();
   }
   const locFix = (lat: number, lon: number, alt: number, t: number): FakeSample =>
-    bytesPayload(navEnvelope("foxglove.LocationFix", { frameId: "gnss", latitude: lat, longitude: lon, altitude: alt }, t));
+    bytesPayload(
+      navEnvelope(
+        "foxglove.LocationFix",
+        { frameId: "gnss", latitude: lat, longitude: lon, altitude: alt },
+        t,
+      ),
+    );
   const floatVal = (value: number, t: number): FakeSample =>
     bytesPayload(navEnvelope("keelson.TimestampedFloat", { value }, t));
 
@@ -250,7 +256,11 @@ describe("createZenohPoseStream — decomposed nav", () => {
 
   it("subscribes to all four nav subjects and projects location_fix into a pose", async () => {
     const { session, channels } = makeSession();
-    const stream = await createZenohPoseStream({ session, nav: [{ vesselId: "ego", keys }], anchor });
+    const stream = await createZenohPoseStream({
+      session,
+      nav: [{ vesselId: "ego", keys }],
+      anchor,
+    });
 
     // All four subject keys were declared.
     for (const k of [keys.locationFix, keys.heading, keys.pitch, keys.roll]) {
@@ -271,7 +281,11 @@ describe("createZenohPoseStream — decomposed nav", () => {
 
   it("fuses the latest heading into the pose (location_fix triggers)", async () => {
     const { session, channels } = makeSession();
-    const stream = await createZenohPoseStream({ session, nav: [{ vesselId: "ego", keys }], anchor });
+    const stream = await createZenohPoseStream({
+      session,
+      nav: [{ vesselId: "ego", keys }],
+      anchor,
+    });
 
     channels.get(keys.heading)!.push(floatVal(90, 0.9)); // heading East
     await tick();

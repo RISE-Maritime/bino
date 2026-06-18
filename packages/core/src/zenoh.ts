@@ -43,10 +43,7 @@ export async function createZenohPoseStream(opts: ZenohPoseStreamOptions): Promi
   const buffer = new MemoryPoseStream();
   const subs: ZenohSubscriberLike[] = [];
 
-  const subscribe = async (
-    keyExpr: string,
-    handle: (bytes: Uint8Array) => void,
-  ): Promise<void> => {
+  const subscribe = async (keyExpr: string, handle: (bytes: Uint8Array) => void): Promise<void> => {
     const sub = await opts.session.declareSubscriber(keyExpr);
     subs.push(sub);
     const recv = sub.receiver();

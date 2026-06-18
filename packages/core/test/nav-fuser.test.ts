@@ -8,9 +8,7 @@ const anchor: Anchor = { lat: 54.32, lon: 10.14, height: 0 };
 
 /** Bow vector: rotate the body forward axis (+X) by the pose quaternion. */
 function bowOf(q: readonly [number, number, number, number]): THREE.Vector3 {
-  return new THREE.Vector3(1, 0, 0).applyQuaternion(
-    new THREE.Quaternion(q[0], q[1], q[2], q[3]),
-  );
+  return new THREE.Vector3(1, 0, 0).applyQuaternion(new THREE.Quaternion(q[0], q[1], q[2], q[3]));
 }
 
 describe("LatestWinsNavFuser", () => {
