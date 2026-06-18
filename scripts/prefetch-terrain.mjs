@@ -4,28 +4,33 @@
 // and a Docker image that ships the cache dir — start fast and offline,
 // without each first run paying the Overpass/GMRT round-trip.
 //
-//   pnpm build            # packages must be built first
-//   pnpm prefetch:scenarios [scenariosDir]   # default: ./scenarios
+//   pnpm build               # packages must be built first
+//   pnpm prefetch:scenarios [scenariosDir]      # default: ./scenarios
 //   BINO_TERRAIN_CACHE=/cache pnpm prefetch:scenarios
 //
-// Network tool — not run in CI. Cache keys match the @bino/node CLI exactly,
-// so a warmed entry is read on the next `bino-node <scenario>`.
+// Network tool — not run in CI. Cache keys match the @bino/node CLI exactly
+// (shared terrainSourcesSignature), so a warmed entry is read on the next
+// `bino-node <scenario>`. Imports the built dist by relative path so it runs
+// from the repo root without the workspace packages being hoisted there.
 
-import { readFile } from "node:fs/promises";
-import { globSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { argv, env, exit } from "node:process";
-import { parse as yamlParse } from "yaml";
+import { globSync } from "node:fs";
 import {
-  compileScenario,
   prepareTerrain,
   terrainProviderFromSources,
   terrainSourcesSignature,
-} from "@bino/core";
-import { createFileTerrainCache, createFileSourceReaders } from "@bino/node";
+} from "../packages/core/dist/index.js";
+import {
+  loadScenario,
+  createFileTerrainCache,
+  createFileSourceReaders,
+} from "../packages/node/dist/index.js";
 
-const root = resolve(argv[2] ?? "scenarios");
-const cacheDir = env.BINO_TERRAIN_CACHE || ".bino-cache/terrain";
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = resolve(argv[2] ?? resolve(repoRoot, "scenarios"));
+const cacheDir = env.BINO_TERRAIN_CACHE || resolve(repoRoot, ".bino-cache/terrain");
 const cache = createFileTerrainCache(cacheDir);
 const files = globSync("**/*.yaml", { cwd: root }).sort();
 
@@ -37,8 +42,7 @@ for (const f of files) {
   const path = resolve(root, f);
   let scene;
   try {
-    const doc = yamlParse(await readFile(path, "utf8"));
-    scene = compileScenario(doc?.scenario);
+    scene = await loadScenario(path);
   } catch (e) {
     console.error(`✗ ${f}: ${e instanceof Error ? e.message : e}`);
     failed++;
