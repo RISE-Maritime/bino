@@ -79,16 +79,14 @@ interface PpiCache {
   nBins: number;
 }
 
-/** Per-radar sweep-animation state: where the beam is right now, derived from
- *  wall-clock elapsed since the current sweep was produced. Shared by the PPI
- *  canvas and the in-scene overlay so they rotate together. */
+/** Per-radar sweep-animation state. The beam is free-running on the wall clock
+ *  (one revolution per `period_s`), decoupled from how often the worker
+ *  recomputes the sweep — so the leading edge always paints the freshest
+ *  available data and tracks moving targets. Shared by the PPI canvas and the
+ *  in-scene overlay so they rotate together. */
 interface RadarAnim {
   /** Seconds per revolution (1 / rotation_rate_hz). */
   period_s: number;
-  /** The sweep currently being painted (reference-compared to detect a new one). */
-  sweepRef: RadarFrame | null;
-  /** Wall-clock time the current sweep started painting. */
-  startT: number;
   /** Beam spoke index this frame, and the previous frame's (the arc swept since). */
   beam: number;
   prevBeam: number;
@@ -96,6 +94,31 @@ interface RadarAnim {
   lastT: number;
   dt: number;
 }
+
+/** Is spoke `s` in the arc the beam swept this frame, `(prev, beam]`, going
+ *  forward with wrap-around at the end of a revolution? */
+function spokeSwept(s: number, prev: number, beam: number): boolean {
+  if (prev === beam) return false;
+  return prev < beam ? s > prev && s <= beam : s > prev || s <= beam;
+}
+
+/** Viewer-only radar recompute cap (Hz). Decoupled from the (much slower)
+ *  antenna rotation so the displayed returns stay fresh; the worker
+ *  self-throttles below this if a sweep takes longer. */
+const RADAR_VIEWER_RECOMPUTE_HZ = 10;
+
+/** Frozen radar returns for the 3D overlay — the spatial analog of the PPI's
+ *  phosphor buffer. A spoke's returns are captured (in world space) only when
+ *  the beam sweeps past it, and decay until the beam comes round again, so the
+ *  overlay updates per beam-pass like a real radar rather than every frame. */
+interface RadarCapture {
+  nSpokes: number;
+  /** Per spoke: packed [x, y, z, intensity] for each non-zero return at capture. */
+  returns: Float32Array[];
+  /** Per spoke: wall-clock capture time (-Infinity = never painted). */
+  captureT: Float64Array;
+}
+const radarCaptures = new WeakMap<object, RadarCapture>();
 
 /**
  * Mounts the viewer on a canvas. Builds the scene from the v0.1 demo
@@ -399,8 +422,11 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         );
         radarWorkerKernels.push(kernel);
         kernels.push({
+          // Recompute faster than the antenna turns (decoupled from rotation),
+          // so the painted returns track moving targets; the worker
+          // self-throttles. The beam still rotates at rotation_rate_hz below.
           kernel,
-          interval: 1 / sensor.rotation_rate_hz,
+          interval: 1 / Math.max(RADAR_VIEWER_RECOMPUTE_HZ, sensor.rotation_rate_hz),
           lastFire: -Infinity,
           cached: null,
         });
@@ -410,8 +436,6 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         createOverlay(sensor.id, sensorNode, "radar", sensor.range_m, kernel, 65536);
         radarAnimByKernel.set(kernel, {
           period_s: 1 / sensor.rotation_rate_hz,
-          sweepRef: null,
-          startT: 0,
           beam: 0,
           prevBeam: -1,
           lastT: performance.now() / 1000,
@@ -506,21 +530,17 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
       }
     }
 
-    // Advance each radar's beam from elapsed time since its sweep was produced,
-    // so the PPI + overlay paint progressively rather than snapping per rev.
+    // Advance each radar's beam on a free-running wall clock (one rev per
+    // period_s), independent of when sweeps arrive — so the PPI + overlay
+    // rotate smoothly and the beam paints whatever sweep is freshest.
     for (const [kernel, anim] of radarAnimByKernel) {
       const out = latestByKernel.get(kernel) as RadarFrame | undefined;
-      if (!out) continue;
+      if (!out || out.spokes.length === 0) continue;
       anim.dt = Math.max(0, t - anim.lastT);
       anim.lastT = t;
-      if (out !== anim.sweepRef) {
-        anim.sweepRef = out;
-        anim.startT = t;
-        anim.prevBeam = -1;
-      }
-      const nSpokes = out.spokes.length || 1;
-      const frac = Math.min(1, (t - anim.startT) / anim.period_s);
-      anim.beam = Math.min(nSpokes - 1, Math.max(0, Math.floor(frac * nSpokes)));
+      const nSpokes = out.spokes.length;
+      const frac = (t % anim.period_s) / anim.period_s;
+      anim.beam = Math.min(nSpokes - 1, Math.floor(frac * nSpokes));
     }
 
     for (const p of previews) {
@@ -785,6 +805,27 @@ function updateRadarOverlay(
   const colors = ov.colorAttr.array as Float32Array;
   const bins = sweep.spokes[0]?.intensity.length ?? 0;
   const nSpokes = sweep.spokes.length;
+  if (bins === 0 || nSpokes === 0) {
+    ov.geometry.setDrawRange(0, 0);
+    return;
+  }
+  const now = anim ? anim.lastT : performance.now() / 1000;
+  const period = anim ? anim.period_s : 1;
+  const beam = anim ? anim.beam : nSpokes - 1;
+  const prev = anim ? anim.prevBeam : -1;
+
+  let cap = radarCaptures.get(ov);
+  if (!cap || cap.nSpokes !== nSpokes) {
+    cap = {
+      nSpokes,
+      returns: Array.from({ length: nSpokes }, () => new Float32Array(0)),
+      captureT: new Float64Array(nSpokes).fill(-Infinity),
+    };
+    radarCaptures.set(ov, cap);
+  }
+
+  // Capture (freeze) the returns of each spoke the beam swept this frame, in
+  // world space at the current sensor pose — they stay put as own-ship moves.
   ov.sensorNode.getWorldPosition(_ovVec);
   // Heading comes from the vessel body (sensor's parent), matching
   // marshalRadarSensorPose — azimuth 0 is the bow, independent of the mount.
@@ -794,26 +835,37 @@ function updateRadarOverlay(
   const sx = _ovVec.x,
     sy = _ovVec.y,
     sz = _ovVec.z;
-  // Reveal spokes up to the beam and dim them by how far behind it they sit,
-  // so returns appear under the rotating beam and trail off (matches the PPI).
-  const beam = anim ? anim.beam : nSpokes - 1;
-  const persist = Math.max(1, Math.floor(nSpokes * 0.5));
-  let count = 0;
-  for (let si = 0; si < nSpokes && si <= beam; si++) {
-    const recency = 1 - (beam - si) / persist;
-    if (recency <= 0) continue;
-    const spoke = sweep.spokes[si]!;
+  for (let s = 0; s < nSpokes; s++) {
+    if (!spokeSwept(s, prev, beam)) continue;
+    const spoke = sweep.spokes[s]!;
     const wa = heading + spoke.azimuth;
     const cosA = Math.cos(wa);
     const sinA = Math.sin(wa);
-    for (let b = 0; b < bins && count < ov.maxPoints; b++) {
+    const packed: number[] = [];
+    for (let b = 0; b < bins; b++) {
       const v = spoke.intensity[b]!;
       if (v === 0) continue;
       const r = ((b + 0.5) / bins) * ov.range;
-      positions[count * 3] = sx + cosA * r;
-      positions[count * 3 + 1] = sy;
-      positions[count * 3 + 2] = sz + sinA * r;
-      const norm = Math.sqrt(v / 255) * recency;
+      packed.push(sx + cosA * r, sy, sz + sinA * r, v);
+    }
+    cap.returns[s] = new Float32Array(packed);
+    cap.captureT[s] = now;
+  }
+
+  // Render all captured returns, fading each spoke to ~1/e over one revolution
+  // since the beam last painted it (same persistence as the PPI phosphor).
+  let count = 0;
+  for (let s = 0; s < nSpokes && count < ov.maxPoints; s++) {
+    const ct = cap.captureT[s]!;
+    if (!Number.isFinite(ct)) continue;
+    const recency = Math.exp(-(now - ct) / period);
+    if (recency <= 0.02) continue;
+    const arr = cap.returns[s]!;
+    for (let k = 0; k + 3 < arr.length && count < ov.maxPoints; k += 4) {
+      positions[count * 3] = arr[k]!;
+      positions[count * 3 + 1] = arr[k + 1]!;
+      positions[count * 3 + 2] = arr[k + 2]!;
+      const norm = Math.sqrt(arr[k + 3]! / 255) * recency;
       colors[count * 3] = norm * 0.15;
       colors[count * 3 + 1] = norm;
       colors[count * 3 + 2] = norm * 0.08;
@@ -898,7 +950,7 @@ function drawPpi(
     const spokeIdx = entry >>> 16;
     const binIdx = entry & 0xffff;
     let g = bright[i]!;
-    if (spokeIdx > prev && spokeIdx <= beam) {
+    if (spokeSwept(spokeIdx, prev, beam)) {
       const v = sweep.spokes[spokeIdx]!.intensity[binIdx]!;
       g = v > 0 ? Math.sqrt(v / 255) : g * fade;
     } else {
