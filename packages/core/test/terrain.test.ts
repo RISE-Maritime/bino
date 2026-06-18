@@ -4,6 +4,7 @@ import {
   parseCoastlineElements,
   buildTerrainMesh,
   flatBathymetry,
+  sampleRasterToGrid,
   prepareTerrain,
   terrainCacheKey,
   type BathymetryGrid,
@@ -195,6 +196,25 @@ describe("prepareTerrain caching", () => {
     const result = await prepareTerrain(bbox, { cache });
     expect(result).toBe(cached);
     expect(writes).toBe(0);
+  });
+});
+
+describe("sampleRasterToGrid", () => {
+  it("nearest-neighbour samples a raster onto the bbox grid", () => {
+    // ~65m x ~111m bbox at lat 54 → a 2x2 grid at 50 m spacing, so each grid
+    // cell maps 1:1 to the 2x2 source raster.
+    const bbox: [number, number, number, number] = [10.0, 54.0, 10.001, 54.001];
+    const grid = sampleRasterToGrid(new Float32Array([1, 2, 3, 4]), 2, 2, bbox, 50);
+    expect(grid.width).toBe(2);
+    expect(grid.height).toBe(2);
+    expect([...grid.heights]).toEqual([1, 2, 3, 4]);
+    expect(grid.cellSizeM).toBe(50);
+  });
+
+  it("coerces non-finite samples to 0", () => {
+    const bbox: [number, number, number, number] = [10.0, 54.0, 10.001, 54.001];
+    const grid = sampleRasterToGrid(new Float32Array([NaN, 2, 3, 4]), 2, 2, bbox, 50);
+    expect(grid.heights[0]).toBe(0);
   });
 });
 

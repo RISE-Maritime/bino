@@ -211,15 +211,44 @@ export type Environment = z.infer<typeof Environment>;
 export const Bbox = z.tuple([z.number(), z.number(), z.number(), z.number()]);
 export type Bbox = z.infer<typeof Bbox>;
 
+/** Per-layer data-source specification (ADR-005). Selects where one terrain
+ *  layer's data comes from. `overpass`/`gmrt` hit the network (optionally a
+ *  custom `endpoint`); `geotiff`/`geojson` read a local file (`path`,
+ *  resolved relative to the scenario file); `none` skips the layer. A layer
+ *  omitted from `terrain.sources` falls back to the default OSM/GMRT source.
+ *  Layer/type compatibility (e.g. `gmrt` only for bathymetry) is enforced
+ *  when the provider is built. */
+export const TerrainSource = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("overpass"), endpoint: z.string().url().optional() }),
+  z.object({ type: z.literal("gmrt"), endpoint: z.string().url().optional() }),
+  z.object({ type: z.literal("geotiff"), path: z.string().min(1) }),
+  z.object({ type: z.literal("geojson"), path: z.string().min(1) }),
+  z.object({ type: z.literal("none") }),
+]);
+export type TerrainSource = z.infer<typeof TerrainSource>;
+
+export const TerrainSources = z.object({
+  coastline: TerrainSource.optional(),
+  bathymetry: TerrainSource.optional(),
+  buildings: TerrainSource.optional(),
+  seamarks: TerrainSource.optional(),
+});
+export type TerrainSources = z.infer<typeof TerrainSources>;
+
 /** Terrain block — when present, the scene compiler triggers a
- *  prepareTerrain() async pass that fetches OSM coastline +
- *  bathymetry for the given bbox. v0.4a uses a single bbox for
- *  both sources; per-source bbox / source overrides are v0.5+. */
+ *  prepareTerrain() async pass that loads coastline + bathymetry (+ optional
+ *  buildings/seamarks) for the bbox. By default each layer comes from the
+ *  public OSM/GMRT sources; `sources` overrides per layer with custom or
+ *  local data (ADR-005). `offline: true` asserts no layer may touch the
+ *  network — every needed layer must be a local (`geotiff`/`geojson`) or
+ *  `none` source, else the build fails fast. */
 export const Terrain = z.object({
   bbox: Bbox,
   landmask: z.boolean().default(true),
   buildings: z.boolean().default(true),
   seamarks: z.boolean().default(true),
+  sources: TerrainSources.optional(),
+  offline: z.boolean().default(false),
 });
 export type Terrain = z.infer<typeof Terrain>;
 

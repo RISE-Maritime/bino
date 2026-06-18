@@ -1,6 +1,6 @@
 # ADR-005: Pluggable terrain data sources — any location, custom & offline
 
-**Status:** Accepted — phase 1 implemented 2026-06-18 (phases 2-3 pending)
+**Status:** Accepted — phases 1-2 implemented 2026-06-18 (phase 3 pending)
 **Date:** 2026-06-18
 **Context:** Make Bino usable for "any" modelled location: generalize the
 terrain pipeline beyond the two hardcoded public APIs, let users supply
@@ -187,8 +187,13 @@ on 2.
 (Phase 1 — ✅ done) endpoint env vars (`BINO_OVERPASS_URL` / `BINO_GMRT_URL`);
 `fetchWithRetry` with bounded backoff; coastline/bathymetry graceful
 degradation (`flatBathymetry` placeholder); empty-layer thinness warnings.
-(Phase 2) `TerrainProvider` + provider chain; DSL `sources` schema; node
-file provider + provider factory; core GeoTIFF/GeoJSON/seamark parsers;
-`offline` assertion; tests.
+(Phase 2 — ✅ done) per-layer `TerrainProvider` + default fallback in
+`prepareTerrain`; DSL `terrain.sources` + `offline`; `terrainProviderFromSources`
+factory with layer/type validation + offline assertion; core parsers
+(`parseGeoTiffBathymetry`/`sampleRasterToGrid`, GeoJSON coastline/buildings/
+seamarks); per-source `endpoint` overrides; node fs readers + CLI wiring;
+source-signature cache key. Deferred within phase 2: CSV seamark loader and
+the browser (fetch-backed) file provider — GeoJSON + node cover the
+must-have offline path; both are additive later.
 (Phase 3) viewer IndexedDB cache; `prefetch:scenarios` + bundle shipping;
 binary cache format + version bump; streamed cosmetic layers; `gridResM`.

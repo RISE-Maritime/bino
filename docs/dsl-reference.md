@@ -55,15 +55,55 @@ WGS84 position defining the local ENU frame origin.
 
 ## Terrain
 
-When present, the scene compiler fetches OSM coastline and GMRT
-bathymetry for the given bounding box.
+When present, the scene compiler fetches coastline + bathymetry (and
+optionally buildings/seamarks) for the bounding box. By default each layer
+comes from the public OSM/GMRT sources; `sources` overrides per layer.
 
-| Field       | Type         | Default | Description                                      |
-| ----------- | ------------ | ------- | ------------------------------------------------ |
-| `bbox`      | [W, S, E, N] | --      | Bounding box in degrees (required)               |
-| `landmask`  | boolean      | true    | Generate filled land polygons from OSM coastline |
-| `buildings` | boolean      | true    | Extrude OSM building footprints                  |
-| `seamarks`  | boolean      | true    | Place OSM seamark features                       |
+| Field       | Type           | Default | Description                                     |
+| ----------- | -------------- | ------- | ----------------------------------------------- |
+| `bbox`      | [W, S, E, N]   | --      | Bounding box in degrees (required)              |
+| `landmask`  | boolean        | true    | Generate filled land polygons from coastline    |
+| `buildings` | boolean        | true    | Include building footprints                     |
+| `seamarks`  | boolean        | true    | Include seamark features                        |
+| `sources`   | TerrainSources | --      | Per-layer source overrides (see below)          |
+| `offline`   | boolean        | false   | Assert no layer touches the network (see below) |
+
+### Terrain sources (ADR-005)
+
+`terrain.sources` selects where each layer's data comes from. Any layer you
+omit falls back to its default public source, so you override only what you
+need. File paths resolve relative to the scenario file.
+
+```yaml
+terrain:
+  bbox: [10.05, 54.28, 10.25, 54.38]
+  sources:
+    bathymetry: { type: geotiff, path: ./kiel.tif }
+    coastline: { type: geojson, path: ./coast.geojson }
+    buildings: { type: overpass, endpoint: http://my-overpass/api }
+    seamarks: { type: none }
+```
+
+Each layer takes one source spec:
+
+| `type`     | Fields            | Valid layers                      |
+| ---------- | ----------------- | --------------------------------- |
+| `overpass` | `endpoint?` (URL) | coastline, buildings, seamarks    |
+| `gmrt`     | `endpoint?` (URL) | bathymetry                        |
+| `geotiff`  | `path` (file)     | bathymetry                        |
+| `geojson`  | `path` (file)     | coastline, buildings, seamarks    |
+| `none`     | --                | any (skip; bathymetry → flat sea) |
+
+Endpoints also have global env overrides (`BINO_OVERPASS_URL`,
+`BINO_GMRT_URL`). An invalid layer/type pairing fails when the scene is built.
+
+### Offline mode
+
+`offline: true` asserts the scene needs no network: every layer that would
+load (coastline + bathymetry always; buildings/seamarks when their flag is
+true) must be a local (`geotiff`/`geojson`) or `none` source. Any network or
+unspecified layer fails fast at build time — the way to guarantee an
+air-gapped or reproducible run.
 
 ## Vessels
 

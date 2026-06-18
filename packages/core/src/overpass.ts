@@ -26,9 +26,12 @@ export interface OverpassWay {
 
 export type OverpassElement = OverpassNode | OverpassWay;
 
-export async function queryOverpass(query: string): Promise<OverpassElement[]> {
+export async function queryOverpass(
+  query: string,
+  opts: { endpoint?: string } = {},
+): Promise<OverpassElement[]> {
   const res = await fetchWithRetry(
-    overpassUrl(),
+    opts.endpoint ?? overpassUrl(),
     {
       method: "POST",
       body: new URLSearchParams({ data: query }),
@@ -55,7 +58,10 @@ export interface BuildingData {
   tags: Record<string, string>;
 }
 
-export async function loadBuildings(bbox: Bbox): Promise<BuildingData[]> {
+export async function loadBuildings(
+  bbox: Bbox,
+  opts: { endpoint?: string } = {},
+): Promise<BuildingData[]> {
   const [west, south, east, north] = bbox;
   const query = `
 [out:json][timeout:60];
@@ -67,7 +73,7 @@ out body;
 out skel qt;
 `.trim();
 
-  const elements = await queryOverpass(query);
+  const elements = await queryOverpass(query, opts);
   return parseBuildingElements(elements);
 }
 
@@ -112,7 +118,10 @@ export interface SeamarkData {
   tags: Record<string, string>;
 }
 
-export async function loadSeamarks(bbox: Bbox): Promise<SeamarkData[]> {
+export async function loadSeamarks(
+  bbox: Bbox,
+  opts: { endpoint?: string } = {},
+): Promise<SeamarkData[]> {
   const [west, south, east, north] = bbox;
   const query = `
 [out:json][timeout:60];
@@ -122,7 +131,7 @@ export async function loadSeamarks(bbox: Bbox): Promise<SeamarkData[]> {
 out body;
 `.trim();
 
-  const elements = await queryOverpass(query);
+  const elements = await queryOverpass(query, opts);
   return parseSeamarkElements(elements);
 }
 

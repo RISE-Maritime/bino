@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { argv, env, exit, stderr, stdout } from "node:process";
+import { createHash } from "node:crypto";
+import { dirname } from "node:path";
 import { Config, open } from "@eclipse-zenoh/zenoh-ts";
 import {
   MemoryPoseStream,
@@ -7,6 +9,7 @@ import {
   navTopicKeys,
   resolveNavIdentity,
   prepareTerrain,
+  terrainProviderFromSources,
   type PoseStream,
   type CompiledScene,
   type TerrainData,
@@ -15,6 +18,7 @@ import {
 import { loadScenario } from "./yaml.js";
 import { createNodeService } from "./service.js";
 import { createFileTerrainCache } from "./terrain-cache.js";
+import { createFileSourceReaders } from "./terrain-readers.js";
 
 interface CliArgs {
   scenarioPath: string;
@@ -90,8 +94,25 @@ async function main(): Promise<void> {
       `terrain: preparing coastline + bathymetry for ${JSON.stringify(scene.terrain.bbox)}` +
         `${cache ? ` (cache: ${cacheDir})` : ""}…\n`,
     );
+    // Build the per-layer source provider (ADR-005): custom/local/offline
+    // sources from the DSL, with file paths resolved relative to the scenario.
+    const readers = createFileSourceReaders(dirname(parsed.scenarioPath));
+    const provider = terrainProviderFromSources(scene.terrain.sources, readers, {
+      offline: scene.terrain.offline,
+      buildings: scene.terrain.buildings,
+      seamarks: scene.terrain.seamarks,
+    });
+    const sourcesSig = scene.terrain.sources
+      ? createHash("sha1").update(JSON.stringify(scene.terrain.sources)).digest("hex").slice(0, 12)
+      : undefined;
     const t0 = performance.now();
-    terrain = await prepareTerrain(scene.terrain.bbox, cache ? { cache } : {});
+    terrain = await prepareTerrain(scene.terrain.bbox, {
+      ...(cache ? { cache } : {}),
+      buildings: scene.terrain.buildings,
+      seamarks: scene.terrain.seamarks,
+      provider,
+      ...(sourcesSig ? { sourcesSig } : {}),
+    });
     stdout.write(
       `terrain: ready in ${(performance.now() - t0).toFixed(0)} ms ` +
         `(${terrain.coastline.length} chains, ${terrain.bathymetry.width}x${terrain.bathymetry.height} grid)\n`,

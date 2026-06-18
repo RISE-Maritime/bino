@@ -38,7 +38,10 @@ type OverpassElement = OverpassNode | OverpassWay;
  * Load coastline geometry for a bbox via the Overpass API.
  * Settled by spike S11 — see spikes/osm-coastline/results.md.
  */
-export async function loadCoastline(bbox: Bbox): Promise<CoastlineChain[]> {
+export async function loadCoastline(
+  bbox: Bbox,
+  opts: { endpoint?: string } = {},
+): Promise<CoastlineChain[]> {
   const [west, south, east, north] = bbox;
   const query = `
 [out:json][timeout:60];
@@ -51,7 +54,7 @@ out skel qt;
 `.trim();
 
   const res = await fetchWithRetry(
-    overpassUrl(),
+    opts.endpoint ?? overpassUrl(),
     {
       method: "POST",
       body: new URLSearchParams({ data: query }),
@@ -155,11 +158,6 @@ export interface BathymetryGrid {
   cellSizeM: number;
 }
 
-/**
- * Fetch a bathymetry tile from GMRT's GridServer, parse with
- * geotiff.js, and sample to a regular grid at gridResM-metre
- * spacing. Settled by spike S12 — see spikes/bathymetry/results.md.
- */
 /** Grid dimensions for a bbox sampled at gridResM-metre spacing, projecting
  *  degrees to ENU metres (latitude-aware in longitude). Shared by the GMRT
  *  sampler and the flat placeholder so both agree on cell layout. */
@@ -185,25 +183,16 @@ export function flatBathymetry(bbox: Bbox, depthM = 10, gridResM = 50): Bathymet
   return { heights, width: gridW, height: gridH, bbox, cellSizeM: gridResM };
 }
 
-export async function loadBathymetry(bbox: Bbox, gridResM = 50): Promise<BathymetryGrid> {
-  const [west, south, east, north] = bbox;
-  const url = `${gmrtUrl()}?north=${north}&south=${south}&east=${east}&west=${west}&format=geotiff&resolution=high`;
-  const res = await fetchWithRetry(
-    url,
-    { headers: { "User-Agent": HTTP_USER_AGENT } },
-    { label: "GMRT bathymetry" },
-  );
-  if (!res.ok) {
-    throw new Error(`GMRT returned ${res.status}: ${await res.text()}`);
-  }
-  const ab = await res.arrayBuffer();
-  const geo = await fromArrayBuffer(ab);
-  const image = await geo.getImage();
-  const rasterW = image.getWidth();
-  const rasterH = image.getHeight();
-  const rasters = await image.readRasters();
-  const raster = rasters[0] as Float32Array | Uint16Array | number[];
-
+/** Nearest-neighbour resample of an elevation raster onto the bbox grid.
+ *  Pure (no I/O) so it's unit-testable and shared by the GMRT fetch and the
+ *  local-GeoTIFF source. Units: metres, positive = land. */
+export function sampleRasterToGrid(
+  raster: Float32Array | Uint16Array | Int16Array | number[],
+  rasterW: number,
+  rasterH: number,
+  bbox: Bbox,
+  gridResM = 50,
+): BathymetryGrid {
   const { gridW, gridH } = gridDims(bbox, gridResM);
   const heights = new Float32Array(gridW * gridH);
   for (let gy = 0; gy < gridH; gy++) {
@@ -214,8 +203,46 @@ export async function loadBathymetry(bbox: Bbox, gridResM = 50): Promise<Bathyme
       heights[gy * gridW + gx] = Number.isFinite(v) ? v : 0;
     }
   }
-
   return { heights, width: gridW, height: gridH, bbox, cellSizeM: gridResM };
+}
+
+/** Parse a GeoTIFF elevation raster (e.g. a GMRT tile or a local file) into a
+ *  bathymetry grid. Pure given the bytes — used by both the network and
+ *  local-file (ADR-005) bathymetry sources. */
+export async function parseGeoTiffBathymetry(
+  bytes: ArrayBuffer,
+  bbox: Bbox,
+  gridResM = 50,
+): Promise<BathymetryGrid> {
+  const geo = await fromArrayBuffer(bytes);
+  const image = await geo.getImage();
+  const rasters = await image.readRasters();
+  const raster = rasters[0] as Float32Array | Uint16Array | Int16Array | number[];
+  return sampleRasterToGrid(raster, image.getWidth(), image.getHeight(), bbox, gridResM);
+}
+
+/**
+ * Fetch a bathymetry tile from GMRT's GridServer, parse with geotiff.js, and
+ * sample to a regular grid at gridResM-metre spacing. Settled by spike S12 —
+ * see spikes/bathymetry/results.md. `endpoint` overrides the GMRT host.
+ */
+export async function loadBathymetry(
+  bbox: Bbox,
+  opts: { gridResM?: number; endpoint?: string } = {},
+): Promise<BathymetryGrid> {
+  const gridResM = opts.gridResM ?? 50;
+  const [west, south, east, north] = bbox;
+  const base = opts.endpoint ?? gmrtUrl();
+  const url = `${base}?north=${north}&south=${south}&east=${east}&west=${west}&format=geotiff&resolution=high`;
+  const res = await fetchWithRetry(
+    url,
+    { headers: { "User-Agent": HTTP_USER_AGENT } },
+    { label: "GMRT bathymetry" },
+  );
+  if (!res.ok) {
+    throw new Error(`GMRT returned ${res.status}: ${await res.text()}`);
+  }
+  return parseGeoTiffBathymetry(await res.arrayBuffer(), bbox, gridResM);
 }
 
 // ─── Mesh construction ────────────────────────────────────────────
@@ -242,8 +269,30 @@ export function terrainCacheKey(bbox: Bbox, opts: PrepareTerrainOptions = {}): s
   const coords = bbox.map((n) => n.toFixed(5)).join("_");
   const buildings = opts.buildings !== false ? 1 : 0;
   const seamarks = opts.seamarks !== false ? 1 : 0;
-  return `terrain_${coords}_b${buildings}_s${seamarks}`;
+  // Default-source scenarios keep their original key (backward-compatible);
+  // a custom source config adds a signature so it can't read a stale entry.
+  const sig = opts.sourcesSig ? `_${opts.sourcesSig}` : "";
+  return `terrain_${coords}_b${buildings}_s${seamarks}${sig}`;
 }
+
+/** A source for each terrain layer (ADR-005). Each method is optional; an
+ *  unset layer falls back to {@link defaultTerrainProvider} (OSM/GMRT). Build
+ *  one for custom/local/offline data via `terrainProviderFromSources`. */
+export interface TerrainProvider {
+  coastline?: (bbox: Bbox) => Promise<CoastlineChain[]>;
+  bathymetry?: (bbox: Bbox) => Promise<BathymetryGrid>;
+  buildings?: (bbox: Bbox) => Promise<BuildingData[]>;
+  seamarks?: (bbox: Bbox) => Promise<SeamarkData[]>;
+}
+
+/** The public OSM/GMRT sources — the fallback for any layer a custom provider
+ *  leaves unset, and the whole provider when none is supplied. */
+export const defaultTerrainProvider: Required<TerrainProvider> = {
+  coastline: (bbox) => loadCoastline(bbox),
+  bathymetry: (bbox) => loadBathymetry(bbox),
+  buildings: (bbox) => loadBuildings(bbox),
+  seamarks: (bbox) => loadSeamarks(bbox),
+};
 
 /** Async preparation step the service/viewer runs before
  *  buildScene. Keeps compileScenario sync and isolates network /
@@ -254,6 +303,12 @@ export interface PrepareTerrainOptions {
   /** When set, prepared terrain is read from / written to this cache,
    *  keyed by bbox+options — so a location is fetched only once. */
   cache?: TerrainCache;
+  /** Per-layer source provider (ADR-005). Unset layers fall back to the
+   *  default OSM/GMRT provider. */
+  provider?: TerrainProvider;
+  /** Opaque signature of the source configuration, folded into the cache key
+   *  so switching sources for the same bbox doesn't return stale data. */
+  sourcesSig?: string;
 }
 
 export async function prepareTerrain(
@@ -272,30 +327,39 @@ export async function prepareTerrain(
 
   const fetchBuildings = opts.buildings !== false;
   const fetchSeamarks = opts.seamarks !== false;
+  // Resolve each layer from the supplied provider, falling back per-layer to
+  // the default OSM/GMRT source (ADR-005).
+  const p = opts.provider;
+  const coastlineFn = p?.coastline ?? defaultTerrainProvider.coastline;
+  const bathymetryFn = p?.bathymetry ?? defaultTerrainProvider.bathymetry;
+  const buildingsFn = p?.buildings ?? defaultTerrainProvider.buildings;
+  const seamarksFn = p?.seamarks ?? defaultTerrainProvider.seamarks;
   // Every layer degrades gracefully (ADR-005): a failed fetch logs a warning
   // and yields a placeholder rather than rejecting, so "any location" never
-  // hard-crashes on a flaky public API. Coastline/bathymetry are structural,
-  // so their failure is surfaced more loudly than the cosmetic layers'.
+  // hard-crashes on a flaky source. Coastline/bathymetry are structural, so
+  // their failure is surfaced more loudly than the cosmetic layers'.
   const [coastline, bathymetry, buildings, seamarks] = await Promise.all([
-    loadCoastline(bbox).catch((e) => {
-      console.warn(`[bino] coastline fetch failed (${errMsg(e)}); rendering without coastline`);
+    coastlineFn(bbox).catch((e) => {
+      console.warn(`[bino] coastline source failed (${errMsg(e)}); rendering without coastline`);
       return [] as CoastlineChain[];
     }),
-    loadBathymetry(bbox).catch((e) => {
+    bathymetryFn(bbox).catch((e) => {
       console.warn(
-        `[bino] bathymetry fetch failed (${errMsg(e)}); using a flat placeholder seabed`,
+        `[bino] bathymetry source failed (${errMsg(e)}); using a flat placeholder seabed`,
       );
       return flatBathymetry(bbox);
     }),
     fetchBuildings
-      ? loadBuildings(bbox).catch((e) => {
-          console.warn(`[bino] buildings fetch failed (${errMsg(e)}); rendering without buildings`);
+      ? buildingsFn(bbox).catch((e) => {
+          console.warn(
+            `[bino] buildings source failed (${errMsg(e)}); rendering without buildings`,
+          );
           return [] as BuildingData[];
         })
       : ([] as BuildingData[]),
     fetchSeamarks
-      ? loadSeamarks(bbox).catch((e) => {
-          console.warn(`[bino] seamarks fetch failed (${errMsg(e)}); rendering without seamarks`);
+      ? seamarksFn(bbox).catch((e) => {
+          console.warn(`[bino] seamarks source failed (${errMsg(e)}); rendering without seamarks`);
           return [] as SeamarkData[];
         })
       : ([] as SeamarkData[]),
