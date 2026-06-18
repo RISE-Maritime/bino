@@ -1,6 +1,6 @@
 # ADR-005: Pluggable terrain data sources — any location, custom & offline
 
-**Status:** Accepted — phases 1-3 implemented 2026-06-18 (load-time follow-ups deferred)
+**Status:** Accepted — complete 2026-06-18 (streamed cosmetic layers intentionally not pursued; see backlog)
 **Date:** 2026-06-18
 **Context:** Make Bino usable for "any" modelled location: generalize the
 terrain pipeline beyond the two hardcoded public APIs, let users supply
@@ -199,8 +199,10 @@ must-have offline path; both are additive later.
 through prepareTerrain/provider/CLI + cache key); viewer IndexedDB
 `TerrainCache` wired into `viewer.ts`; `prefetch:scenarios` script warming the
 file cache (shippable in Docker), with a shared `terrainSourcesSignature` so
-warmed keys match the CLI. Deferred (still): streamed cosmetic layers (touches
-the well-tested scene-build flow for a modest perceived-latency gain).
+warmed keys match the CLI. **Not pursued** (ADR closed): streamed cosmetic
+layers — it touches the well-tested scene-build flow for only a modest
+perceived-latency gain, and the cache/bundle work already covers the dominant
+load-time cost. Revisit if first-paint latency becomes a real complaint.
 (Phase 3 follow-up — ✅ done) browser static-bundle first-load fetch:
 `createStaticBundleCache` (read-only `fetch` of `{BASE_URL}terrain/<key>.bin`)
 composed in front of the IndexedDB cache by `createViewerTerrainCache` —

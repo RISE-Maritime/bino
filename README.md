@@ -30,8 +30,11 @@ feeds, scripted scenarios) rather than computing dynamics itself.
   without code changes
 - **Deterministic mode** — frame-index-driven clock and seeded PRNG
   for bit-for-bit reproducible V&V runs
-- **Real-world terrain** — OSM coastline, GMRT bathymetry, building
-  footprints, seamarks, Gerstner wave synthesis
+- **Real-world terrain, any location** — OSM coastline, GMRT bathymetry,
+  building footprints, seamarks, Gerstner wave synthesis; per-layer
+  pluggable sources (custom endpoints or local GeoTIFF/GeoJSON), a
+  strict-offline mode for air-gapped/BYO-data runs, and cached/prefetched
+  bundles for fast loads (ADR-005)
 - **Performance escape hatches** — Rust/WASM kernels for lidar and
   radar; TypeScript everywhere else
 
