@@ -70,10 +70,31 @@ export interface MountOptions {
 interface PpiCache {
   lut: Uint32Array;
   imageData: ImageData;
+  /** Per-pixel phosphor brightness (0..1), decays each frame and is re-lit as
+   *  the beam sweeps over a pixel — gives the trailing-glow PPI look. */
+  bright: Float32Array;
   w: number;
   h: number;
   nSpokes: number;
   nBins: number;
+}
+
+/** Per-radar sweep-animation state: where the beam is right now, derived from
+ *  wall-clock elapsed since the current sweep was produced. Shared by the PPI
+ *  canvas and the in-scene overlay so they rotate together. */
+interface RadarAnim {
+  /** Seconds per revolution (1 / rotation_rate_hz). */
+  period_s: number;
+  /** The sweep currently being painted (reference-compared to detect a new one). */
+  sweepRef: RadarFrame | null;
+  /** Wall-clock time the current sweep started painting. */
+  startT: number;
+  /** Beam spoke index this frame, and the previous frame's (the arc swept since). */
+  beam: number;
+  prevBeam: number;
+  /** Wall-clock time of the previous frame, for the decay dt. */
+  lastT: number;
+  dt: number;
 }
 
 /**
@@ -151,6 +172,8 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   const kernels: ScheduledKernel[] = [];
   const cameraHelpers: THREE.CameraHelper[] = [];
   const radarOverlays: Array<{ ring: THREE.LineLoop }> = [];
+  // Per-radar-kernel sweep animation (beam position + decay timing).
+  const radarAnimByKernel = new Map<AnyKernel, RadarAnim>();
   /** Per-sensor preview wiring. The same map across all three sensor
    *  types — branched on type at draw time. */
   interface CameraPreview {
@@ -385,6 +408,15 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
         sensorNode.add(ring);
         radarOverlays.push({ ring });
         createOverlay(sensor.id, sensorNode, "radar", sensor.range_m, kernel, 65536);
+        radarAnimByKernel.set(kernel, {
+          period_s: 1 / sensor.rotation_rate_hz,
+          sweepRef: null,
+          startT: 0,
+          beam: 0,
+          prevBeam: -1,
+          lastT: performance.now() / 1000,
+          dt: 0,
+        });
         if (previewCanvas) {
           previews.push({
             type: "radar",
@@ -395,6 +427,7 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
             ppiCache: {
               lut: new Uint32Array(0),
               imageData: new ImageData(1, 1),
+              bright: new Float32Array(0),
               w: 0,
               h: 0,
               nSpokes: 0,
@@ -473,13 +506,31 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
       }
     }
 
+    // Advance each radar's beam from elapsed time since its sweep was produced,
+    // so the PPI + overlay paint progressively rather than snapping per rev.
+    for (const [kernel, anim] of radarAnimByKernel) {
+      const out = latestByKernel.get(kernel) as RadarFrame | undefined;
+      if (!out) continue;
+      anim.dt = Math.max(0, t - anim.lastT);
+      anim.lastT = t;
+      if (out !== anim.sweepRef) {
+        anim.sweepRef = out;
+        anim.startT = t;
+        anim.prevBeam = -1;
+      }
+      const nSpokes = out.spokes.length || 1;
+      const frac = Math.min(1, (t - anim.startT) / anim.period_s);
+      anim.beam = Math.min(nSpokes - 1, Math.max(0, Math.floor(frac * nSpokes)));
+    }
+
     for (const p of previews) {
       const out = latestByKernel.get(p.kernel);
       if (!out) continue;
       if (p.type === "camera")
         drawCameraPreview(p.canvas, p.offscreen, p.imageData, out as CameraFrame);
       else if (p.type === "lidar") drawLidarPreview3d(p, out as LidarFrame);
-      else if (p.type === "radar") drawPpi(p.canvas, out as RadarFrame, p.range, p.ppiCache);
+      else if (p.type === "radar")
+        drawPpi(p.canvas, out as RadarFrame, p.range, p.ppiCache, radarAnimByKernel.get(p.kernel));
     }
 
     for (const ov of sensorOverlays) {
@@ -487,8 +538,12 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
       const out = latestByKernel.get(ov.kernel);
       if (!out) continue;
       if (ov.type === "lidar") updateLidarOverlay(ov, out as LidarFrame);
-      else updateRadarOverlay(ov, out as RadarFrame);
+      else updateRadarOverlay(ov, out as RadarFrame, radarAnimByKernel.get(ov.kernel));
     }
+
+    // Beam advanced for this frame; remember it as the previous edge so next
+    // frame lights only the newly-swept arc.
+    for (const anim of radarAnimByKernel.values()) anim.prevBeam = anim.beam;
 
     for (const h of cameraHelpers) h.update();
 
@@ -724,10 +779,12 @@ function updateRadarOverlay(
     range: number;
   },
   sweep: RadarFrame,
+  anim?: RadarAnim,
 ): void {
   const positions = ov.positionAttr.array as Float32Array;
   const colors = ov.colorAttr.array as Float32Array;
   const bins = sweep.spokes[0]?.intensity.length ?? 0;
+  const nSpokes = sweep.spokes.length;
   ov.sensorNode.getWorldPosition(_ovVec);
   // Heading comes from the vessel body (sensor's parent), matching
   // marshalRadarSensorPose — azimuth 0 is the bow, independent of the mount.
@@ -737,8 +794,15 @@ function updateRadarOverlay(
   const sx = _ovVec.x,
     sy = _ovVec.y,
     sz = _ovVec.z;
+  // Reveal spokes up to the beam and dim them by how far behind it they sit,
+  // so returns appear under the rotating beam and trail off (matches the PPI).
+  const beam = anim ? anim.beam : nSpokes - 1;
+  const persist = Math.max(1, Math.floor(nSpokes * 0.5));
   let count = 0;
-  for (const spoke of sweep.spokes) {
+  for (let si = 0; si < nSpokes && si <= beam; si++) {
+    const recency = 1 - (beam - si) / persist;
+    if (recency <= 0) continue;
+    const spoke = sweep.spokes[si]!;
     const wa = heading + spoke.azimuth;
     const cosA = Math.cos(wa);
     const sinA = Math.sin(wa);
@@ -749,7 +813,7 @@ function updateRadarOverlay(
       positions[count * 3] = sx + cosA * r;
       positions[count * 3 + 1] = sy;
       positions[count * 3 + 2] = sz + sinA * r;
-      const norm = Math.sqrt(v / 255);
+      const norm = Math.sqrt(v / 255) * recency;
       colors[count * 3] = norm * 0.15;
       colors[count * 3 + 1] = norm;
       colors[count * 3 + 2] = norm * 0.08;
@@ -791,6 +855,7 @@ function drawPpi(
   sweep: RadarFrame,
   range: number,
   cache: PpiCache,
+  anim?: RadarAnim,
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -803,37 +868,47 @@ function drawPpi(
   if (cache.w !== w || cache.h !== h || cache.nSpokes !== nSpokes || cache.nBins !== bins) {
     cache.lut = buildPpiLut(w, h, nSpokes, bins);
     cache.imageData = new ImageData(w, h);
+    cache.bright = new Float32Array(w * h);
     cache.w = w;
     cache.h = h;
     cache.nSpokes = nSpokes;
     cache.nBins = bins;
   }
 
-  const { lut, imageData } = cache;
+  const { lut, imageData, bright } = cache;
   const data = imageData.data;
-
-  // Background fill
-  for (let i = 0; i < data.length; i += 4) {
-    data[i] = 10;
-    data[i + 1] = 22;
-    data[i + 2] = 38;
-    data[i + 3] = 255;
-  }
-
-  // Fill pixels from polar LUT — pixel-perfect coverage, no gaps
   const n = w * h;
+
+  // The beam sweeps the arc (prevBeam, beam] this frame, lighting pixels there;
+  // everything else decays toward the background (phosphor persistence).
+  const beam = anim ? anim.beam : nSpokes - 1;
+  const prev = anim ? anim.prevBeam : -1;
+  const fade = anim && anim.period_s > 0 ? Math.exp(-anim.dt / anim.period_s) : 1;
+
   for (let i = 0; i < n; i++) {
     const entry = lut[i]!;
-    if (entry === PPI_LUT_INVALID) continue;
+    const bi = i * 4;
+    if (entry === PPI_LUT_INVALID) {
+      data[bi] = 10;
+      data[bi + 1] = 22;
+      data[bi + 2] = 38;
+      data[bi + 3] = 255;
+      continue;
+    }
     const spokeIdx = entry >>> 16;
     const binIdx = entry & 0xffff;
-    const v = sweep.spokes[spokeIdx]!.intensity[binIdx]!;
-    if (v === 0) continue;
-    const norm = Math.sqrt(v / 255);
-    const idx = i * 4;
-    data[idx] = Math.round(norm * 40);
-    data[idx + 1] = Math.round(norm * 255);
-    data[idx + 2] = Math.round(norm * 20);
+    let g = bright[i]!;
+    if (spokeIdx > prev && spokeIdx <= beam) {
+      const v = sweep.spokes[spokeIdx]!.intensity[binIdx]!;
+      g = v > 0 ? Math.sqrt(v / 255) : g * fade;
+    } else {
+      g = g * fade;
+    }
+    bright[i] = g;
+    data[bi] = 10 + g * 45;
+    data[bi + 1] = 22 + g * 233;
+    data[bi + 2] = 38 + g * 18;
+    data[bi + 3] = 255;
   }
 
   ctx.putImageData(imageData, 0, 0);
@@ -867,12 +942,21 @@ function drawPpi(
     ctx.fillText(label, cx + 3, cy - (r * k) / 4 - 3);
   }
 
-  // Heading flash: forward direction
-  ctx.strokeStyle = "rgba(100, 200, 140, 0.5)";
+  // Heading mark: forward direction (faint, fixed).
+  ctx.strokeStyle = "rgba(100, 200, 140, 0.3)";
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   ctx.lineTo(cx, cy - r);
+  ctx.stroke();
+
+  // Rotating sweep beam at the current azimuth (spoke 0 = bow = up).
+  const az = ((beam + 0.5) / nSpokes) * Math.PI * 2;
+  ctx.strokeStyle = "rgba(120, 255, 160, 0.85)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.sin(az) * r, cy - Math.cos(az) * r);
   ctx.stroke();
 }
 
