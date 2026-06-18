@@ -5,6 +5,9 @@ import {
   createLidarKernelWasm,
   createRadarKernel,
   createCameraKernel,
+  type LidarSensor,
+  type RadarSensor,
+  type CameraSensor,
 } from "@bino/core";
 import { createHeadlessRenderer } from "../src/headless-gl.js";
 
@@ -69,7 +72,7 @@ describe("temporal modeling", () => {
     const kernel = createLidarKernelWasm({
       scene: built.scene,
       sensorNode,
-      config: compiled.vessels[0]!.sensors[0]! as any,
+      config: compiled.vessels[0]!.sensors[0]! as LidarSensor,
       terrain: built.terrain,
     });
 
@@ -123,7 +126,7 @@ describe("temporal modeling", () => {
     const kernel = createRadarKernel({
       scene: built.scene,
       sensorNode,
-      config: compiled.vessels[0]!.sensors[0]! as any,
+      config: compiled.vessels[0]!.sensors[0]! as RadarSensor,
     });
 
     const frame = kernel.step(1.0);
@@ -177,7 +180,7 @@ describe("temporal modeling", () => {
       renderer: handle.renderer,
       scene: built.scene,
       sensorNode,
-      config: compiled.vessels[0]!.sensors[0]! as any,
+      config: compiled.vessels[0]!.sensors[0]! as CameraSensor,
     });
 
     const frame = kernel.step(2.0);
