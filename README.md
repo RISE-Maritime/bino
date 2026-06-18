@@ -4,7 +4,7 @@ _A maritime perception sensor emulator for verification & validation_
 
 ---
 
-![Bino viewer — Kiel approach scenario with camera, lidar, and radar preview panels](docs/images/viewer-kiel.png)
+![Bino viewer — Kiel approach: 3D scene with camera/lidar/radar preview panels and the live rotating radar PPI sweep](docs/images/viewer-kiel.gif)
 
 Bino is a 3D world renderer and synthetic perception sensor emulator
 for maritime applications. It produces real-time **camera**, **lidar**,
