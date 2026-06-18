@@ -1,6 +1,6 @@
 # ADR-005: Pluggable terrain data sources — any location, custom & offline
 
-**Status:** Accepted — phases 1-2 implemented 2026-06-18 (phase 3 pending)
+**Status:** Accepted — phases 1-3 implemented 2026-06-18 (load-time follow-ups deferred)
 **Date:** 2026-06-18
 **Context:** Make Bino usable for "any" modelled location: generalize the
 terrain pipeline beyond the two hardcoded public APIs, let users supply
@@ -195,5 +195,12 @@ seamarks); per-source `endpoint` overrides; node fs readers + CLI wiring;
 source-signature cache key. Deferred within phase 2: CSV seamark loader and
 the browser (fetch-backed) file provider — GeoJSON + node cover the
 must-have offline path; both are additive later.
-(Phase 3) viewer IndexedDB cache; `prefetch:scenarios` + bundle shipping;
-binary cache format + version bump; streamed cosmetic layers; `gridResM`.
+(Phase 3 — ✅ core delivered) `gridResM` knob (`terrain.grid_res_m`, threaded
+through prepareTerrain/provider/CLI + cache key); viewer IndexedDB
+`TerrainCache` wired into `viewer.ts`; `prefetch:scenarios` script warming the
+file cache (shippable in Docker), with a shared `terrainSourcesSignature` so
+warmed keys match the CLI. Deferred as lower-ROI / higher-risk follow-ups:
+binary cache format (the JSON cache works; `gridResM` already shrinks the
+payload); streamed cosmetic layers (touches the well-tested scene-build flow
+for a modest perceived-latency gain); browser static-bundle fetch (the
+IndexedDB cache covers viewer repeat loads; first-load bundles can follow).

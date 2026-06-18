@@ -7,6 +7,7 @@ import {
   sampleRasterToGrid,
   prepareTerrain,
   terrainCacheKey,
+  terrainSourcesSignature,
   type BathymetryGrid,
   type CoastlineChain,
   type TerrainCache,
@@ -196,6 +197,33 @@ describe("prepareTerrain caching", () => {
     const result = await prepareTerrain(bbox, { cache });
     expect(result).toBe(cached);
     expect(writes).toBe(0);
+  });
+});
+
+describe("terrainCacheKey / terrainSourcesSignature", () => {
+  const bbox: [number, number, number, number] = [10.05, 54.28, 10.25, 54.38];
+
+  it("keeps the default-source key backward-compatible", () => {
+    expect(terrainCacheKey(bbox)).toBe("terrain_10.05000_54.28000_10.25000_54.38000_b1_s1");
+  });
+
+  it("appends a grid suffix only for non-default spacing", () => {
+    expect(terrainCacheKey(bbox, { gridResM: 50 })).toBe(terrainCacheKey(bbox));
+    expect(terrainCacheKey(bbox, { gridResM: 100 })).toContain("_g100");
+  });
+
+  it("appends a source signature so changed sources don't collide", () => {
+    const a = terrainCacheKey(bbox, { sourcesSig: "abcd1234" });
+    expect(a).toContain("_abcd1234");
+    expect(a).not.toBe(terrainCacheKey(bbox));
+  });
+
+  it("signature is deterministic and config-sensitive", () => {
+    const s1 = { bathymetry: { type: "geotiff", path: "a.tif" } };
+    const s2 = { bathymetry: { type: "geotiff", path: "b.tif" } };
+    expect(terrainSourcesSignature(s1)).toBe(terrainSourcesSignature(s1));
+    expect(terrainSourcesSignature(s1)).not.toBe(terrainSourcesSignature(s2));
+    expect(terrainSourcesSignature(s1)).toMatch(/^[0-9a-f]{8}$/);
   });
 });
 

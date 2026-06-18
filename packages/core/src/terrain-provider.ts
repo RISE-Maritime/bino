@@ -31,6 +31,8 @@ export interface BuildProviderOptions {
    *  the offline assertion to layers that will load. Default true. */
   buildings?: boolean;
   seamarks?: boolean;
+  /** Bathymetry grid spacing in metres (default 50) for gmrt/geotiff/none. */
+  gridResM?: number;
 }
 
 type Layer = "coastline" | "bathymetry" | "buildings" | "seamarks";
@@ -104,7 +106,7 @@ export function terrainProviderFromSources(
   if (sources?.bathymetry) {
     const s = sources.bathymetry;
     check("bathymetry", s);
-    provider.bathymetry = bathymetry(s, readers);
+    provider.bathymetry = bathymetry(s, readers, opts.gridResM ?? 50);
   }
   if (sources?.buildings) {
     const s = sources.buildings;
@@ -132,11 +134,12 @@ function coastline(
 function bathymetry(
   s: TerrainSource,
   readers: TerrainSourceReaders,
+  gridResM: number,
 ): (bbox: Bbox) => Promise<BathymetryGrid> {
-  if (s.type === "gmrt") return (bbox) => loadBathymetry(bbox, ep(s));
+  if (s.type === "gmrt") return (bbox) => loadBathymetry(bbox, { ...ep(s), gridResM });
   if (s.type === "geotiff")
-    return async (bbox) => parseGeoTiffBathymetry(await readers.readBinary(s.path), bbox);
-  return async (bbox) => flatBathymetry(bbox);
+    return async (bbox) => parseGeoTiffBathymetry(await readers.readBinary(s.path), bbox, gridResM);
+  return async (bbox) => flatBathymetry(bbox, 10, gridResM);
 }
 
 function buildings(

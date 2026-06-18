@@ -104,6 +104,7 @@ export const v01Scenario: Scenario = {
     buildings: true,
     seamarks: true,
     offline: false,
+    grid_res_m: 50,
   },
   keelson: { base_path: "bino" },
 };

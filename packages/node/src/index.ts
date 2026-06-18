@@ -9,6 +9,7 @@ export {
 } from "./runner.js";
 export { createNodeService, type NodeService, type NodeServiceOptions } from "./service.js";
 export { createFileTerrainCache } from "./terrain-cache.js";
+export { createFileSourceReaders } from "./terrain-readers.js";
 export {
   createSensorPublisher,
   type PublishSession,

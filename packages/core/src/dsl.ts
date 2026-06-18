@@ -249,6 +249,9 @@ export const Terrain = z.object({
   seamarks: z.boolean().default(true),
   sources: TerrainSources.optional(),
   offline: z.boolean().default(false),
+  /** Bathymetry grid spacing in metres — larger trades fidelity for a smaller
+   *  mesh and faster load (ADR-005). Default 50 m. */
+  grid_res_m: z.number().positive().default(50),
 });
 export type Terrain = z.infer<typeof Terrain>;
 

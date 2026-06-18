@@ -48,6 +48,17 @@ describe("terrainProviderFromSources", () => {
     expect([...grid.heights].every((h) => h < 0)).toBe(true);
   });
 
+  it("threads gridResM into the bathymetry source (coarser → smaller grid)", async () => {
+    const fine = await terrainProviderFromSources({ bathymetry: { type: "none" } }, readers(), {
+      gridResM: 50,
+    }).bathymetry!(bbox);
+    const coarse = await terrainProviderFromSources({ bathymetry: { type: "none" } }, readers(), {
+      gridResM: 500,
+    }).bathymetry!(bbox);
+    expect(coarse.cellSizeM).toBe(500);
+    expect(coarse.width).toBeLessThan(fine.width);
+  });
+
   it("rejects a source type that is invalid for the layer", () => {
     expect(() => terrainProviderFromSources({ coastline: { type: "gmrt" } }, readers())).toThrow(
       /not valid for layer 'coastline'/,

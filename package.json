@@ -17,7 +17,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "validate:scenarios": "cd packages/node && npx vitest run test/scenarios.test.ts"
+    "validate:scenarios": "cd packages/node && npx vitest run test/scenarios.test.ts",
+    "prefetch:scenarios": "node scripts/prefetch-terrain.mjs"
   },
   "packageManager": "pnpm@9.15.0",
   "devDependencies": {

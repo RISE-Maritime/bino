@@ -59,14 +59,15 @@ When present, the scene compiler fetches coastline + bathymetry (and
 optionally buildings/seamarks) for the bounding box. By default each layer
 comes from the public OSM/GMRT sources; `sources` overrides per layer.
 
-| Field       | Type           | Default | Description                                     |
-| ----------- | -------------- | ------- | ----------------------------------------------- |
-| `bbox`      | [W, S, E, N]   | --      | Bounding box in degrees (required)              |
-| `landmask`  | boolean        | true    | Generate filled land polygons from coastline    |
-| `buildings` | boolean        | true    | Include building footprints                     |
-| `seamarks`  | boolean        | true    | Include seamark features                        |
-| `sources`   | TerrainSources | --      | Per-layer source overrides (see below)          |
-| `offline`   | boolean        | false   | Assert no layer touches the network (see below) |
+| Field        | Type           | Default | Description                                          |
+| ------------ | -------------- | ------- | ---------------------------------------------------- |
+| `bbox`       | [W, S, E, N]   | --      | Bounding box in degrees (required)                   |
+| `landmask`   | boolean        | true    | Generate filled land polygons from coastline         |
+| `buildings`  | boolean        | true    | Include building footprints                          |
+| `seamarks`   | boolean        | true    | Include seamark features                             |
+| `sources`    | TerrainSources | --      | Per-layer source overrides (see below)               |
+| `offline`    | boolean        | false   | Assert no layer touches the network (see below)      |
+| `grid_res_m` | number         | 50      | Bathymetry grid spacing (m); larger = faster/coarser |
 
 ### Terrain sources (ADR-005)
 

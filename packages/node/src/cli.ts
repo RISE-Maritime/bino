@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { argv, env, exit, stderr, stdout } from "node:process";
-import { createHash } from "node:crypto";
 import { dirname } from "node:path";
 import { Config, open } from "@eclipse-zenoh/zenoh-ts";
 import {
@@ -10,6 +9,7 @@ import {
   resolveNavIdentity,
   prepareTerrain,
   terrainProviderFromSources,
+  terrainSourcesSignature,
   type PoseStream,
   type CompiledScene,
   type TerrainData,
@@ -101,15 +101,17 @@ async function main(): Promise<void> {
       offline: scene.terrain.offline,
       buildings: scene.terrain.buildings,
       seamarks: scene.terrain.seamarks,
+      gridResM: scene.terrain.grid_res_m,
     });
     const sourcesSig = scene.terrain.sources
-      ? createHash("sha1").update(JSON.stringify(scene.terrain.sources)).digest("hex").slice(0, 12)
+      ? terrainSourcesSignature(scene.terrain.sources)
       : undefined;
     const t0 = performance.now();
     terrain = await prepareTerrain(scene.terrain.bbox, {
       ...(cache ? { cache } : {}),
       buildings: scene.terrain.buildings,
       seamarks: scene.terrain.seamarks,
+      gridResM: scene.terrain.grid_res_m,
       provider,
       ...(sourcesSig ? { sourcesSig } : {}),
     });

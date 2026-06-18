@@ -263,16 +263,32 @@ export interface TerrainCache {
   set(key: string, data: TerrainData): Promise<void>;
 }
 
+/** Deterministic, filename-safe signature of a source configuration (ADR-005).
+ *  Folded into the cache key so a changed `terrain.sources` can't read a stale
+ *  entry. FNV-1a over the JSON form — no crypto, so it runs in the browser too,
+ *  and the CLI + prefetch script agree on the same key. */
+export function terrainSourcesSignature(sources: unknown): string {
+  const str = JSON.stringify(sources ?? null);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
 /** Stable cache key for a bbox + fetch options. Bbox is rounded to
  *  ~1 m so trivially-different floats still hit the same entry. */
 export function terrainCacheKey(bbox: Bbox, opts: PrepareTerrainOptions = {}): string {
   const coords = bbox.map((n) => n.toFixed(5)).join("_");
   const buildings = opts.buildings !== false ? 1 : 0;
   const seamarks = opts.seamarks !== false ? 1 : 0;
-  // Default-source scenarios keep their original key (backward-compatible);
-  // a custom source config adds a signature so it can't read a stale entry.
+  // Default scenarios keep their original key (backward-compatible); a custom
+  // source config or non-default grid spacing adds a suffix so a changed
+  // config can't read a stale entry.
   const sig = opts.sourcesSig ? `_${opts.sourcesSig}` : "";
-  return `terrain_${coords}_b${buildings}_s${seamarks}${sig}`;
+  const grid = opts.gridResM && opts.gridResM !== 50 ? `_g${opts.gridResM}` : "";
+  return `terrain_${coords}_b${buildings}_s${seamarks}${grid}${sig}`;
 }
 
 /** A source for each terrain layer (ADR-005). Each method is optional; an
@@ -309,6 +325,9 @@ export interface PrepareTerrainOptions {
   /** Opaque signature of the source configuration, folded into the cache key
    *  so switching sources for the same bbox doesn't return stale data. */
   sourcesSig?: string;
+  /** Bathymetry grid spacing in metres (default 50). Applies to the default
+   *  GMRT source and the flat placeholder; custom providers carry their own. */
+  gridResM?: number;
 }
 
 export async function prepareTerrain(
@@ -330,8 +349,9 @@ export async function prepareTerrain(
   // Resolve each layer from the supplied provider, falling back per-layer to
   // the default OSM/GMRT source (ADR-005).
   const p = opts.provider;
+  const gridResM = opts.gridResM ?? 50;
   const coastlineFn = p?.coastline ?? defaultTerrainProvider.coastline;
-  const bathymetryFn = p?.bathymetry ?? defaultTerrainProvider.bathymetry;
+  const bathymetryFn = p?.bathymetry ?? ((b: Bbox) => loadBathymetry(b, { gridResM }));
   const buildingsFn = p?.buildings ?? defaultTerrainProvider.buildings;
   const seamarksFn = p?.seamarks ?? defaultTerrainProvider.seamarks;
   // Every layer degrades gracefully (ADR-005): a failed fetch logs a warning
@@ -347,7 +367,7 @@ export async function prepareTerrain(
       console.warn(
         `[bino] bathymetry source failed (${errMsg(e)}); using a flat placeholder seabed`,
       );
-      return flatBathymetry(bbox);
+      return flatBathymetry(bbox, 10, gridResM);
     }),
     fetchBuildings
       ? buildingsFn(bbox).catch((e) => {

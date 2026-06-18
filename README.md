@@ -67,7 +67,9 @@ docker run --rm -p 8080:80 bino-viewer        # http://localhost:8080
 ```
 
 - Mount a volume at `/cache` (or set `BINO_TERRAIN_CACHE`) to persist or
-  pre-seed fetched terrain for offline runs.
+  pre-seed fetched terrain for offline runs. Run `pnpm prefetch:scenarios`
+  (after `pnpm build`) to warm that cache for every scenario up front, so the
+  first container run starts fast and offline.
 - A GPU-accelerated node variant is deferred; the camera render is the only
   GPU-bound path, and software GL is more reproducible for deterministic runs.
 
