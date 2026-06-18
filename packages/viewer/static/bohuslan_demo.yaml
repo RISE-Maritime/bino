@@ -49,11 +49,16 @@ scenario:
           fov_deg: 90
           resolution: [1280, 720]
           rate_hz: 10
-        - id: dome_lidar
+        - id: os2_lidar
           type: lidar
           mount: { x: 0.6, y: 1.4, z: 0 }
-          channels: 16
-          range_m: 100
+          # Ouster OS2-128: 128 beams, 22.5 deg vertical FOV, 360 deg,
+          # 1024 columns/rev, 240 m range, 10 Hz.
+          channels: 128
+          fov_v_deg: 22.5
+          fov_h_deg: 360
+          azimuths: 1024
+          range_m: 240
           rate_hz: 10
         - id: radar
           type: radar_marine

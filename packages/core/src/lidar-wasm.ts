@@ -101,7 +101,7 @@ export function buildLidarWasmConfig(
     waterLevelY?: number;
   },
 ): LidarWasmConfig {
-  const fov = opts?.fov_deg ?? DEFAULT_FOV_DEG;
+  const fov = opts?.fov_deg ?? config.fov_v_deg ?? DEFAULT_FOV_DEG;
   return {
     channels: config.channels,
     azimuths: opts?.azimuths ?? config.azimuths ?? config.channels,

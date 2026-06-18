@@ -244,4 +244,13 @@ describe("buildLidarWasmConfig", () => {
     expect(cfg.fov_h_deg).toBe(90);
     expect(cfg.azimuths).toBe(64);
   });
+
+  it("defaults vertical FOV to 90 and reads fov_v_deg from config (e.g. OS2)", () => {
+    expect(buildLidarWasmConfig(parsedConfig).fov_v_deg).toBe(90);
+    expect(buildLidarWasmConfig({ ...parsedConfig, fov_v_deg: 22.5 }).fov_v_deg).toBe(22.5);
+    // explicit opts still win
+    expect(
+      buildLidarWasmConfig({ ...parsedConfig, fov_v_deg: 22.5 }, { fov_deg: 45 }).fov_v_deg,
+    ).toBe(45);
+  });
 });

@@ -92,6 +92,9 @@ export const LidarSensor = z.object({
   rate_hz: z.number().positive(),
   phase_offset_s: z.number().default(0),
   fov_h_deg: z.number().positive().max(360).default(360),
+  /** Vertical FOV in degrees (total, centred on horizontal). Defaults to 90;
+   *  e.g. an Ouster OS2 is 22.5, OS1 45, OS0 90. */
+  fov_v_deg: z.number().positive().max(180).optional(),
   azimuths: z.number().int().positive().optional(),
   publish_topic_override: z.string().min(1).optional(),
   /** Override the in-payload frame_id (see CameraSensor.frame_id). */
