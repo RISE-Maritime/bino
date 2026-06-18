@@ -11,6 +11,7 @@ packages/*/wasm/
 .DS_Store
 .devcontainer/devcontainer-lock.json
 .bino-cache/
+packages/viewer/static/terrain/
 .env
 .env.local
 coverage/

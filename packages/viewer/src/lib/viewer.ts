@@ -32,7 +32,7 @@ import {
 import type { LidarWorkerResult } from "./lidar-worker.js";
 import type { RadarWorkerResult } from "./radar-worker.js";
 import { v01Scenario } from "./scenario.js";
-import { createIndexedDbTerrainCache } from "./terrain-cache.js";
+import { createViewerTerrainCache } from "./terrain-cache.js";
 export interface ViewerStats {
   frames: number;
   fps: number;
@@ -92,9 +92,8 @@ export async function mountViewer(opts: MountOptions): Promise<ViewerHandle> {
   let terrain: Awaited<ReturnType<typeof prepareTerrain>> | undefined;
   if (compiled.terrain) {
     progress("Fetching terrain (coastline, bathymetry, buildings, seamarks)");
-    const cache = createIndexedDbTerrainCache();
     terrain = await prepareTerrain(compiled.terrain.bbox, {
-      ...(cache ? { cache } : {}),
+      cache: createViewerTerrainCache(),
       buildings: compiled.terrain.buildings,
       seamarks: compiled.terrain.seamarks,
       gridResM: compiled.terrain.grid_res_m,

@@ -202,5 +202,14 @@ file cache (shippable in Docker), with a shared `terrainSourcesSignature` so
 warmed keys match the CLI. Deferred as lower-ROI / higher-risk follow-ups:
 binary cache format (the JSON cache works; `gridResM` already shrinks the
 payload); streamed cosmetic layers (touches the well-tested scene-build flow
-for a modest perceived-latency gain); browser static-bundle fetch (the
-IndexedDB cache covers viewer repeat loads; first-load bundles can follow).
+for a modest perceived-latency gain).
+(Phase 3 follow-up — ✅ done) browser static-bundle first-load fetch:
+`createStaticBundleCache` (read-only `fetch` of `{BASE_URL}terrain/<key>.json`,
+rehydrating the same JSON the file cache emits) composed in front of the
+IndexedDB cache by `createViewerTerrainCache` — IndexedDB → bundle (warming
+IndexedDB) → network. `pnpm viewer:prefetch` populates
+`packages/viewer/static/terrain/` (gitignored); a 404 is a normal miss that
+falls back to the network. Caveat surfaced in practice: a dense-urban bbox
+bundle is large (~21 MB JSON for full Kiel — OSM buildings + coastline
+dominate), so this wants server gzip and ultimately the deferred **binary
+cache format**; `grid_res_m` and per-layer `none`/smaller bbox also cut it.

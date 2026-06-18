@@ -18,7 +18,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "validate:scenarios": "cd packages/node && npx vitest run test/scenarios.test.ts",
-    "prefetch:scenarios": "node scripts/prefetch-terrain.mjs"
+    "prefetch:scenarios": "node scripts/prefetch-terrain.mjs",
+    "viewer:prefetch": "BINO_TERRAIN_CACHE=packages/viewer/static/terrain node scripts/prefetch-terrain.mjs"
   },
   "packageManager": "pnpm@9.15.0",
   "devDependencies": {

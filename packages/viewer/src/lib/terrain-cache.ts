@@ -52,3 +52,67 @@ export function createIndexedDbTerrainCache(): TerrainCache | undefined {
     },
   };
 }
+
+/** JSON heights are number[] (Float32Array can't round-trip JSON); rehydrate
+ *  to the in-memory TerrainData shape — same as the node file cache. */
+function rehydrate(raw: TerrainData & { bathymetry: { heights: number[] } }): TerrainData {
+  return {
+    ...raw,
+    bathymetry: { ...raw.bathymetry, heights: new Float32Array(raw.bathymetry.heights) },
+  };
+}
+
+/** Read-only cache backed by static bundle files (ADR-005). GET fetches
+ *  `${baseUrl}<key>.json` — the same JSON the node file cache / prefetch script
+ *  emit — so the viewer's *first* load can read a shipped bundle instead of
+ *  hitting Overpass/GMRT. SET is a no-op. A 404 (no bundle for this location)
+ *  is a normal miss → the caller falls back to the network. */
+export function createStaticBundleCache(baseUrl: string): TerrainCache {
+  return {
+    async get(key: string): Promise<TerrainData | undefined> {
+      try {
+        const res = await fetch(`${baseUrl}${key}.json`);
+        if (!res.ok) return undefined;
+        return rehydrate(await res.json());
+      } catch {
+        return undefined;
+      }
+    },
+    async set(): Promise<void> {
+      // Bundles are shipped static assets — read-only.
+    },
+  };
+}
+
+function bundleBaseUrl(): string {
+  // Vite injects BASE_URL (the app's deploy base, default "/"); resolves the
+  // bundle path correctly even when the viewer is served under a sub-path.
+  const base = import.meta.env?.BASE_URL ?? "/";
+  return `${base}terrain/`;
+}
+
+export interface ViewerTerrainCacheOptions {
+  /** Override the static-bundle base URL (default `${BASE_URL}terrain/`). */
+  bundleBase?: string;
+}
+
+/** The viewer's terrain cache: IndexedDB (persistent, read-write) in front of
+ *  the static-bundle source (first-load, read-only). On an IndexedDB miss it
+ *  tries a shipped bundle and warms IndexedDB with it, so the first visit is
+ *  fast/offline if a bundle exists and every later visit is instant. */
+export function createViewerTerrainCache(opts: ViewerTerrainCacheOptions = {}): TerrainCache {
+  const idb = createIndexedDbTerrainCache();
+  const bundle = createStaticBundleCache(opts.bundleBase ?? bundleBaseUrl());
+  return {
+    async get(key: string): Promise<TerrainData | undefined> {
+      const hit = await idb?.get(key);
+      if (hit) return hit;
+      const fromBundle = await bundle.get(key);
+      if (fromBundle && idb) await idb.set(key, fromBundle);
+      return fromBundle;
+    },
+    async set(key: string, data: TerrainData): Promise<void> {
+      await idb?.set(key, data);
+    },
+  };
+}
