@@ -1,6 +1,6 @@
 import type { Bbox } from "./dsl.js";
+import { overpassUrl, fetchWithRetry } from "./terrain-net.js";
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 const HTTP_USER_AGENT = "bino/0.5 (overpass loader)";
 
 // ─── Shared Overpass query infrastructure ───────────────────────────
@@ -27,15 +27,19 @@ export interface OverpassWay {
 export type OverpassElement = OverpassNode | OverpassWay;
 
 export async function queryOverpass(query: string): Promise<OverpassElement[]> {
-  const res = await fetch(OVERPASS_URL, {
-    method: "POST",
-    body: new URLSearchParams({ data: query }),
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-      "User-Agent": HTTP_USER_AGENT,
+  const res = await fetchWithRetry(
+    overpassUrl(),
+    {
+      method: "POST",
+      body: new URLSearchParams({ data: query }),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        "User-Agent": HTTP_USER_AGENT,
+      },
     },
-  });
+    { label: "Overpass" },
+  );
   if (!res.ok) {
     throw new Error(`Overpass returned ${res.status}: ${await res.text()}`);
   }

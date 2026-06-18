@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import {
   parseCoastlineElements,
   buildTerrainMesh,
+  flatBathymetry,
   prepareTerrain,
   terrainCacheKey,
   type BathymetryGrid,
@@ -194,5 +195,48 @@ describe("prepareTerrain caching", () => {
     const result = await prepareTerrain(bbox, { cache });
     expect(result).toBe(cached);
     expect(writes).toBe(0);
+  });
+});
+
+describe("flatBathymetry", () => {
+  it("produces a grid at a uniform negative depth covering the bbox", () => {
+    const bbox: [number, number, number, number] = [10.0, 54.0, 10.1, 54.1];
+    const grid = flatBathymetry(bbox, 12);
+    expect(grid.width).toBeGreaterThanOrEqual(2);
+    expect(grid.height).toBeGreaterThanOrEqual(2);
+    expect(grid.heights.length).toBe(grid.width * grid.height);
+    expect([...grid.heights].every((h) => h === -12)).toBe(true);
+    expect(grid.bbox).toEqual(bbox);
+  });
+});
+
+describe("prepareTerrain graceful degradation", () => {
+  const bbox: [number, number, number, number] = [10.05, 54.28, 10.25, 54.38];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not reject when every source fails — yields placeholders", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    // 404 is non-retryable, so each loader throws fast and prepareTerrain's
+    // per-layer catch kicks in (no backoff delay).
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("nope", { status: 404 })),
+    );
+
+    const result = await prepareTerrain(bbox);
+    expect(result.coastline).toEqual([]);
+    expect(result.buildings).toEqual([]);
+    expect(result.seamarks).toEqual([]);
+    // Bathymetry falls back to the flat placeholder rather than throwing.
+    expect(result.bathymetry.width).toBeGreaterThanOrEqual(2);
+    expect(result.bathymetry.heights.length).toBe(
+      result.bathymetry.width * result.bathymetry.height,
+    );
+    expect([...result.bathymetry.heights].every((h) => h < 0)).toBe(true);
   });
 });

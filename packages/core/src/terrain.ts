@@ -6,10 +6,11 @@ import { buildLandmaskMesh } from "./landmask.js";
 import { buildBuildingsMesh } from "./buildings.js";
 import { buildSeamarksMesh } from "./seamarks.js";
 import { loadBuildings, loadSeamarks, type BuildingData, type SeamarkData } from "./overpass.js";
+import { overpassUrl, gmrtUrl, fetchWithRetry } from "./terrain-net.js";
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-const GMRT_URL = "https://www.gmrt.org/services/GridServer";
 const HTTP_USER_AGENT = "bino/0.4 (terrain loader)";
+
+const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 // ─── OSM coastline ────────────────────────────────────────────────
 
@@ -49,15 +50,19 @@ out body;
 out skel qt;
 `.trim();
 
-  const res = await fetch(OVERPASS_URL, {
-    method: "POST",
-    body: new URLSearchParams({ data: query }),
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-      "User-Agent": HTTP_USER_AGENT,
+  const res = await fetchWithRetry(
+    overpassUrl(),
+    {
+      method: "POST",
+      body: new URLSearchParams({ data: query }),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+        "User-Agent": HTTP_USER_AGENT,
+      },
     },
-  });
+    { label: "Overpass coastline" },
+  );
   if (!res.ok) {
     throw new Error(`Overpass returned ${res.status}: ${await res.text()}`);
   }
@@ -155,10 +160,39 @@ export interface BathymetryGrid {
  * geotiff.js, and sample to a regular grid at gridResM-metre
  * spacing. Settled by spike S12 — see spikes/bathymetry/results.md.
  */
+/** Grid dimensions for a bbox sampled at gridResM-metre spacing, projecting
+ *  degrees to ENU metres (latitude-aware in longitude). Shared by the GMRT
+ *  sampler and the flat placeholder so both agree on cell layout. */
+function gridDims(bbox: Bbox, gridResM: number): { gridW: number; gridH: number } {
+  const [west, south, east, north] = bbox;
+  const heightDeg = north - south;
+  const widthDeg = east - west;
+  const heightM = heightDeg * 111_320;
+  const widthM = widthDeg * 111_320 * Math.cos(((south + heightDeg / 2) * Math.PI) / 180);
+  return {
+    gridW: Math.max(2, Math.round(widthM / gridResM)),
+    gridH: Math.max(2, Math.round(heightM / gridResM)),
+  };
+}
+
+/** A flat seabed at a uniform depth, covering the bbox. Used as the
+ *  placeholder when bathymetry can't be fetched (ADR-005 graceful
+ *  degradation), so a scenario renders open water instead of crashing. */
+export function flatBathymetry(bbox: Bbox, depthM = 10, gridResM = 50): BathymetryGrid {
+  const { gridW, gridH } = gridDims(bbox, gridResM);
+  // Stored as height: positive = land, negative = below sea level.
+  const heights = new Float32Array(gridW * gridH).fill(-Math.abs(depthM));
+  return { heights, width: gridW, height: gridH, bbox, cellSizeM: gridResM };
+}
+
 export async function loadBathymetry(bbox: Bbox, gridResM = 50): Promise<BathymetryGrid> {
   const [west, south, east, north] = bbox;
-  const url = `${GMRT_URL}?north=${north}&south=${south}&east=${east}&west=${west}&format=geotiff&resolution=high`;
-  const res = await fetch(url, { headers: { "User-Agent": HTTP_USER_AGENT } });
+  const url = `${gmrtUrl()}?north=${north}&south=${south}&east=${east}&west=${west}&format=geotiff&resolution=high`;
+  const res = await fetchWithRetry(
+    url,
+    { headers: { "User-Agent": HTTP_USER_AGENT } },
+    { label: "GMRT bathymetry" },
+  );
   if (!res.ok) {
     throw new Error(`GMRT returned ${res.status}: ${await res.text()}`);
   }
@@ -170,14 +204,7 @@ export async function loadBathymetry(bbox: Bbox, gridResM = 50): Promise<Bathyme
   const rasters = await image.readRasters();
   const raster = rasters[0] as Float32Array | Uint16Array | number[];
 
-  // Project bbox to ENU metres for grid sizing.
-  const heightDeg = north - south;
-  const widthDeg = east - west;
-  const heightM = heightDeg * 111_320;
-  const widthM = widthDeg * 111_320 * Math.cos(((south + heightDeg / 2) * Math.PI) / 180);
-  const gridW = Math.max(2, Math.round(widthM / gridResM));
-  const gridH = Math.max(2, Math.round(heightM / gridResM));
-
+  const { gridW, gridH } = gridDims(bbox, gridResM);
   const heights = new Float32Array(gridW * gridH);
   for (let gy = 0; gy < gridH; gy++) {
     for (let gx = 0; gx < gridW; gx++) {
@@ -245,22 +272,47 @@ export async function prepareTerrain(
 
   const fetchBuildings = opts.buildings !== false;
   const fetchSeamarks = opts.seamarks !== false;
+  // Every layer degrades gracefully (ADR-005): a failed fetch logs a warning
+  // and yields a placeholder rather than rejecting, so "any location" never
+  // hard-crashes on a flaky public API. Coastline/bathymetry are structural,
+  // so their failure is surfaced more loudly than the cosmetic layers'.
   const [coastline, bathymetry, buildings, seamarks] = await Promise.all([
-    loadCoastline(bbox),
-    loadBathymetry(bbox),
+    loadCoastline(bbox).catch((e) => {
+      console.warn(`[bino] coastline fetch failed (${errMsg(e)}); rendering without coastline`);
+      return [] as CoastlineChain[];
+    }),
+    loadBathymetry(bbox).catch((e) => {
+      console.warn(
+        `[bino] bathymetry fetch failed (${errMsg(e)}); using a flat placeholder seabed`,
+      );
+      return flatBathymetry(bbox);
+    }),
     fetchBuildings
       ? loadBuildings(bbox).catch((e) => {
-          console.warn("buildings fetch failed:", e);
+          console.warn(`[bino] buildings fetch failed (${errMsg(e)}); rendering without buildings`);
           return [] as BuildingData[];
         })
       : ([] as BuildingData[]),
     fetchSeamarks
       ? loadSeamarks(bbox).catch((e) => {
-          console.warn("seamarks fetch failed:", e);
+          console.warn(`[bino] seamarks fetch failed (${errMsg(e)}); rendering without seamarks`);
           return [] as SeamarkData[];
         })
       : ([] as SeamarkData[]),
   ]);
+
+  // Surface silent coverage cliffs: a layer that fetched fine but came back
+  // empty usually means the region is poorly mapped, not that there's nothing.
+  if (coastline.length === 0) {
+    console.info(`[bino] no coastline in bbox ${JSON.stringify(bbox)} (open water or unmapped)`);
+  }
+  if (fetchBuildings && buildings.length === 0) {
+    console.info(`[bino] no buildings in bbox ${JSON.stringify(bbox)} (none mapped)`);
+  }
+  if (fetchSeamarks && seamarks.length === 0) {
+    console.info(`[bino] no seamarks in bbox ${JSON.stringify(bbox)} (none mapped)`);
+  }
+
   const data: TerrainData = { coastline, bathymetry, buildings, seamarks };
   if (cache) {
     await cache.set(key, data).catch((e) => console.warn("terrain cache write failed:", e));

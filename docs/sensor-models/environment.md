@@ -69,6 +69,22 @@ When `terrain.buildings: true`: OSM building footprints queried via Overpass API
 
 When `terrain.seamarks: true`: OSM seamark features queried via Overpass API. Placeholder geometry per `seamark:type` (buoys, beacons, lights).
 
+### Endpoints and reliability (ADR-005, phase 1)
+
+- **Endpoint overrides.** The Overpass and GMRT endpoints default to the public
+  instances but can be redirected — e.g. to a self-hosted Overpass — via the
+  `BINO_OVERPASS_URL` and `BINO_GMRT_URL` environment variables. This is the
+  cheapest way to escape the public instances' rate limits.
+- **Retry/backoff.** Network fetches retry transient failures (network errors
+  and HTTP 408/425/429/5xx) with bounded exponential backoff before giving up.
+- **Graceful degradation.** A layer that still fails after retries no longer
+  aborts the scenario: coastline/buildings/seamarks fall back to empty and
+  bathymetry to a flat placeholder seabed, each with a logged warning. A
+  successfully-fetched but empty layer is logged at info level, since it usually
+  means the region is poorly mapped rather than genuinely featureless.
+- Forthcoming (ADR-005 phases 2-3): custom/local data sources (GeoTIFF/GeoJSON),
+  a strict-offline assertion, and prebuilt terrain bundles.
+
 ## Sky and lighting
 
 Three.js Preetham sky model (`three/examples/jsm/objects/Sky.js`) driven by `environment.time_of_day`.

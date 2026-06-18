@@ -11,6 +11,7 @@ export * from "./radar.js";
 export * from "./clock.js";
 export * from "./env.js";
 export * from "./terrain.js";
+export * from "./terrain-net.js";
 export * from "./landmask.js";
 export * from "./assets.js";
 export * from "./overpass.js";
