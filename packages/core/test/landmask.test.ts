@@ -184,6 +184,48 @@ describe("assemblePolygons", () => {
     const polygons = assemblePolygons(chains, BBOX);
     expect(polygons.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("never returns a polygon larger than the bbox (degenerate guard)", () => {
+    // Several crossing chains whose perimeter closure can otherwise wrap into a
+    // self-overlapping ring covering the whole bbox (the archipelago failure).
+    const chains: CoastlineChain[] = [
+      {
+        points: [
+          [9.8, 54.02],
+          [10.05, 54.05],
+          [10.4, 54.03],
+        ],
+        closed: false,
+      },
+      {
+        points: [
+          [9.8, 54.18],
+          [10.1, 54.16],
+          [10.4, 54.19],
+        ],
+        closed: false,
+      },
+      {
+        points: [
+          [10.05, 53.9],
+          [10.06, 54.05],
+          [10.05, 54.3],
+        ],
+        closed: false,
+      },
+    ];
+    const bboxArea = (BBOX[2] - BBOX[0]) * (BBOX[3] - BBOX[1]);
+    const area = (ring: Array<[number, number]>): number => {
+      let a = 0;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        a += (ring[j]![0] + ring[i]![0]) * (ring[j]![1] - ring[i]![1]);
+      }
+      return Math.abs(a / 2);
+    };
+    for (const p of assemblePolygons(chains, BBOX)) {
+      expect(area(p.ring)).toBeLessThanOrEqual(bboxArea);
+    }
+  });
 });
 
 describe("buildLandmaskMesh", () => {

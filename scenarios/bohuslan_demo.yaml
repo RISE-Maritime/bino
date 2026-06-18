@@ -1,0 +1,70 @@
+# Bohuslän archipelago trial — a small (3 m) vessel at
+# 58.250515, 11.443408 (Swedish west coast). Single own-ship sitting at the
+# anchor; the surrounding islands populate the camera / lidar / radar.
+#
+# View in the browser viewer:
+#   pnpm --filter @bino/viewer dev
+#   open http://localhost:5173/?scenario=/bohuslan_demo.yaml
+# (a copy lives in packages/viewer/static/ so the dev server serves it).
+scenario:
+  name: bohuslan_demo
+  keelson:
+    base_path: bino
+
+  anchor:
+    lat: 58.250515
+    lon: 11.443408
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 0.6
+      peak_period: 4.0
+      direction_deg: 230
+    wind:
+      speed: 6.0
+      direction_deg: 235
+    time_of_day: "14:30"
+    visibility_m: 15000
+
+  terrain:
+    # ~5 km box centred on the anchor — covers the nearby islands within the
+    # small-craft radar's range.
+    bbox: [11.4004, 58.2275, 11.4864, 58.2735]
+
+  vessels:
+    - id: skiff
+      model: skiff # not in the registry → uses the dimensions below
+      dimensions:
+        length: 3.0
+        beam: 1.3
+        draft: 0.5
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/skiff/pubsub/frame_transform/sim
+      sensors:
+        - id: bow_camera
+          type: camera
+          mount: { x: 1.0, y: 1.2, z: 0 } # forward, ~1.2 m up
+          fov_deg: 90
+          resolution: [1280, 720]
+          rate_hz: 10
+        - id: dome_lidar
+          type: lidar
+          mount: { x: 0.6, y: 1.4, z: 0 }
+          channels: 16
+          range_m: 100
+          rate_hz: 10
+        - id: radar
+          type: radar_marine
+          mount: { x: 0.0, y: 2.2, z: 0 } # small mast
+          range_m: 1852 # 1 nautical mile — typical small-craft radar
+          rotation_rate_hz: 0.6 # ~36 rpm
+          beam_width_deg: 5.0 # small antenna → wide beam
+          spokes_per_rev: 360
+          range_bins: 256
+
+  modes:
+    rendering: replace
+    clock: wall
+    determinism: relaxed

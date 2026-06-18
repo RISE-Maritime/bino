@@ -117,7 +117,7 @@ function buildVessel(vessel: Vessel): THREE.Object3D {
   group.name = vessel.id;
   group.userData = { model: vessel.model };
 
-  const hullGroup = loadModel(vessel.model);
+  const hullGroup = loadModel(vessel.model, vessel.dimensions);
   hullGroup.name = `${vessel.id}__hull`;
   group.add(hullGroup);
 

@@ -559,9 +559,12 @@ export function parametricHull(
   return group;
 }
 
-export function loadModel(model: string): THREE.Group {
+export function loadModel(model: string, dimensions?: VesselDimensions): THREE.Group {
   const entry = DEFAULT_REGISTRY[model];
-  const dims = entry?.dimensions ?? { length: 80, beam: 14, draft: 4 };
+  // An explicit per-vessel `dimensions` override wins over the registry entry
+  // (and the unknown-model fallback) so non-standard hulls — e.g. a 3 m skiff —
+  // render at the right size.
+  const dims = dimensions ?? entry?.dimensions ?? { length: 80, beam: 14, draft: 4 };
   const ss = entry?.superstructure;
   return parametricHull(dims, ss, model);
 }

@@ -243,6 +243,7 @@ export function assemblePolygons(chains: CoastlineChain[], bbox: Bbox): LandPoly
   // Connect chains: walk CCW from each chain's exit to the next
   // chain's entry (land is on the LEFT of OSM coastline direction,
   // so the land-side arc is the counter-clockwise one).
+  const bboxArea = (r.east - r.west) * (r.north - r.south);
   const used = new Set<number>();
   for (let startIdx = 0; startIdx < sorted.length; startIdx++) {
     if (used.has(startIdx)) continue;
@@ -258,12 +259,34 @@ export function assemblePolygons(chains: CoastlineChain[], bbox: Bbox): LandPoly
       ring.push(...cornerPts);
       idx = nextIdx;
     } while (idx !== startIdx);
-    if (ring.length >= 3) {
-      polygons.push({ ring });
+    if (ring.length < 3) continue;
+    // Sanity guard: a real land polygon can't exceed the bbox. The crossing-
+    // chain closure can degenerate (e.g. a lone chain wraps the whole
+    // perimeter) into a self-overlapping ring that would paint the entire
+    // bbox as land over the sea. Drop those rather than render garbage.
+    // Proper land-on-left polygonization is tracked separately.
+    if (ringArea(ring) > bboxArea) {
+      console.warn(
+        `[bino] landmask: dropped a degenerate coastline polygon ` +
+          `(${ringArea(ring).toExponential(1)} > bbox ${bboxArea.toExponential(1)}); ` +
+          `open-chain closure is approximate near the bbox edge`,
+      );
+      continue;
     }
+    polygons.push({ ring });
   }
 
   return polygons;
+}
+
+/** Absolute shoelace area of a lon/lat ring (deg²) — used only to reject
+ *  degenerate self-overlapping land polygons. */
+function ringArea(ring: Point[]): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += (ring[j]![0] + ring[i]![0]) * (ring[j]![1] - ring[i]![1]);
+  }
+  return Math.abs(a / 2);
 }
 
 // ─── Three.js mesh construction ─────────────────────────────────────

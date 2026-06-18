@@ -77,4 +77,17 @@ describe("loadModel", () => {
     expect(group).toBeInstanceOf(THREE.Group);
     expect(group.getObjectByName("hull")).toBeDefined();
   });
+
+  it("honors a dimensions override (e.g. a 3 m skiff)", () => {
+    const hull = loadModel("skiff", { length: 3, beam: 1.3, draft: 0.5 }).getObjectByName(
+      "hull",
+    ) as THREE.Mesh;
+    hull.geometry.computeBoundingBox();
+    const size = new THREE.Vector3();
+    hull.geometry.boundingBox!.getSize(size);
+    // ~3 m long, not the 80 m unknown-model fallback.
+    expect(size.x).toBeGreaterThan(2);
+    expect(size.x).toBeLessThan(4);
+    expect(size.z).toBeLessThan(2);
+  });
 });
