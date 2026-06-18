@@ -70,11 +70,13 @@ docker run --rm -p 8080:80 bino-viewer        # http://localhost:8080
   pre-seed fetched terrain for offline runs. Run `pnpm prefetch:scenarios`
   (after `pnpm build`) to warm that cache for every scenario up front, so the
   first container run starts fast and offline.
-- For the browser viewer, `pnpm viewer:prefetch` writes static terrain bundles
+- For the browser viewer, `pnpm viewer:prefetch` writes binary terrain bundles
   into `packages/viewer/static/terrain/` (gitignored). The viewer reads a
   bundle on first load (then caches it in IndexedDB), so a cold visit doesn't
   hit the public OSM/GMRT APIs. A missing bundle simply falls back to the
-  network. Enable gzip on the static host — bundles are large JSON.
+  network. Dense-urban bundles can still be large (mostly OSM building/coastline
+  vertices) — shrink them with `grid_res_m`, `terrain.sources` `none`, or a
+  smaller `bbox`.
 - A GPU-accelerated node variant is deferred; the camera render is the only
   GPU-bound path, and software GL is more reproducible for deterministic runs.
 

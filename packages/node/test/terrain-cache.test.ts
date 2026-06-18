@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { terrainCacheKey, type TerrainData } from "@bino/core";
@@ -67,5 +67,15 @@ describe("createFileTerrainCache", () => {
     const cache = createFileTerrainCache(nested);
     await cache.set("k", sampleTerrain());
     expect(await cache.get("k")).toBeDefined();
+  });
+
+  it("stores entries as binary .bin files (ADR-005 codec)", async () => {
+    await createFileTerrainCache(dir).set("k", sampleTerrain());
+    expect(await readdir(dir)).toEqual(["k.bin"]);
+  });
+
+  it("treats a corrupt / stale-format entry as a miss", async () => {
+    await writeFile(join(dir, "bad.bin"), Buffer.from('{"old":"json format"}'));
+    expect(await createFileTerrainCache(dir).get("bad")).toBeUndefined();
   });
 });

@@ -199,17 +199,24 @@ must-have offline path; both are additive later.
 through prepareTerrain/provider/CLI + cache key); viewer IndexedDB
 `TerrainCache` wired into `viewer.ts`; `prefetch:scenarios` script warming the
 file cache (shippable in Docker), with a shared `terrainSourcesSignature` so
-warmed keys match the CLI. Deferred as lower-ROI / higher-risk follow-ups:
-binary cache format (the JSON cache works; `gridResM` already shrinks the
-payload); streamed cosmetic layers (touches the well-tested scene-build flow
-for a modest perceived-latency gain).
+warmed keys match the CLI. Deferred (still): streamed cosmetic layers (touches
+the well-tested scene-build flow for a modest perceived-latency gain).
 (Phase 3 follow-up — ✅ done) browser static-bundle first-load fetch:
-`createStaticBundleCache` (read-only `fetch` of `{BASE_URL}terrain/<key>.json`,
-rehydrating the same JSON the file cache emits) composed in front of the
-IndexedDB cache by `createViewerTerrainCache` — IndexedDB → bundle (warming
-IndexedDB) → network. `pnpm viewer:prefetch` populates
-`packages/viewer/static/terrain/` (gitignored); a 404 is a normal miss that
-falls back to the network. Caveat surfaced in practice: a dense-urban bbox
-bundle is large (~21 MB JSON for full Kiel — OSM buildings + coastline
-dominate), so this wants server gzip and ultimately the deferred **binary
-cache format**; `grid_res_m` and per-layer `none`/smaller bbox also cut it.
+`createStaticBundleCache` (read-only `fetch` of `{BASE_URL}terrain/<key>.bin`)
+composed in front of the IndexedDB cache by `createViewerTerrainCache` —
+IndexedDB → bundle (warming IndexedDB) → network. `pnpm viewer:prefetch`
+populates `packages/viewer/static/terrain/` (gitignored); a 404 is a normal
+miss that falls back to the network.
+(Phase 3 follow-up — ✅ done) binary cache format (`terrain-codec`):
+magic+versioned JSON manifest + typed-array sections (Float32 heights, Float64
+coords); the node file cache and viewer bundles are now `.bin` (old `.json`
+entries are simply missed → refetched once). **Honest result, measured:** the
+win is **parse speed and uncompressed footprint**, not a blanket size cut.
+Heights pack ~2× smaller (4 B vs decimal text); coords as Float64 are only ~1.3×
+smaller than short JSON numbers and can be _larger_ for low-precision values —
+and gzipped coordinate _text_ compresses better than gzipped float bytes, so on
+a gzip-enabled host JSON transfer was competitive. Binary's durable advantages:
+no `JSON.parse` of a multi-MB string (a real main-thread stall for big viewer
+bundles) and smaller at-rest disk/Docker. The full-Kiel bundle (~21 MB before)
+is dominated by OSM building/coastline vertices; `grid_res_m`, per-layer `none`,
+or a smaller bbox remain the real levers for raw size.

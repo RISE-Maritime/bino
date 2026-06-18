@@ -1,4 +1,4 @@
-import type { TerrainCache, TerrainData } from "@bino/core";
+import { decodeTerrain, type TerrainCache, type TerrainData } from "@bino/core";
 
 // IndexedDB-backed terrain cache for the browser viewer (ADR-005). The node
 // service has a filesystem cache; the browser had none, so every page load
@@ -53,27 +53,19 @@ export function createIndexedDbTerrainCache(): TerrainCache | undefined {
   };
 }
 
-/** JSON heights are number[] (Float32Array can't round-trip JSON); rehydrate
- *  to the in-memory TerrainData shape — same as the node file cache. */
-function rehydrate(raw: TerrainData & { bathymetry: { heights: number[] } }): TerrainData {
-  return {
-    ...raw,
-    bathymetry: { ...raw.bathymetry, heights: new Float32Array(raw.bathymetry.heights) },
-  };
-}
-
 /** Read-only cache backed by static bundle files (ADR-005). GET fetches
- *  `${baseUrl}<key>.json` — the same JSON the node file cache / prefetch script
- *  emit — so the viewer's *first* load can read a shipped bundle instead of
- *  hitting Overpass/GMRT. SET is a no-op. A 404 (no bundle for this location)
- *  is a normal miss → the caller falls back to the network. */
+ *  `${baseUrl}<key>.bin` — the same binary blob the node file cache / prefetch
+ *  script emit (ADR-005 terrain-codec) — so the viewer's *first* load can read
+ *  a shipped bundle instead of hitting Overpass/GMRT. SET is a no-op. A 404
+ *  (no bundle for this location) is a normal miss → the caller falls back to
+ *  the network. */
 export function createStaticBundleCache(baseUrl: string): TerrainCache {
   return {
     async get(key: string): Promise<TerrainData | undefined> {
       try {
-        const res = await fetch(`${baseUrl}${key}.json`);
+        const res = await fetch(`${baseUrl}${key}.bin`);
         if (!res.ok) return undefined;
-        return rehydrate(await res.json());
+        return decodeTerrain(new Uint8Array(await res.arrayBuffer()));
       } catch {
         return undefined;
       }
