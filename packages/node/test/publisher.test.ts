@@ -158,3 +158,51 @@ describe("createSensorPublisher", () => {
     expect(puts[0]!.keyExpr).toBe("rise/@v0/ego_platform/pubsub/image_raw/cam_fwd");
   });
 });
+
+describe("radar emit modes", () => {
+  const radarMeta = (emit: "sweep" | "spoke" | "both"): SensorMeta => ({
+    sensorId: "ego/radar",
+    identity: { base_path: "bino", entity_id: "ego", source_id: "radar" },
+    type: "radar",
+    rangeM: 200,
+    emit,
+  });
+  const radarFrame: FrameEvent = {
+    index: 0,
+    time: 1.5,
+    outputs: [
+      {
+        sensorId: "ego/radar",
+        renderMs: 1,
+        output: {
+          spokes: [
+            { azimuth: 0, intensity: new Uint8Array([0, 1]), timestamp: 0 },
+            { azimuth: 1, intensity: new Uint8Array([2, 3]), timestamp: 0.1 },
+          ],
+          time: 1.5,
+        },
+      },
+    ],
+  };
+
+  it("'sweep' (default) publishes one radar_sweep message", async () => {
+    const { session, puts } = makeSession();
+    await createSensorPublisher({ session, sensors: [radarMeta("sweep")] }).publish(radarFrame);
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.keyExpr).toBe("bino/@v0/ego/pubsub/radar_sweep/radar");
+  });
+
+  it("'spoke' publishes one radar_spoke per spoke and no sweep", async () => {
+    const { session, puts } = makeSession();
+    await createSensorPublisher({ session, sensors: [radarMeta("spoke")] }).publish(radarFrame);
+    expect(puts).toHaveLength(2);
+    expect(puts.every((p) => p.keyExpr === "bino/@v0/ego/pubsub/radar_spoke/radar")).toBe(true);
+  });
+
+  it("'both' publishes the sweep plus every spoke", async () => {
+    const { session, puts } = makeSession();
+    await createSensorPublisher({ session, sensors: [radarMeta("both")] }).publish(radarFrame);
+    expect(puts.filter((p) => p.keyExpr.includes("radar_sweep"))).toHaveLength(1);
+    expect(puts.filter((p) => p.keyExpr.includes("radar_spoke"))).toHaveLength(2);
+  });
+});

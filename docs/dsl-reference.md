@@ -214,18 +214,26 @@ radar are 360°-native and emit in the body frame regardless of mount yaw.
 
 ### Marine Radar (`type: "radar_marine"`)
 
-| Field                    | Type          | Default | Constraints                                              |
-| ------------------------ | ------------- | ------- | -------------------------------------------------------- |
-| `id`                     | string        | --      |                                                          |
-| `range_m`                | number        | --      | > 0                                                      |
-| `rotation_rate_hz`       | number        | --      | > 0                                                      |
-| `phase_offset_s`         | number        | 0       | scheduling offset                                        |
-| `beam_width_deg`         | number        | --      | (0, 360]                                                 |
-| `spokes_per_rev`         | int           | --      | > 0                                                      |
-| `range_bins`             | int           | --      | > 0                                                      |
-| `publish_topic_override` | string        | --      | override Keelson topic (bypasses identity resolution)    |
-| `frame_id`               | string        | --      | override payload frame_id (default `{vessel}/{sensor}`)  |
-| `keelson`                | SensorKeelson | --      | per-sensor key-identity overrides (see Keelson identity) |
+| Field                    | Type          | Default | Constraints                                                       |
+| ------------------------ | ------------- | ------- | ----------------------------------------------------------------- |
+| `id`                     | string        | --      |                                                                   |
+| `range_m`                | number        | --      | > 0                                                               |
+| `rotation_rate_hz`       | number        | --      | > 0                                                               |
+| `phase_offset_s`         | number        | 0       | scheduling offset                                                 |
+| `beam_width_deg`         | number        | --      | (0, 360]                                                          |
+| `spokes_per_rev`         | int           | --      | > 0                                                               |
+| `range_bins`             | int           | --      | > 0                                                               |
+| `emit`                   | enum          | `sweep` | `sweep` (batched per rev) \| `spoke` (per-spoke stream) \| `both` |
+| `publish_topic_override` | string        | --      | override Keelson topic (bypasses identity resolution)             |
+| `frame_id`               | string        | --      | override payload frame_id (default `{vessel}/{sensor}`)           |
+| `keelson`                | SensorKeelson | --      | per-sensor key-identity overrides (see Keelson identity)          |
+
+`emit` selects the keelson subject(s): `sweep` publishes one `keelson.RadarSweep`
+(`radar_sweep`) per revolution; `spoke` streams each spoke as a
+`keelson.RadarSpoke` (`radar_spoke`) — the real rotating-radar interface, but
+`spokes_per_rev`× more messages; `both` publishes each. `publish_topic_override`
+applies only to the sweep key. Note: the spoke stream is a per-revolution
+snapshot sliced into spokes — intra-sweep target motion is not modelled.
 
 ## Modes
 
@@ -302,11 +310,11 @@ Default Keelson output key per sensor (entity = vessel id, source = sensor id):
 
 Subjects by sensor type:
 
-| Sensor       | Subject       | Payload schema      |
-| ------------ | ------------- | ------------------- |
-| camera       | `image_raw`   | foxglove.RawImage   |
-| lidar        | `point_cloud` | foxglove.PointCloud |
-| radar_marine | `radar_sweep` | keelson.RadarSweep  |
+| Sensor       | Subject                       | Payload schema                                       |
+| ------------ | ----------------------------- | ---------------------------------------------------- |
+| camera       | `image_raw`                   | foxglove.RawImage                                    |
+| lidar        | `point_cloud`                 | foxglove.PointCloud                                  |
+| radar_marine | `radar_sweep` / `radar_spoke` | keelson.RadarSweep / keelson.RadarSpoke (per `emit`) |
 
 Pose input (frame_transform source):
 `{base}/@v0/{vessel_id}/pubsub/frame_transform/{source_id}`

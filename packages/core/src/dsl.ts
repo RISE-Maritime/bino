@@ -112,6 +112,12 @@ export const RadarSensor = z.object({
   beam_width_deg: z.number().positive().max(360),
   spokes_per_rev: z.number().int().positive(),
   range_bins: z.number().int().positive(),
+  /** Which keelson subject(s) to publish: `radar_sweep` (one batched message
+   *  per revolution, default), `radar_spoke` (each spoke streamed separately,
+   *  the real rotating-radar interface — `spokes_per_rev`× more messages), or
+   *  `both`. The spoke stream is a per-revolution snapshot sliced into spokes;
+   *  intra-sweep target motion is not modelled. */
+  emit: z.enum(["sweep", "spoke", "both"]).default("sweep"),
   publish_topic_override: z.string().min(1).optional(),
   /** Override the in-payload frame_id (see CameraSensor.frame_id). */
   frame_id: z.string().min(1).optional(),

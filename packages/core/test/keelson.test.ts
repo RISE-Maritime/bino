@@ -153,6 +153,38 @@ describe("encodeRadarSweep / decodeRadarSweepEnvelope", () => {
   });
 });
 
+describe("encodeRadarSpokes / decodeRadarSpokeEnvelope", () => {
+  const frame = {
+    spokes: [
+      { azimuth: 0, intensity: new Uint8Array([1, 2]), timestamp: 0 },
+      { azimuth: Math.PI / 2, intensity: new Uint8Array([3, 4]), timestamp: 0.5 },
+    ],
+    time: 100,
+  };
+
+  it("emits one RadarSpoke per spoke, all on the radar_spoke key", async () => {
+    const { encodeRadarSpokes, decodeRadarSpokeEnvelope, radarSpokeTopicKey } =
+      await import("../src/keelson.js");
+    const id = { base_path: "bino", entity_id: "ego", source_id: "main_radar" };
+    const encoded = encodeRadarSpokes(frame, id, 200);
+
+    expect(encoded).toHaveLength(2);
+    expect(encoded[0]!.keyExpr).toBe(radarSpokeTopicKey(id));
+    expect(encoded[0]!.keyExpr).toBe("bino/@v0/ego/pubsub/radar_spoke/main_radar");
+    expect(encoded[1]!.keyExpr).toBe(encoded[0]!.keyExpr);
+
+    const s0 = decodeRadarSpokeEnvelope(encoded[0]!.bytes)!;
+    const s1 = decodeRadarSpokeEnvelope(encoded[1]!.bytes)!;
+    expect(s0.azimuth).toBeCloseTo(0, 5);
+    expect(s1.azimuth).toBeCloseTo(Math.PI / 2, 5);
+    expect(Array.from(s0.intensity)).toEqual([1, 2]);
+    expect(s0.range).toBe(200);
+    // Per-spoke absolute time = frame.time + intra-sweep offset.
+    expect(s0.time).toBeCloseTo(100.0, 3);
+    expect(s1.time).toBeCloseTo(100.5, 3);
+  });
+});
+
 describe("encodePointCloud / decodePointCloudEnvelope", () => {
   const pts = new Float32Array([1, 2, 3, 4, 5, 6]);
   const frame: LidarFrame = { points: pts, count: 2, time: 0.25 };

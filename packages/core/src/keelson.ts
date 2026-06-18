@@ -15,6 +15,7 @@ import type {
   RawImage,
   PointCloud,
   RadarSweep,
+  RadarSpoke,
   LocationFix,
   TimestampedFloat,
 } from "./keelson-sdk.js";
@@ -28,6 +29,7 @@ const SUBJECT_FRAME_TRANSFORM = "frame_transform";
 const SUBJECT_IMAGE_RAW = "image_raw";
 const SUBJECT_POINT_CLOUD = "point_cloud";
 const SUBJECT_RADAR_SWEEP = "radar_sweep";
+const SUBJECT_RADAR_SPOKE = "radar_spoke";
 
 // Decomposed navigation subjects (input). A real maritime feed (AIS, NMEA,
 // MAVLink) publishes a vessel's nav state as these separate scalars rather
@@ -41,6 +43,7 @@ const TYPE_FRAME_TRANSFORM = "foxglove.FrameTransform";
 const TYPE_RAW_IMAGE = "foxglove.RawImage";
 const TYPE_POINT_CLOUD = "foxglove.PointCloud";
 const TYPE_RADAR_SWEEP = "keelson.RadarSweep";
+const TYPE_RADAR_SPOKE = "keelson.RadarSpoke";
 const TYPE_LOCATION_FIX = "foxglove.LocationFix";
 const TYPE_TIMESTAMPED_FLOAT = "keelson.TimestampedFloat";
 
@@ -139,6 +142,10 @@ export function lidarTopicKey(id: KeelsonKeyIdentity): string {
 
 export function radarTopicKey(id: KeelsonKeyIdentity): string {
   return construct_pubSub_key(id.base_path, id.entity_id, SUBJECT_RADAR_SWEEP, id.source_id);
+}
+
+export function radarSpokeTopicKey(id: KeelsonKeyIdentity): string {
+  return construct_pubSub_key(id.base_path, id.entity_id, SUBJECT_RADAR_SPOKE, id.source_id);
 }
 
 export interface NavTopicKeys {
@@ -358,6 +365,56 @@ export function decodeRadarSweepEnvelope(bytes: Uint8Array): DecodedRadarSweep |
     })),
     time: first?.timestamp ? dateToSeconds(first.timestamp) : fallback,
     frameId: first?.frameId ?? "",
+  };
+}
+
+/** Encode each spoke of a sweep as a standalone `keelson.RadarSpoke` message
+ *  (subject `radar_spoke`) — the streaming interface a real rotating radar
+ *  presents, as opposed to the batched `radar_sweep`. All spokes share one
+ *  topic key; each carries its own absolute acquisition time. (ADR-002: the
+ *  underlying geometry is still one snapshot per revolution — these timestamps
+ *  are intra-sweep interpolation, not independently sampled.) */
+export function encodeRadarSpokes(
+  frame: RadarFrame,
+  id: KeelsonKeyIdentity,
+  range_m: number,
+  frameId: string = `${id.entity_id}/${id.source_id}`,
+): EncodedTopic[] {
+  const keyExpr = radarSpokeTopicKey(id);
+  return frame.spokes.map((s) => {
+    const ts = secondsToDate(frame.time + (s.timestamp ?? 0));
+    const spoke = {
+      timestamp: ts,
+      frameId,
+      pose: undefined,
+      azimuth: s.azimuth,
+      range: range_m,
+      fields: [{ name: "intensity", offset: 0, type: PackedElementField_NumericType.UINT8 }],
+      data: s.intensity,
+    };
+    return { keyExpr, bytes: envelopeBytes(TYPE_RADAR_SPOKE, spoke, ts) };
+  });
+}
+
+export interface DecodedRadarSpoke {
+  azimuth: number;
+  intensity: Uint8Array;
+  range: number;
+  time: number;
+  frameId: string;
+}
+
+export function decodeRadarSpokeEnvelope(bytes: Uint8Array): DecodedRadarSpoke | null {
+  const env = unwrapEnvelope(bytes);
+  if (!env) return null;
+  const spoke = decodePayloadFromTypeName(TYPE_RADAR_SPOKE, env.payload) as RadarSpoke | undefined;
+  if (!spoke) return null;
+  return {
+    azimuth: spoke.azimuth ?? 0,
+    intensity: spoke.data ?? new Uint8Array(0),
+    range: spoke.range ?? 0,
+    time: spoke.timestamp ? dateToSeconds(spoke.timestamp) : dateToSeconds(env.enclosedAt),
+    frameId: spoke.frameId ?? "",
   };
 }
 

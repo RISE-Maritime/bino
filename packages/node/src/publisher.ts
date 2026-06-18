@@ -2,6 +2,7 @@ import {
   encodeCameraFrame,
   encodePointCloud,
   encodeRadarSweep,
+  encodeRadarSpokes,
   type KeelsonKeyIdentity,
 } from "@bino/core";
 import type { FrameEvent } from "./runner.js";
@@ -22,7 +23,7 @@ interface BaseSensorMeta {
 export type SensorMeta =
   | (BaseSensorMeta & { type: "camera" })
   | (BaseSensorMeta & { type: "lidar" })
-  | (BaseSensorMeta & { type: "radar"; rangeM: number });
+  | (BaseSensorMeta & { type: "radar"; rangeM: number; emit: "sweep" | "spoke" | "both" });
 
 export interface PublishSession {
   put(keyExpr: string, payload: Uint8Array): Promise<void>;
@@ -47,29 +48,35 @@ export function createSensorPublisher(opts: SensorPublisherOptions): SensorPubli
         const meta = byId.get(out.sensorId);
         if (!meta) continue;
         const frameId = meta.frameId ?? meta.sensorId;
-        let encoded;
         if (meta.type === "camera") {
-          encoded = encodeCameraFrame(
+          const e = encodeCameraFrame(
             out.output as Parameters<typeof encodeCameraFrame>[0],
             meta.identity,
             frameId,
           );
+          puts.push(opts.session.put(meta.topicOverride ?? e.keyExpr, e.bytes));
         } else if (meta.type === "lidar") {
-          encoded = encodePointCloud(
+          const e = encodePointCloud(
             out.output as Parameters<typeof encodePointCloud>[0],
             meta.identity,
             frameId,
           );
+          puts.push(opts.session.put(meta.topicOverride ?? e.keyExpr, e.bytes));
         } else {
-          encoded = encodeRadarSweep(
-            out.output as Parameters<typeof encodeRadarSweep>[0],
-            meta.identity,
-            meta.rangeM,
-            frameId,
-          );
+          const radarOut = out.output as Parameters<typeof encodeRadarSweep>[0];
+          // emit: sweep (batched, default) | spoke (per-spoke stream) | both.
+          // topicOverride applies only to the sweep key; spokes use the
+          // derived radar_spoke key.
+          if (meta.emit !== "spoke") {
+            const e = encodeRadarSweep(radarOut, meta.identity, meta.rangeM, frameId);
+            puts.push(opts.session.put(meta.topicOverride ?? e.keyExpr, e.bytes));
+          }
+          if (meta.emit !== "sweep") {
+            for (const e of encodeRadarSpokes(radarOut, meta.identity, meta.rangeM, frameId)) {
+              puts.push(opts.session.put(e.keyExpr, e.bytes));
+            }
+          }
         }
-        const keyExpr = meta.topicOverride ?? encoded.keyExpr;
-        puts.push(opts.session.put(keyExpr, encoded.bytes));
       }
       await Promise.all(puts);
     },

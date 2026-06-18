@@ -75,6 +75,7 @@ export const v01Scenario: Scenario = {
           beam_width_deg: 1.2,
           spokes_per_rev: 360,
           range_bins: 200,
+          emit: "sweep",
         },
       ],
     },

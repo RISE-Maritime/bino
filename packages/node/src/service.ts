@@ -168,6 +168,7 @@ function buildSceneFromScenario(
           identity,
           type: "radar",
           rangeM: sensor.range_m,
+          emit: sensor.emit,
           ...(sensor.publish_topic_override
             ? { topicOverride: sensor.publish_topic_override }
             : {}),
