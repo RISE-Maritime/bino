@@ -8,6 +8,7 @@ import {
   navTopicKeys,
   resolveNavIdentity,
   prepareTerrain,
+  teePoseStream,
   terrainProviderFromSources,
   terrainSourcesSignature,
   type PoseStream,
@@ -17,6 +18,8 @@ import {
 } from "@bino/core";
 import { loadScenario } from "./yaml.js";
 import { createNodeService } from "./service.js";
+import { createRadarAugmenter, type RadarAugmenter } from "./radar-augmenter.js";
+import { createLidarAugmenter, type LidarAugmenter } from "./lidar-augmenter.js";
 import { createFileTerrainCache } from "./terrain-cache.js";
 import { createFileSourceReaders } from "./terrain-readers.js";
 
@@ -168,8 +171,57 @@ async function main(): Promise<void> {
     stdout.write("zenoh: sensor publishing enabled\n");
   }
 
+  // Inject-augment: tee the pose stream so the runner keeps its path while a
+  // PoseSampler is fed in parallel; each augment radar subscribes to its real
+  // stream and republishes the merged result. Needs a zenoh session for both
+  // the subscribe and the publish.
+  let runnerStream: PoseStream = stream;
+  const radarAugmenters: RadarAugmenter[] = [];
+  const lidarAugmenters: LidarAugmenter[] = [];
+  const augmentPumps: Promise<void>[] = [];
+  const hasAugment = !!(service.radarAugments?.length || service.lidarAugments?.length);
+  if (zenohSession && hasAugment && service.poseSampler) {
+    const sampler = service.poseSampler;
+    const [rs, ss] = teePoseStream(stream);
+    runnerStream = rs;
+    augmentPumps.push(
+      (async () => {
+        for await (const u of ss) sampler.record(u.entityId, u.pose, u.time);
+      })(),
+    );
+    for (const b of service.radarAugments ?? []) {
+      const aug = createRadarAugmenter({
+        session: zenohSession,
+        publish: zenohSession,
+        realTopic: b.realTopic,
+        publishTopic: b.publishTopic,
+        fallbackGeom: b.fallbackGeom,
+        renderRevolution: b.renderRevolution,
+        groundTruth: b.groundTruth,
+      });
+      radarAugmenters.push(aug);
+      augmentPumps.push(aug.run());
+      stdout.write(`augment: radar '${b.sensorId}' merging ${b.realTopic} → ${b.publishTopic}\n`);
+      stdout.write(`augment: radar '${b.sensorId}' ground truth → ${b.groundTruth.topic}\n`);
+    }
+    for (const b of service.lidarAugments ?? []) {
+      const aug = createLidarAugmenter({
+        session: zenohSession,
+        publish: zenohSession,
+        realTopic: b.realTopic,
+        publishTopic: b.publishTopic,
+        renderFrame: b.renderFrame,
+      });
+      lidarAugmenters.push(aug);
+      augmentPumps.push(aug.run());
+      stdout.write(`augment: lidar '${b.sensorId}' merging ${b.realTopic} → ${b.publishTopic}\n`);
+    }
+  }
+
   const shutdown = (): void => {
     service.runner.stop();
+    for (const a of radarAugmenters) void a.stop();
+    for (const a of lidarAugmenters) void a.stop();
     stream.close();
   };
   process.on("SIGINT", shutdown);
@@ -178,7 +230,7 @@ async function main(): Promise<void> {
   try {
     let count = 0;
     let lastLog = performance.now();
-    for await (const frame of service.runner.frames(stream)) {
+    for await (const frame of service.runner.frames(runnerStream)) {
       count += 1;
       if (service.publisher) await service.publisher.publish(frame);
       const now = performance.now();
@@ -193,6 +245,23 @@ async function main(): Promise<void> {
     }
     stdout.write(`stopped after ${count} frame(s)\n`);
   } finally {
+    for (const a of radarAugmenters) await a.stop();
+    for (const a of lidarAugmenters) await a.stop();
+    await Promise.allSettled(augmentPumps);
+    for (let i = 0; i < radarAugmenters.length; i++) {
+      const { augmented, forwarded, groundTruth } = radarAugmenters[i]!.stats;
+      stdout.write(
+        `augment: radar '${service.radarAugments![i]!.sensorId}' ${augmented} merged, ` +
+          `${forwarded} forwarded, ${groundTruth} ground-truth\n`,
+      );
+    }
+    for (let i = 0; i < lidarAugmenters.length; i++) {
+      const { augmented, forwarded } = lidarAugmenters[i]!.stats;
+      stdout.write(
+        `augment: lidar '${service.lidarAugments![i]!.sensorId}' ${augmented} merged, ` +
+          `${forwarded} forwarded\n`,
+      );
+    }
     service.dispose();
     await zenohSession?.close().catch(() => {});
   }

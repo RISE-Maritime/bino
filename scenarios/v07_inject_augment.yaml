@@ -1,0 +1,84 @@
+# v0.7 inject-augment scenario — merge synthetic radar into a real spoke stream.
+#
+# Exercises:
+#   - modes.rendering = inject (entities only, no sky/sea/terrain)
+#   - radar augment_source: subscribe to a real radar_spoke stream and merge
+#     synthetic returns into it, republishing on the sensor's own spoke key
+#   - geometry (range/bins) derived from the live stream; the DSL radar fields
+#     below are the fallback used until the stream is connected
+#
+# Run (needs a zenoh router + a real radar publishing on the augment_source key):
+#   bino-node scenarios/v07_inject_augment.yaml --zenoh ws://localhost:10000
+#
+# See docs/internal/inject-augment.md.
+
+scenario:
+  name: v07_inject_augment
+  keelson:
+    base_path: bino
+  anchor:
+    lat: 57.685
+    lon: 11.84
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 0.5
+      peak_period: 4.0
+      direction_deg: 220
+      spectrum: pierson_moskowitz
+    wind:
+      speed: 4.0
+      direction_deg: 230
+    time_of_day: "14:00"
+    visibility_m: 15000
+
+  # No terrain block — inject mode renders entities only.
+
+  vessels:
+    - id: ego
+      model: cargo_90m
+      dimensions:
+        length: 90
+        beam: 16
+        draft: 5
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ego/pubsub/frame_transform/sim
+      sensors:
+        - id: nav_radar
+          type: radar_marine
+          mount: { x: 0, y: 30, z: 0 }
+          range_m: 4000
+          rotation_rate_hz: 0.4
+          beam_width_deg: 1.5
+          spokes_per_rev: 360
+          range_bins: 256
+          emit: spoke
+          # The real radar's spoke stream. Synthetic returns are merged into
+          # each real spoke and republished on the sensor's own resolved key
+          # (bino/@v0/ego/pubsub/radar_spoke/nav_radar). Must differ from it.
+          augment_source: platform/@v0/nav_radar/pubsub/radar_spoke/real
+
+        - id: main_lidar
+          type: lidar
+          mount: { x: 0, y: 20, z: 0 }
+          channels: 16
+          range_m: 200
+          rate_hz: 10
+          # The real lidar's point cloud. Synthetic points are concatenated into
+          # each real cloud (preserving its layout) and republished on the
+          # sensor's own resolved key. Must differ from it.
+          augment_source: platform/@v0/main_lidar/pubsub/point_cloud/real
+
+    - id: ghost_target
+      model: tanker_120m
+      pose_source:
+        type: zenoh
+        topic: bino/@v0/ghost_target/pubsub/frame_transform/sim
+      sensors: []
+
+  modes:
+    rendering: inject
+    clock: stepped
+    determinism: strict

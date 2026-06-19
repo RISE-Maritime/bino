@@ -24,12 +24,16 @@ import type { PoseUpdate } from "./pose.js";
 import type { CameraFrame } from "./camera.js";
 import type { LidarFrame } from "./lidar-wasm.js";
 import type { RadarFrame } from "./radar.js";
+import type { GroundTruthTarget } from "./radar-augment.js";
 
 const SUBJECT_FRAME_TRANSFORM = "frame_transform";
 const SUBJECT_IMAGE_RAW = "image_raw";
 const SUBJECT_POINT_CLOUD = "point_cloud";
 const SUBJECT_RADAR_SWEEP = "radar_sweep";
 const SUBJECT_RADAR_SPOKE = "radar_spoke";
+// Inject-augment output: true state of the injected (synthetic) targets, so a
+// consumer can score detections in the merged stream against ground truth.
+const SUBJECT_GROUND_TRUTH = "ground_truth";
 
 // Decomposed navigation subjects (input). A real maritime feed (AIS, NMEA,
 // MAVLink) publishes a vessel's nav state as these separate scalars rather
@@ -148,6 +152,10 @@ export function radarSpokeTopicKey(id: KeelsonKeyIdentity): string {
   return construct_pubSub_key(id.base_path, id.entity_id, SUBJECT_RADAR_SPOKE, id.source_id);
 }
 
+export function groundTruthTopicKey(id: KeelsonKeyIdentity): string {
+  return construct_pubSub_key(id.base_path, id.entity_id, SUBJECT_GROUND_TRUTH, id.source_id);
+}
+
 export interface NavTopicKeys {
   locationFix: string;
   heading: string;
@@ -193,28 +201,58 @@ function unwrapEnvelope(bytes: Uint8Array): { enclosedAt: Date; payload: Uint8Ar
   return { enclosedAt, payload };
 }
 
+/** Serialize one `foxglove.FrameTransform` envelope. Shared by pose output
+ *  (parent = world) and ground-truth output (parent = the sensor frame). */
+function frameTransformBytes(
+  parentFrameId: string,
+  childFrameId: string,
+  translation: readonly [number, number, number],
+  rotation: readonly [number, number, number, number],
+  time: number,
+): Uint8Array {
+  const ts = secondsToDate(time);
+  const ft = {
+    timestamp: ts,
+    parentFrameId,
+    childFrameId,
+    translation: { x: translation[0], y: translation[1], z: translation[2] },
+    rotation: { x: rotation[0], y: rotation[1], z: rotation[2], w: rotation[3] },
+  };
+  return envelopeBytes(TYPE_FRAME_TRANSFORM, ft, ts);
+}
+
 export function encodePoseUpdate(
   update: PoseUpdate,
   naming: KeelsonNaming = DEFAULT_NAMING,
 ): EncodedTopic {
-  const ft = {
-    timestamp: secondsToDate(update.time),
-    parentFrameId: POSE_PARENT_FRAME_ID,
-    childFrameId: update.entityId,
-    translation: {
-      x: update.pose.position[0],
-      y: update.pose.position[1],
-      z: update.pose.position[2],
-    },
-    rotation: {
-      x: update.pose.orientation[0],
-      y: update.pose.orientation[1],
-      z: update.pose.orientation[2],
-      w: update.pose.orientation[3],
-    },
-  };
-  const bytes = envelopeBytes(TYPE_FRAME_TRANSFORM, ft, secondsToDate(update.time));
+  const bytes = frameTransformBytes(
+    POSE_PARENT_FRAME_ID,
+    update.entityId,
+    update.pose.position,
+    update.pose.orientation,
+    update.time,
+  );
   return { keyExpr: poseTopicKey(naming, update.entityId), bytes };
+}
+
+/** Encode ground truth for the injected targets as one `FrameTransform` per
+ *  target on a shared `ground_truth` key. Each target's true position is placed
+ *  in the radar's bow-relative frame (x along the bow, y to starboard, z up), so
+ *  `parentFrameId` is the merged stream's frame (the real sensor's), letting a
+ *  consumer compare truth and detections in one frame. Recover polar truth with
+ *  `range = hypot(x, y)`, `bearing = atan2(y, x)`. */
+export function encodeGroundTruth(
+  targets: ReadonlyArray<GroundTruthTarget>,
+  time: number,
+  parentFrameId: string,
+  keyExpr: string,
+): EncodedTopic[] {
+  return targets.map((t) => {
+    const x = t.range_m * Math.cos(t.azimuth);
+    const y = t.range_m * Math.sin(t.azimuth);
+    const bytes = frameTransformBytes(parentFrameId, t.id, [x, y, t.height_m], [0, 0, 0, 1], time);
+    return { keyExpr, bytes };
+  });
 }
 
 export function decodePoseEnvelope(bytes: Uint8Array): PoseUpdate | null {
@@ -381,19 +419,39 @@ export function encodeRadarSpokes(
   frameId: string = `${id.entity_id}/${id.source_id}`,
 ): EncodedTopic[] {
   const keyExpr = radarSpokeTopicKey(id);
-  return frame.spokes.map((s) => {
-    const ts = secondsToDate(frame.time + (s.timestamp ?? 0));
-    const spoke = {
-      timestamp: ts,
-      frameId,
-      pose: undefined,
-      azimuth: s.azimuth,
-      range: range_m,
-      fields: [{ name: "intensity", offset: 0, type: PackedElementField_NumericType.UINT8 }],
-      data: s.intensity,
-    };
-    return { keyExpr, bytes: envelopeBytes(TYPE_RADAR_SPOKE, spoke, ts) };
-  });
+  return frame.spokes.map((s) =>
+    encodeRadarSpoke(
+      {
+        azimuth: s.azimuth,
+        intensity: s.intensity,
+        range_m,
+        time: frame.time + (s.timestamp ?? 0),
+        frameId,
+      },
+      keyExpr,
+    ),
+  );
+}
+
+/** Encode a single `keelson.RadarSpoke` message with an explicit key, absolute
+ *  acquisition time and frame_id. The inject-augment path uses this to republish
+ *  a merged (real + synthetic) spoke that carries the *real* spoke's timestamp
+ *  and frame_id so it lands in the real sensor's frame downstream. */
+export function encodeRadarSpoke(
+  s: { azimuth: number; intensity: Uint8Array; range_m: number; time: number; frameId: string },
+  keyExpr: string,
+): EncodedTopic {
+  const ts = secondsToDate(s.time);
+  const spoke = {
+    timestamp: ts,
+    frameId: s.frameId,
+    pose: undefined,
+    azimuth: s.azimuth,
+    range: s.range_m,
+    fields: [{ name: "intensity", offset: 0, type: PackedElementField_NumericType.UINT8 }],
+    data: s.intensity,
+  };
+  return { keyExpr, bytes: envelopeBytes(TYPE_RADAR_SPOKE, spoke, ts) };
 }
 
 export interface DecodedRadarSpoke {
@@ -439,6 +497,51 @@ export function decodePointCloudEnvelope(bytes: Uint8Array): DecodedPointCloud |
     time: pc.timestamp ? dateToSeconds(pc.timestamp) : dateToSeconds(env.enclosedAt),
     frameId: pc.frameId ?? "",
   };
+}
+
+export interface PointCloudField {
+  name: string;
+  offset: number;
+  type: number;
+}
+
+/** A point cloud with its raw packed buffer and layout preserved. Inject-augment
+ *  needs this (not the xyz-only DecodedPointCloud) so it can append synthetic
+ *  points into the *real* cloud's exact layout without dropping intensity or any
+ *  other per-point field the consumer relies on. */
+export interface RawPointCloud {
+  data: Uint8Array;
+  pointStride: number;
+  fields: PointCloudField[];
+  frameId: string;
+  time: number;
+}
+
+export function decodePointCloudPayload(bytes: Uint8Array): RawPointCloud | null {
+  const env = unwrapEnvelope(bytes);
+  if (!env) return null;
+  const pc = decodePayloadFromTypeName(TYPE_POINT_CLOUD, env.payload) as PointCloud | undefined;
+  if (!pc || !pc.data) return null;
+  return {
+    data: pc.data,
+    pointStride: pc.pointStride ?? 12,
+    fields: (pc.fields ?? []).map((f) => ({ name: f.name, offset: f.offset, type: f.type })),
+    frameId: pc.frameId ?? "",
+    time: pc.timestamp ? dateToSeconds(pc.timestamp) : dateToSeconds(env.enclosedAt),
+  };
+}
+
+export function encodePointCloudPayload(pc: RawPointCloud, keyExpr: string): EncodedTopic {
+  const ts = secondsToDate(pc.time);
+  const payload = {
+    timestamp: ts,
+    frameId: pc.frameId,
+    pose: undefined,
+    pointStride: pc.pointStride,
+    fields: pc.fields.map((f) => ({ name: f.name, offset: f.offset, type: f.type })),
+    data: pc.data,
+  };
+  return { keyExpr, bytes: envelopeBytes(TYPE_POINT_CLOUD, payload, ts) };
 }
 
 export interface DecodedLocationFix {

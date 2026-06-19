@@ -78,6 +78,46 @@ describe("MemoryPoseStream", () => {
   });
 });
 
+describe("teePoseStream", () => {
+  const upd = (x: number, time: number): PoseUpdate => ({
+    entityId: "ego",
+    pose: { position: [x, 0, 0], orientation: [0, 0, 0, 1] },
+    time,
+  });
+
+  it("delivers every update to both branches", async () => {
+    const { MemoryPoseStream } = await import("../src/pose.js");
+    const { teePoseStream } = await import("../src/pose.js");
+    const source = new MemoryPoseStream();
+    const [a, b] = teePoseStream(source);
+    source.push(upd(1, 0));
+    source.push(upd(2, 1));
+    source.close();
+
+    const drain = async (s: typeof a): Promise<number[]> => {
+      const xs: number[] = [];
+      for await (const u of s) xs.push(u.pose.position[0]);
+      return xs;
+    };
+    const [as, bs] = await Promise.all([drain(a), drain(b)]);
+    expect(as).toEqual([1, 2]);
+    expect(bs).toEqual([1, 2]);
+  });
+
+  it("closes both branches when the source closes", async () => {
+    const { MemoryPoseStream, teePoseStream } = await import("../src/pose.js");
+    const source = new MemoryPoseStream();
+    const [a, b] = teePoseStream(source);
+    source.close();
+    const aDone: PoseUpdate[] = [];
+    const bDone: PoseUpdate[] = [];
+    for await (const u of a) aDone.push(u);
+    for await (const u of b) bDone.push(u);
+    expect(aDone).toHaveLength(0);
+    expect(bDone).toHaveLength(0);
+  });
+});
+
 describe("applyPoseUpdate", () => {
   it("moves the entity to the pose position and orientation", () => {
     const { entities } = buildScene(compileScenario(minimal));

@@ -1,17 +1,28 @@
 import * as THREE from "three";
 import {
+  applyPoseUpdate,
   buildScene,
   buildingsToObstacles,
   createCameraKernel,
   createClock,
   createLidarKernelWasm,
   createRadarKernel,
+  groundTruthTargets,
+  groundTruthTopicKey,
+  lidarTopicKey,
+  marshalRadarSensorPose,
+  PoseSampler,
+  radarSpokeTopicKey,
   resolveOutputIdentity,
   type CompiledScene,
   type Clock,
+  type GroundTruthTarget,
   type KeelsonNaming,
+  type LidarFrame,
+  type RadarFrame,
   type TerrainData,
 } from "@bino/core";
+import type { RadarGeom } from "./radar-augmenter.js";
 import { createHeadlessRenderer, type HeadlessRendererHandle } from "./headless-gl.js";
 import { BinoRunner, type ScheduledKernel } from "./runner.js";
 import { createLidarThreadKernel, createRadarThreadKernel } from "./thread-kernel.js";
@@ -46,11 +57,44 @@ export interface NodeServiceOptions {
   workers?: boolean;
 }
 
+/** A radar sensor configured for inject-augment (DSL `augment_source`). Built
+ *  by the service but not scheduled on the runner clock or published as a
+ *  synthetic-only stream — the caller wires it to a RadarAugmenter, which drives
+ *  it off the inbound real stream. `renderRevolution` samples the shared
+ *  PoseSampler at `time`, applies those poses to the scene, and renders one
+ *  synthetic revolution. */
+export interface RadarAugmentBuild {
+  sensorId: string;
+  realTopic: string;
+  publishTopic: string;
+  fallbackGeom: RadarGeom;
+  renderRevolution: (time: number, geom: RadarGeom) => RadarFrame;
+  /** Ground-truth co-publish for the injected targets (once per revolution). */
+  groundTruth: { topic: string; render: (time: number) => GroundTruthTarget[] };
+}
+
+/** A lidar sensor configured for inject-augment (DSL `augment_source`). Like
+ *  RadarAugmentBuild but with a per-frame render (no revolution/azimuth). */
+export interface LidarAugmentBuild {
+  sensorId: string;
+  realTopic: string;
+  publishTopic: string;
+  renderFrame: (time: number) => LidarFrame;
+}
+
 export interface NodeService {
   runner: BinoRunner;
   scene: THREE.Scene;
   renderer: THREE.WebGLRenderer;
   publisher?: SensorPublisher;
+  /** Present when any sensor sets `augment_source`. The caller feeds this
+   *  sampler from a teed pose stream so the render closures can reconstruct
+   *  poses at each real message's timestamp. */
+  poseSampler?: PoseSampler;
+  /** One per augment-configured radar sensor. Empty/absent otherwise. */
+  radarAugments?: RadarAugmentBuild[];
+  /** One per augment-configured lidar sensor. Empty/absent otherwise. */
+  lidarAugments?: LidarAugmentBuild[];
   dispose(): void;
 }
 
@@ -80,6 +124,18 @@ function buildSceneFromScenario(
     : [];
   const scheduled: ScheduledKernel[] = [];
   const sensorMeta: SensorMeta[] = [];
+  // Inject-augment: radar sensors driven by a real inbound stream, not the
+  // runner clock. Their kernels are built here but routed to RadarAugmentBuilds
+  // instead of `scheduled`/`sensorMeta`, and disposed alongside the rest.
+  const radarAugments: RadarAugmentBuild[] = [];
+  const lidarAugments: LidarAugmentBuild[] = [];
+  const augmentKernels: { dispose(): void }[] = [];
+  // Scratch vector for ground-truth world-position reads (sync, single-threaded).
+  const tmpWorld = new THREE.Vector3();
+  // One shared sampler feeds every augment renderRevolution closure; the caller
+  // pumps it from a teed pose stream. Created unconditionally (cheap) and only
+  // surfaced on the service when at least one augment radar exists.
+  const poseSampler = new PoseSampler();
 
   // Root of the ADR-004 key-identity cascade. An explicit service-level realm
   // override (opts.naming) wins over the scenario's mandatory base_path.
@@ -127,6 +183,31 @@ function buildSceneFromScenario(
             : {}),
           ...(sensor.frame_id ? { frameId: sensor.frame_id } : {}),
         });
+      } else if (sensor.type === "lidar" && sensor.augment_source) {
+        // Inject-augment lidar: build the kernel for renderFrame, but don't
+        // schedule or publish it — the augmenter drives it off the real cloud
+        // stream. Synchronous (non-worker) kernel so renderFrame stays sync.
+        const kernel = createLidarKernelWasm({
+          scene: built.scene,
+          sensorNode,
+          config: sensor,
+          terrain: built.terrain,
+          waterLevelY: 0,
+          environment: scenario.environment,
+        });
+        augmentKernels.push(kernel);
+        lidarAugments.push({
+          sensorId,
+          realTopic: sensor.augment_source,
+          publishTopic: lidarTopicKey(identity),
+          renderFrame: (time: number): LidarFrame => {
+            for (const v of scenario.vessels) {
+              const p = poseSampler.sample(v.id, time);
+              if (p) applyPoseUpdate(built.entities, { entityId: v.id, pose: p, time });
+            }
+            return kernel.step(time);
+          },
+        });
       } else if (sensor.type === "lidar") {
         scheduled.push({
           sensorId,
@@ -149,6 +230,60 @@ function buildSceneFromScenario(
             ? { topicOverride: sensor.publish_topic_override }
             : {}),
           ...(sensor.frame_id ? { frameId: sensor.frame_id } : {}),
+        });
+      } else if (sensor.type === "radar_marine" && sensor.augment_source) {
+        // Inject-augment radar: build the kernel for renderRevolution, but do
+        // not schedule it or register it with the publisher — the augmenter owns
+        // its timing and publishing. Always the synchronous (non-worker) kernel
+        // so renderRevolution stays sync. Geometry is derived from the live
+        // stream by the merge; the fallback below is advisory.
+        const kernel = createRadarKernel({
+          scene: built.scene,
+          sensorNode,
+          config: sensor,
+          environment: scenario.environment,
+          staticObstacles: buildingObstacles,
+        });
+        augmentKernels.push(kernel);
+        radarAugments.push({
+          sensorId,
+          realTopic: sensor.augment_source,
+          publishTopic: radarSpokeTopicKey(identity),
+          fallbackGeom: {
+            range_m: sensor.range_m,
+            range_bins: sensor.range_bins,
+            spokes_per_rev: sensor.spokes_per_rev,
+          },
+          renderRevolution: (time: number): RadarFrame => {
+            // Reconstruct each entity's pose at the spoke time, apply to the
+            // shared scene, then render one synthetic revolution. Synchronous,
+            // so the runner's own pose application can't interleave mid-render.
+            for (const v of scenario.vessels) {
+              const p = poseSampler.sample(v.id, time);
+              if (p) applyPoseUpdate(built.entities, { entityId: v.id, pose: p, time });
+            }
+            return kernel.step(time);
+          },
+          groundTruth: {
+            topic: groundTruthTopicKey(identity),
+            // Runs immediately after renderRevolution at the same time, so the
+            // scene is already posed: read each injected target's world position
+            // (every vessel except this sensor's host) and reduce to bow-relative
+            // range/bearing in the radar's own convention.
+            render: (time: number): GroundTruthTarget[] => {
+              void time;
+              const host = marshalRadarSensorPose(sensorNode);
+              const targets: { id: string; position: [number, number, number] }[] = [];
+              for (const v of scenario.vessels) {
+                if (v.id === vessel.id) continue;
+                const e = built.entities.get(v.id);
+                if (!e) continue;
+                e.getWorldPosition(tmpWorld);
+                targets.push({ id: v.id, position: [tmpWorld.x, tmpWorld.y, tmpWorld.z] });
+              }
+              return groundTruthTargets(host, targets, sensor.range_m);
+            },
+          },
         });
       } else if (sensor.type === "radar_marine") {
         scheduled.push({
@@ -213,8 +348,12 @@ function buildSceneFromScenario(
     scene: built.scene,
     renderer: handle.renderer,
     ...(publisher ? { publisher } : {}),
+    ...(radarAugments.length || lidarAugments.length ? { poseSampler } : {}),
+    ...(radarAugments.length ? { radarAugments } : {}),
+    ...(lidarAugments.length ? { lidarAugments } : {}),
     dispose() {
       for (const s of scheduled) s.kernel.dispose();
+      for (const k of augmentKernels) k.dispose();
       handle.dispose();
     },
   };

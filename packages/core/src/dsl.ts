@@ -99,6 +99,11 @@ export const LidarSensor = z.object({
   publish_topic_override: z.string().min(1).optional(),
   /** Override the in-payload frame_id (see CameraSensor.frame_id). */
   frame_id: z.string().min(1).optional(),
+  /** Inject-augment: the real `point_cloud` topic key to subscribe to. When set
+   *  (inject mode only), synthetic points are concatenated into each real cloud
+   *  and republished on this sensor's resolved output key. See
+   *  docs/internal/inject-augment.md. Must differ from the output key. */
+  augment_source: z.string().min(1).optional(),
   /** Per-sensor keelson key-identity overrides (ADR-004). */
   keelson: SensorKeelson.optional(),
 });
@@ -124,6 +129,12 @@ export const RadarSensor = z.object({
   publish_topic_override: z.string().min(1).optional(),
   /** Override the in-payload frame_id (see CameraSensor.frame_id). */
   frame_id: z.string().min(1).optional(),
+  /** Inject-augment: the real `radar_spoke` topic key to subscribe to and merge
+   *  synthetic returns into. When set (inject mode only), this sensor is driven
+   *  by the inbound real stream rather than the runner clock, and its resolved
+   *  output key carries the merged (real + synthetic) stream. Must differ from
+   *  the sensor's own output key. See docs/internal/inject-augment.md. */
+  augment_source: z.string().min(1).optional(),
   /** Per-sensor keelson key-identity overrides (ADR-004). */
   keelson: SensorKeelson.optional(),
 });

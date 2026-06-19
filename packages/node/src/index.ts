@@ -7,7 +7,12 @@ export {
   type SensorKernelLike,
   type SensorOutput,
 } from "./runner.js";
-export { createNodeService, type NodeService, type NodeServiceOptions } from "./service.js";
+export {
+  createNodeService,
+  type NodeService,
+  type NodeServiceOptions,
+  type RadarAugmentBuild,
+} from "./service.js";
 export { createFileTerrainCache } from "./terrain-cache.js";
 export { createFileSourceReaders } from "./terrain-readers.js";
 export {
@@ -17,3 +22,15 @@ export {
   type SensorPublisher,
   type SensorPublisherOptions,
 } from "./publisher.js";
+export {
+  createRadarAugmenter,
+  type RadarAugmenter,
+  type RadarAugmenterOptions,
+  type RadarGeom,
+  type AugmentStats,
+} from "./radar-augmenter.js";
+export {
+  createLidarAugmenter,
+  type LidarAugmenter,
+  type LidarAugmenterOptions,
+} from "./lidar-augmenter.js";

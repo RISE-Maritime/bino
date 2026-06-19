@@ -5,6 +5,7 @@ import {
   cameraTopicKey,
   lidarTopicKey,
   radarTopicKey,
+  radarSpokeTopicKey,
   type KeelsonKeyIdentity,
 } from "./keelson.js";
 
@@ -32,6 +33,7 @@ export function compileScenario(input: unknown): CompiledScene {
   }
 
   checkKeelsonKeys(parsed);
+  checkAugmentSources(parsed);
 
   return {
     name: parsed.name,
@@ -55,6 +57,46 @@ function outputKeyFor(
       return lidarTopicKey(id);
     case "radar_marine":
       return radarTopicKey(id);
+  }
+}
+
+/** Inject-augment validation (docs/internal/inject-augment.md). A radar sensor
+ *  with `augment_source` subscribes to a real radar_spoke stream and republishes
+ *  the merged result on its own resolved spoke key. Two ways to get it wrong are
+ *  worth catching at compile time: using it outside inject mode (the renderer
+ *  would still draw the world, so "merge into reality" is meaningless), and
+ *  pointing it at its own output key (an immediate feedback loop). */
+function checkAugmentSources(s: ScenarioT): void {
+  const base = s.keelson.base_path;
+  for (const v of s.vessels) {
+    for (const sensor of v.sensors) {
+      if (sensor.type !== "radar_marine" && sensor.type !== "lidar") continue;
+      if (!sensor.augment_source) continue;
+      const owner = `${v.id}/${sensor.id}`;
+      if (s.modes.rendering !== "inject") {
+        throw new Error(
+          `sensor '${owner}' sets augment_source but modes.rendering is ` +
+            `'${s.modes.rendering}' — augmentation is only valid in inject mode`,
+        );
+      }
+      const id = resolveOutputIdentity({
+        scenarioBasePath: base,
+        vesselId: v.id,
+        ...(v.keelson ? { vesselKeelson: v.keelson } : {}),
+        sensorId: sensor.id,
+        ...(sensor.keelson ? { sensorKeelson: sensor.keelson } : {}),
+      });
+      // The augmented stream is republished on the sensor's own output subject;
+      // pointing the source at it would be an immediate feedback loop.
+      const ownKey = sensor.type === "radar_marine" ? radarSpokeTopicKey(id) : lidarTopicKey(id);
+      if (sensor.augment_source === ownKey) {
+        throw new Error(
+          `sensor '${owner}' augment_source equals its own output key ` +
+            `'${sensor.augment_source}' — that is a feedback loop; subscribe to the ` +
+            `real sensor's key, which must differ from Bino's augmented output`,
+        );
+      }
+    }
   }
 }
 

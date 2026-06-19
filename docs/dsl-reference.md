@@ -210,7 +210,15 @@ radar are 360°-native and emit in the body frame regardless of mount yaw.
 | `azimuths`               | int           | = channels | horizontal samples                                       |
 | `publish_topic_override` | string        | --         | override Keelson topic (bypasses identity resolution)    |
 | `frame_id`               | string        | --         | override payload frame_id (default `{vessel}/{sensor}`)  |
+| `augment_source`         | string        | --         | real `point_cloud` key to merge into (inject mode only)  |
 | `keelson`                | SensorKeelson | --         | per-sensor key-identity overrides (see Keelson identity) |
+
+`augment_source` enables **inject-augment** for lidar (see
+`docs/internal/inject-augment.md`): the sensor subscribes to that real
+`point_cloud` key, concatenates its synthetic points into each real cloud —
+preserving the real cloud's exact layout (intensity and any other per-point
+fields are kept) — and republishes on its own resolved `point_cloud` key. Valid
+only when `modes.rendering: inject`, and must differ from the output key.
 
 ### Marine Radar (`type: "radar_marine"`)
 
@@ -226,6 +234,7 @@ radar are 360°-native and emit in the body frame regardless of mount yaw.
 | `emit`                   | enum          | `sweep` | `sweep` (batched per rev) \| `spoke` (per-spoke stream) \| `both` |
 | `publish_topic_override` | string        | --      | override Keelson topic (bypasses identity resolution)             |
 | `frame_id`               | string        | --      | override payload frame_id (default `{vessel}/{sensor}`)           |
+| `augment_source`         | string        | --      | real `radar_spoke` key to merge into (inject mode only)           |
 | `keelson`                | SensorKeelson | --      | per-sensor key-identity overrides (see Keelson identity)          |
 
 `emit` selects the keelson subject(s): `sweep` publishes one `keelson.RadarSweep`
@@ -234,6 +243,18 @@ radar are 360°-native and emit in the body frame regardless of mount yaw.
 `spokes_per_rev`× more messages; `both` publishes each. `publish_topic_override`
 applies only to the sweep key. Note: the spoke stream is a per-revolution
 snapshot sliced into spokes — intra-sweep target motion is not modelled.
+
+`augment_source` enables **inject-augment** (see
+`docs/internal/inject-augment.md`): the sensor subscribes to that real
+`radar_spoke` key, merges its synthetic returns into each real spoke (per-bin
+max, range/bins derived from the live stream — the DSL geometry above is the
+fallback), and republishes the merged stream on its own resolved spoke key. Valid
+only when `modes.rendering: inject`, and must differ from the sensor's own output
+key. The sensor is then driven by the inbound stream, not the runner clock.
+Alongside the merged stream it co-publishes ground truth for the injected targets
+on the `ground_truth` subject (`…/pubsub/ground_truth/{source}`) — one
+`FrameTransform` per target per revolution, in the merged stream's frame — so a
+consumer can score detections against truth.
 
 ## Modes
 

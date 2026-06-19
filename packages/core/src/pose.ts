@@ -53,6 +53,29 @@ export class MemoryPoseStream implements PoseStream {
   }
 }
 
+/** Fan one pose stream out to two independent consumers. Both receive every
+ *  update. Used by inject-augment: the runner consumes one branch (applying
+ *  poses to scene entities at its own cadence) while a PoseSampler is fed from
+ *  the other (to reconstruct poses at arbitrary spoke timestamps). Closing the
+ *  source ends the pump and closes both branches; closing a branch does not
+ *  affect the source or the sibling. */
+export function teePoseStream(source: PoseStream): [PoseStream, PoseStream] {
+  const a = new MemoryPoseStream();
+  const b = new MemoryPoseStream();
+  void (async () => {
+    try {
+      for await (const update of source) {
+        a.push(update);
+        b.push(update);
+      }
+    } finally {
+      a.close();
+      b.close();
+    }
+  })();
+  return [a, b];
+}
+
 export function applyPoseUpdate(
   entities: ReadonlyMap<string, THREE.Object3D>,
   update: PoseUpdate,
