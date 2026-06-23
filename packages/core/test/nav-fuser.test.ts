@@ -12,15 +12,28 @@ function bowOf(q: readonly [number, number, number, number]): THREE.Vector3 {
 }
 
 describe("LatestWinsNavFuser", () => {
-  it("projects location_fix through the anchor into the scene frame", () => {
+  it("projects location_fix through the anchor, sitting at the waterline by default", () => {
     const fuser = new LatestWinsNavFuser("ego", anchor);
-    const fix = { lat: 54.32 + 100 / 111_320, lon: 10.14, altitude: 2, time: 10 };
+    // A nonzero (and even negative) GPS altitude must NOT move the vessel off
+    // the sea surface — a floating surface vessel sits at the anchor height.
+    const fix = { lat: 54.32 + 100 / 111_320, lon: 10.14, altitude: -0.7, time: 10 };
     const { update } = fuser.fix(fix);
 
     expect(update.entityId).toBe("ego");
     expect(update.time).toBe(10);
-    const expected = geodeticToScene({ lat: fix.lat, lon: fix.lon, height: fix.altitude }, anchor);
+    const expected = geodeticToScene({ lat: fix.lat, lon: fix.lon, height: anchor.height }, anchor);
     update.pose.position.forEach((v, i) => expect(v).toBeCloseTo(expected[i]!, 6));
+  });
+
+  it("drives vertical from the raw fix altitude when useFixAltitude is set", () => {
+    const fuser = new LatestWinsNavFuser("ego", anchor, true);
+    const fix = { lat: 54.32, lon: 10.14, altitude: 5, time: 0 };
+    const { update } = fuser.fix(fix);
+    const expected = geodeticToScene({ lat: fix.lat, lon: fix.lon, height: 5 }, anchor);
+    update.pose.position.forEach((v, i) => expect(v).toBeCloseTo(expected[i]!, 6));
+    // ...and differs from the waterline projection (altitude actually applied).
+    const waterline = geodeticToScene({ lat: fix.lat, lon: fix.lon, height: 0 }, anchor);
+    expect(update.pose.position).not.toEqual(waterline);
   });
 
   it("defaults to heading North (bow −Z) before any heading arrives", () => {

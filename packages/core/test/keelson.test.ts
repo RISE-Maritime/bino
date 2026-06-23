@@ -9,6 +9,8 @@ import {
   poseTopicKey,
   cameraTopicKey,
   lidarTopicKey,
+  navTopicKeys,
+  navSourceOverrides,
   DEFAULT_NAMING,
 } from "../src/keelson.js";
 import type { PoseUpdate } from "../src/pose.js";
@@ -39,6 +41,34 @@ describe("Keelson topic keys", () => {
     expect(poseTopicKey({ base_path: "rise" }, "ego")).toBe(
       "rise/@v0/ego/pubsub/frame_transform/sim",
     );
+  });
+});
+
+describe("navTopicKeys — decomposed-nav subscription keys", () => {
+  const id = { base_path: "rise", entity_id: "sf18", source_id: "mav/0" };
+
+  it("uses the shared source_id for every subject by default", () => {
+    expect(navTopicKeys(id)).toEqual({
+      locationFix: "rise/@v0/sf18/pubsub/location_fix/mav/0",
+      heading: "rise/@v0/sf18/pubsub/heading_true_north_deg/mav/0",
+      pitch: "rise/@v0/sf18/pubsub/pitch_deg/mav/0",
+      roll: "rise/@v0/sf18/pubsub/roll_deg/mav/0",
+    });
+  });
+
+  it("overrides source per subject, falling back to source_id when unset", () => {
+    const sources = navSourceOverrides({
+      location_fix_source: "ardusimple/GGA",
+      heading_source: "ardusimple/UNIHEADINGA",
+      pitch_source: "ardusimple/UNIHEADINGA",
+      // roll_source omitted → falls back to mav/0
+    });
+    expect(navTopicKeys(id, sources)).toEqual({
+      locationFix: "rise/@v0/sf18/pubsub/location_fix/ardusimple/GGA",
+      heading: "rise/@v0/sf18/pubsub/heading_true_north_deg/ardusimple/UNIHEADINGA",
+      pitch: "rise/@v0/sf18/pubsub/pitch_deg/ardusimple/UNIHEADINGA",
+      roll: "rise/@v0/sf18/pubsub/roll_deg/mav/0",
+    });
   });
 });
 

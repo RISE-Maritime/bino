@@ -3,7 +3,7 @@
   import { SvelteMap } from "svelte/reactivity";
   import { type PoseStream, type Scenario } from "@bino/core";
   import { mountViewer, type ViewerHandle, type ViewerStats } from "$lib/viewer.js";
-  import { connectZenohPoses, vesselsForZenoh, type ZenohConnection } from "$lib/zenoh.js";
+  import { connectZenohPoses, type ZenohConnection } from "$lib/zenoh.js";
   import { startScriptedPoses, type ScriptedHandle } from "$lib/scripted.js";
   import { v01Scenario, fetchScenario } from "$lib/scenario.js";
 
@@ -116,7 +116,10 @@
       loadingStage = "Connecting to zenoh";
       source = "connecting";
       try {
-        zenoh = await connectZenohPoses(zenohUrl, vesselsForZenoh(scenario.vessels));
+        zenoh = await connectZenohPoses(zenohUrl, scenario.vessels, {
+          anchor: scenario.anchor,
+          scenarioBasePath: scenario.keelson?.base_path,
+        });
         poses = zenoh.stream;
         source = "zenoh";
       } catch (err) {

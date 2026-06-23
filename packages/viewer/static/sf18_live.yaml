@@ -1,0 +1,95 @@
+# sf18 live-nav demo — drive an emulated sensor suite off the REAL sf18
+# vessel's live navigation feed (Bohuslän, Swedish west coast), and republish
+# synthetic lidar / radar / camera under a SEPARATE, fake entity id so the
+# emulated streams never collide with the real sf18 topics.
+#
+#   Real input  : rise/@v0/sf18/pubsub/{location_fix,heading_true_north_deg,
+#                 pitch_deg,roll_deg}/mav/0     (subscribed, fused → pose)
+#   Synthetic out: rise/@v0/sf18_sim/pubsub/{image_raw,point_cloud,radar_sweep}/...
+#
+# Run (remote-api endpoint is the docker-host gateway IP, NOT
+# host.docker.internal — see the memory note on the 1006 caveat):
+#   node packages/node/dist/cli.js scenarios/sf18_live.yaml --zenoh ws/172.17.0.1:10000
+scenario:
+  name: sf18_live
+  keelson:
+    # Publish the emulated sensors into the same realm as the live feed so the
+    # same keelson tooling discovers them — but under entity_id `sf18_sim`.
+    base_path: rise
+
+  # Datum for projecting the incoming location_fix into the local scene.
+  # Sits on sf18's operating area in the Gullmarn/Lysekil archipelago.
+  anchor:
+    lat: 58.250515
+    lon: 11.443408
+    height: 0.0
+
+  environment:
+    sea_state:
+      significant_wave_height: 0.6
+      peak_period: 4.0
+      direction_deg: 230
+    wind:
+      speed: 6.0
+      direction_deg: 235
+    time_of_day: "14:30"
+    visibility_m: 15000
+
+  terrain:
+    # ~5 km box centred on the anchor — covers the nearby islands within the
+    # small-craft radar's range.
+    bbox: [11.4004, 58.2275, 11.4864, 58.2735]
+
+  vessels:
+    # The OUTPUT entity. Its `id` becomes the published entity_id (sf18_sim),
+    # deliberately distinct from the real `sf18` we ingest nav from below.
+    - id: sf18_sim
+      model: sf18_usv # not in the registry → uses the dimensions below
+      dimensions:
+        length: 1.8 # sf18's real length_over_all_m
+        beam: 0.45 # real breadth_over_all_m
+        draft: 0.3
+      pose_source:
+        # Ingest the REAL sf18 decomposed nav. entity_id points at the live
+        # vessel. Each nav subject is taken from its highest-precision source:
+        # RTK GNSS for the fix, the dual-antenna RTK compass for heading/pitch.
+        # Roll isn't published by the ardusimple compass, so it falls back to
+        # the shared source_id (the MAVLink estimator).
+        type: keelson_nav
+        base_path: rise
+        entity_id: sf18
+        source_id: mav/0 # fallback (used by roll)
+        location_fix_source: ardusimple/GGA # RTK position
+        heading_source: ardusimple/UNIHEADINGA # dual-antenna RTK heading
+        pitch_source: ardusimple/UNIHEADINGA
+      sensors:
+        - id: bow_camera
+          type: camera
+          mount: { x: 0.6, y: 0.4, z: 0 } # forward, ~0.4 m up
+          fov_deg: 90
+          resolution: [1280, 720]
+          rate_hz: 10
+        - id: os2_lidar
+          type: lidar
+          mount: { x: 0.3, y: 0.5, z: 0 }
+          # Ouster OS2-128: 128 beams, 22.5 deg vertical FOV, 360 deg,
+          # 1024 columns/rev, 240 m range, 10 Hz.
+          channels: 128
+          fov_v_deg: 22.5
+          fov_h_deg: 360
+          azimuths: 1024
+          range_m: 240
+          rate_hz: 10
+        - id: radar
+          type: radar_marine
+          mount: { x: 0.0, y: 0.7, z: 0 } # small mast
+          range_m: 1852 # 1 nautical mile — typical small-craft radar
+          rotation_rate_hz: 0.6 # ~36 rpm
+          beam_width_deg: 5.0 # small antenna → wide beam
+          spokes_per_rev: 360
+          range_bins: 256
+
+  modes:
+    rendering: replace
+    clock: wall
+    determinism: relaxed

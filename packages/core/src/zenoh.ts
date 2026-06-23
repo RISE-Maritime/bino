@@ -25,6 +25,9 @@ export interface ZenohSessionLike {
 export interface ZenohNavVessel {
   vesselId: string;
   keys: NavTopicKeys;
+  /** Drive vertical position from the raw location_fix altitude instead of
+   *  sitting the vessel at the waterline (anchor height). Default false. */
+  useFixAltitude?: boolean;
 }
 
 export interface ZenohPoseStreamOptions {
@@ -65,7 +68,7 @@ export async function createZenohPoseStream(opts: ZenohPoseStreamOptions): Promi
     if (!opts.anchor) {
       throw new Error("keelson_nav pose_source requires a scenario anchor");
     }
-    const fuser = new LatestWinsNavFuser(nv.vesselId, opts.anchor);
+    const fuser = new LatestWinsNavFuser(nv.vesselId, opts.anchor, nv.useFixAltitude ?? false);
     await subscribe(nv.keys.locationFix, (bytes) => {
       const fix = decodeLocationFixEnvelope(bytes);
       if (!fix) return;

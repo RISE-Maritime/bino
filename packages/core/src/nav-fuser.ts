@@ -49,6 +49,11 @@ export class LatestWinsNavFuser implements NavFuser {
   constructor(
     private readonly entityId: string,
     private readonly anchor: Anchor,
+    /** When false (default), the vessel sits at the waterline (anchor height)
+     *  and the noisy GPS antenna altitude is ignored — correct for a surface
+     *  vessel that floats. When true, the raw location_fix altitude drives the
+     *  vessel's vertical position. */
+    private readonly useFixAltitude = false,
   ) {}
 
   setHeading(s: DecodedTimestampedFloat): void {
@@ -62,7 +67,8 @@ export class LatestWinsNavFuser implements NavFuser {
   }
 
   fix(f: DecodedLocationFix): FusedPose {
-    const position = geodeticToScene({ lat: f.lat, lon: f.lon, height: f.altitude }, this.anchor);
+    const height = this.useFixAltitude ? f.altitude : this.anchor.height;
+    const position = geodeticToScene({ lat: f.lat, lon: f.lon, height }, this.anchor);
     const orientation = navToSceneQuaternion(
       this.heading?.value ?? 0,
       this.pitch?.value ?? 0,

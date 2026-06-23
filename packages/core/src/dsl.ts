@@ -33,13 +33,27 @@ export const ZenohPoseSource = z.object({
  *  through the cascade (vessel → scenario); `entity_id` defaults to the
  *  vessel id. Observed traffic should set `entity_id` to the *receiving*
  *  platform (not the contact) — compile-time warns when a `target_id` feed
- *  leaves it inherited. `source_id` stays explicit. */
+ *  leaves it inherited. `source_id` stays explicit.
+ *
+ *  A real feed often publishes each nav subject from a *different* source —
+ *  e.g. an RTK GNSS posts location_fix from one sensor and the dual-antenna
+ *  compass posts heading from another. The optional `*_source` fields override
+ *  `source_id` per subject; each falls back to `source_id` when unset. */
 export const KeelsonNavPoseSource = z.object({
   type: z.literal("keelson_nav"),
   base_path: z.string().min(1).optional(),
   entity_id: z.string().min(1).optional(),
   source_id: z.string().min(1),
   target_id: z.string().min(1).optional(),
+  location_fix_source: z.string().min(1).optional(),
+  heading_source: z.string().min(1).optional(),
+  pitch_source: z.string().min(1).optional(),
+  roll_source: z.string().min(1).optional(),
+  /** Vertical placement. "waterline" (default) sits the vessel on the sea
+   *  surface (anchor height) and ignores the noisy GPS antenna altitude —
+   *  correct for a floating surface vessel. "fix" drives vertical position
+   *  from the raw location_fix altitude. */
+  altitude_mode: z.enum(["waterline", "fix"]).default("waterline"),
 });
 
 export const PoseSource = z.discriminatedUnion("type", [ZenohPoseSource, KeelsonNavPoseSource]);

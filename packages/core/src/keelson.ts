@@ -163,15 +163,43 @@ export interface NavTopicKeys {
   roll: string;
 }
 
-/** Build the per-subject keys Bino subscribes to for a decomposed-nav vessel. */
-export function navTopicKeys(id: KeelsonKeyIdentity): NavTopicKeys {
-  const key = (subject: string): string =>
-    construct_pubSub_key(id.base_path, id.entity_id, subject, id.source_id, id.target_id);
+/** Per-subject `source_id` overrides for a decomposed-nav vessel. Each unset
+ *  subject falls back to the identity's shared `source_id`. */
+export interface NavSourceOverrides {
+  locationFix?: string | undefined;
+  heading?: string | undefined;
+  pitch?: string | undefined;
+  roll?: string | undefined;
+}
+
+/** Build the per-subject keys Bino subscribes to for a decomposed-nav vessel.
+ *  `sources` overrides the source_id per subject (e.g. RTK GNSS for the fix,
+ *  a dual-antenna compass for heading); each falls back to `id.source_id`. */
+export function navTopicKeys(id: KeelsonKeyIdentity, sources?: NavSourceOverrides): NavTopicKeys {
+  const key = (subject: string, source: string | undefined): string =>
+    construct_pubSub_key(id.base_path, id.entity_id, subject, source ?? id.source_id, id.target_id);
   return {
-    locationFix: key(SUBJECT_LOCATION_FIX),
-    heading: key(SUBJECT_HEADING),
-    pitch: key(SUBJECT_PITCH),
-    roll: key(SUBJECT_ROLL),
+    locationFix: key(SUBJECT_LOCATION_FIX, sources?.locationFix),
+    heading: key(SUBJECT_HEADING, sources?.heading),
+    pitch: key(SUBJECT_PITCH, sources?.pitch),
+    roll: key(SUBJECT_ROLL, sources?.roll),
+  };
+}
+
+/** Map a keelson_nav pose source's optional `*_source` DSL fields onto the
+ *  NavSourceOverrides shape navTopicKeys expects. Omitted fields stay unset so
+ *  they fall back to the shared `source_id`. */
+export function navSourceOverrides(p: {
+  location_fix_source?: string | undefined;
+  heading_source?: string | undefined;
+  pitch_source?: string | undefined;
+  roll_source?: string | undefined;
+}): NavSourceOverrides {
+  return {
+    locationFix: p.location_fix_source,
+    heading: p.heading_source,
+    pitch: p.pitch_source,
+    roll: p.roll_source,
   };
 }
 

@@ -6,6 +6,7 @@ import {
   MemoryPoseStream,
   createZenohPoseStream,
   navTopicKeys,
+  navSourceOverrides,
   resolveNavIdentity,
   prepareTerrain,
   teePoseStream,
@@ -68,7 +69,11 @@ function navVessels(scenario: CompiledScene): ZenohNavVessel[] {
         ...(v.keelson ? { vesselKeelson: v.keelson } : {}),
         poseSource: v.pose_source,
       });
-      out.push({ vesselId: v.id, keys: navTopicKeys(identity) });
+      out.push({
+        vesselId: v.id,
+        keys: navTopicKeys(identity, navSourceOverrides(v.pose_source)),
+        useFixAltitude: v.pose_source.altitude_mode === "fix",
+      });
     }
   }
   return out;
