@@ -32,8 +32,13 @@ const SUBJECT_POINT_CLOUD = "point_cloud";
 const SUBJECT_RADAR_SWEEP = "radar_sweep";
 const SUBJECT_RADAR_SPOKE = "radar_spoke";
 // Inject-augment output: true state of the injected (synthetic) targets, so a
-// consumer can score detections in the merged stream against ground truth.
-const SUBJECT_GROUND_TRUTH = "ground_truth";
+// consumer can score detections in the merged stream against ground truth. It
+// rides the well-known `frame_transform` subject (the payload is exactly a
+// `foxglove.FrameTransform`), and the truth is marked in the *source*, as its
+// last chunk: `.../frame_transform/{source}/truth`. That is how Slipway marks
+// truth (its ADR-0022), so `**/truth` finds it with the rest, and keelson has
+// no subject to add for it.
+const TRUTH_SOURCE_SUFFIX = "truth";
 
 // Decomposed navigation subjects (input). A real maritime feed (AIS, NMEA,
 // MAVLink) publishes a vessel's nav state as these separate scalars rather
@@ -153,7 +158,12 @@ export function radarSpokeTopicKey(id: KeelsonKeyIdentity): string {
 }
 
 export function groundTruthTopicKey(id: KeelsonKeyIdentity): string {
-  return construct_pubSub_key(id.base_path, id.entity_id, SUBJECT_GROUND_TRUTH, id.source_id);
+  return construct_pubSub_key(
+    id.base_path,
+    id.entity_id,
+    SUBJECT_FRAME_TRANSFORM,
+    `${id.source_id}/${TRUTH_SOURCE_SUFFIX}`,
+  );
 }
 
 export interface NavTopicKeys {
@@ -264,7 +274,7 @@ export function encodePoseUpdate(
 }
 
 /** Encode ground truth for the injected targets as one `FrameTransform` per
- *  target on a shared `ground_truth` key. Each target's true position is placed
+ *  target on the sensor's ground-truth key (see `groundTruthTopicKey`). Each target's true position is placed
  *  in the radar's bow-relative frame (x along the bow, y to starboard, z up), so
  *  `parentFrameId` is the merged stream's frame (the real sensor's), letting a
  *  consumer compare truth and detections in one frame. Recover polar truth with
