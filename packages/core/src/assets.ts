@@ -517,6 +517,412 @@ function buildGenericSuperstructure(
 }
 
 // ---------------------------------------------------------------------------
+// Ship families — superstructures proportional to the vessel's own dimensions
+// ---------------------------------------------------------------------------
+//
+// A family names a kind of ship, not a ship: every part below is a fraction of
+// the length and beam the scenario gives, so a 15 m and a 70 m trawler are
+// drawn alike at their own sizes. A scenario names one as a vessel's `model`;
+// Slipway's archetype library does, under each package's `render.assets.bino`.
+
+export type FamilyExtra = "containers" | "hatches" | "cranes" | "gantry" | "mast" | "sail_rig";
+
+export interface FamilySpec {
+  /** Bridge centre from amidships, as a fraction of length (+ forward). */
+  bridgeX: number;
+  /** Superstructure length, as a fraction of the vessel's length. */
+  bridgeLength: number;
+  /** Decks stacked above the main deck. */
+  tiers: number;
+  /** Height of one tier, as a fraction of beam. */
+  tierHeight: number;
+  /** Width of the lowest tier, as a fraction of beam. */
+  width: number;
+  funnel: boolean;
+  extras: FamilyExtra[];
+}
+
+export const FAMILIES: Record<string, FamilySpec> = {
+  tanker: {
+    bridgeX: -0.4,
+    bridgeLength: 0.1,
+    tiers: 4,
+    tierHeight: 0.16,
+    width: 0.8,
+    funnel: true,
+    extras: [],
+  },
+  bulk: {
+    bridgeX: -0.4,
+    bridgeLength: 0.1,
+    tiers: 4,
+    tierHeight: 0.15,
+    width: 0.8,
+    funnel: true,
+    extras: ["hatches"],
+  },
+  container: {
+    bridgeX: -0.3,
+    bridgeLength: 0.07,
+    tiers: 6,
+    tierHeight: 0.12,
+    width: 0.85,
+    funnel: true,
+    extras: ["containers"],
+  },
+  general_cargo: {
+    bridgeX: -0.34,
+    bridgeLength: 0.1,
+    tiers: 3,
+    tierHeight: 0.18,
+    width: 0.75,
+    funnel: true,
+    extras: ["hatches", "cranes"],
+  },
+  ropax: {
+    bridgeX: -0.04,
+    bridgeLength: 0.7,
+    tiers: 3,
+    tierHeight: 0.18,
+    width: 0.95,
+    funnel: true,
+    extras: [],
+  },
+  ferry: {
+    bridgeX: 0.0,
+    bridgeLength: 0.6,
+    tiers: 2,
+    tierHeight: 0.2,
+    width: 0.9,
+    funnel: false,
+    extras: [],
+  },
+  cruise: {
+    bridgeX: -0.04,
+    bridgeLength: 0.8,
+    tiers: 6,
+    tierHeight: 0.12,
+    width: 0.95,
+    funnel: true,
+    extras: [],
+  },
+  tug: {
+    bridgeX: 0.1,
+    bridgeLength: 0.25,
+    tiers: 2,
+    tierHeight: 0.3,
+    width: 0.6,
+    funnel: true,
+    extras: ["mast"],
+  },
+  fishing: {
+    bridgeX: 0.25,
+    bridgeLength: 0.2,
+    tiers: 1,
+    tierHeight: 0.3,
+    width: 0.6,
+    funnel: false,
+    extras: ["gantry", "mast"],
+  },
+  trawler: {
+    bridgeX: 0.2,
+    bridgeLength: 0.22,
+    tiers: 2,
+    tierHeight: 0.25,
+    width: 0.7,
+    funnel: true,
+    extras: ["gantry", "mast"],
+  },
+  pilot: {
+    bridgeX: 0.05,
+    bridgeLength: 0.3,
+    tiers: 1,
+    tierHeight: 0.3,
+    width: 0.6,
+    funnel: false,
+    extras: ["mast"],
+  },
+  patrol: {
+    bridgeX: 0.1,
+    bridgeLength: 0.35,
+    tiers: 2,
+    tierHeight: 0.22,
+    width: 0.6,
+    funnel: false,
+    extras: ["mast"],
+  },
+  naval: {
+    bridgeX: 0.05,
+    bridgeLength: 0.3,
+    tiers: 3,
+    tierHeight: 0.15,
+    width: 0.6,
+    funnel: true,
+    extras: ["mast"],
+  },
+  dredger: {
+    bridgeX: 0.22,
+    bridgeLength: 0.1,
+    tiers: 3,
+    tierHeight: 0.18,
+    width: 0.75,
+    funnel: true,
+    extras: ["gantry"],
+  },
+  survey: {
+    bridgeX: 0.2,
+    bridgeLength: 0.3,
+    tiers: 3,
+    tierHeight: 0.18,
+    width: 0.75,
+    funnel: true,
+    extras: ["gantry", "mast"],
+  },
+  yacht: {
+    bridgeX: 0.0,
+    bridgeLength: 0.45,
+    tiers: 2,
+    tierHeight: 0.2,
+    width: 0.8,
+    funnel: false,
+    extras: [],
+  },
+  motorboat: {
+    bridgeX: 0.05,
+    bridgeLength: 0.35,
+    tiers: 1,
+    tierHeight: 0.22,
+    width: 0.75,
+    funnel: false,
+    extras: [],
+  },
+  sailboat: {
+    bridgeX: -0.05,
+    bridgeLength: 0.25,
+    tiers: 1,
+    tierHeight: 0.12,
+    width: 0.55,
+    funnel: false,
+    extras: ["sail_rig"],
+  },
+  hsc: {
+    bridgeX: 0.05,
+    bridgeLength: 0.7,
+    tiers: 1,
+    tierHeight: 0.2,
+    width: 0.95,
+    funnel: false,
+    extras: [],
+  },
+  workboat: {
+    bridgeX: 0.15,
+    bridgeLength: 0.25,
+    tiers: 2,
+    tierHeight: 0.22,
+    width: 0.7,
+    funnel: false,
+    extras: ["mast"],
+  },
+};
+
+export function familyNames(): string[] {
+  return Object.keys(FAMILIES).sort();
+}
+
+const MAT_SAIL = () =>
+  new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.8, side: THREE.DoubleSide });
+const CONTAINER_COLOURS = [0x2f5d8a, 0xa33a2a, 0x3f7d4a, 0xc08a2a, 0x6a6a6a];
+
+function box(
+  name: string,
+  material: THREE.Material,
+  x: number,
+  y: number,
+  z: number,
+  dx: number,
+  dy: number,
+  dz: number,
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(dx, dy, dz), material);
+  mesh.name = name;
+  mesh.position.set(x, y + dy / 2, z);
+  return mesh;
+}
+
+function triangle(name: string, a: number[], b: number[], c: number[]): THREE.Mesh {
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute("position", new THREE.Float32BufferAttribute([...a, ...b, ...c], 3));
+  geom.setIndex([0, 1, 2]);
+  geom.computeVertexNormals();
+  const mesh = new THREE.Mesh(geom, MAT_SAIL());
+  mesh.name = name;
+  return mesh;
+}
+
+/** The cargo deck: from just forward of the superstructure to the bow's shoulder. */
+function cargoSpan(dims: VesselDimensions, spec: FamilySpec): [number, number] {
+  const front = (spec.bridgeX + spec.bridgeLength / 2) * dims.length;
+  return [front + 0.02 * dims.length, 0.38 * dims.length];
+}
+
+function buildFamilyParts(dims: VesselDimensions, spec: FamilySpec): THREE.Mesh[] {
+  const { length, beam, draft } = dims;
+  const deckY = draft * 0.6;
+  const parts: THREE.Mesh[] = [];
+  const x0 = spec.bridgeX * length;
+
+  // The superstructure: tiers stepping in as they rise, the top one glazed.
+  let y = deckY;
+  let d = spec.bridgeLength * length;
+  let w = spec.width * beam;
+  const h = spec.tierHeight * beam;
+  for (let i = 0; i < spec.tiers; i++) {
+    const tier = box(
+      i === 0 ? "superstructure" : `superstructure_${i}`,
+      MAT.deckhouse(),
+      x0,
+      y,
+      0,
+      d,
+      h,
+      w,
+    );
+    parts.push(tier);
+    if (i === spec.tiers - 1) {
+      parts.push(
+        box(
+          "bridge_windows",
+          MAT.windows(),
+          x0 + d * 0.02,
+          y + h * 0.55,
+          0,
+          d * 1.01,
+          h * 0.25,
+          w * 1.01,
+        ),
+      );
+    }
+    y += h;
+    d *= 0.9;
+    w *= 0.92;
+  }
+  const top = y;
+
+  if (spec.funnel) {
+    const fh = h * 1.2;
+    const funnel = makeFunnel(
+      x0 - spec.bridgeLength * length * 0.35,
+      top - h,
+      beam * 0.22 * spec.width,
+      fh,
+    );
+    parts.push(funnel);
+  }
+
+  const [from, to] = cargoSpan(dims, spec);
+  for (const extra of spec.extras) {
+    if (extra === "containers" || extra === "hatches") {
+      const bay = 0.05 * length;
+      const n = Math.max(1, Math.floor((to - from) / bay));
+      for (let i = 0; i < n; i++) {
+        const cx = from + (i + 0.5) * ((to - from) / n);
+        if (extra === "containers") {
+          const material = new THREE.MeshStandardMaterial({
+            color: CONTAINER_COLOURS[i % CONTAINER_COLOURS.length],
+            roughness: 0.7,
+          });
+          parts.push(
+            box(`containers_${i}`, material, cx, deckY, 0, bay * 0.9, beam * 0.28, beam * 0.88),
+          );
+        } else {
+          parts.push(
+            box(`hatch_${i}`, MAT.hatchCover(), cx, deckY, 0, bay * 0.75, beam * 0.04, beam * 0.7),
+          );
+        }
+      }
+    } else if (extra === "cranes") {
+      for (const f of [0.35, 0.7]) {
+        const cx = from + f * (to - from);
+        parts.push(
+          box(
+            `crane_post_${f}`,
+            MAT.mast(),
+            cx,
+            deckY,
+            beam * 0.3,
+            beam * 0.06,
+            beam * 0.45,
+            beam * 0.06,
+          ),
+        );
+        parts.push(
+          box(
+            `crane_jib_${f}`,
+            MAT.mast(),
+            cx + beam * 0.25,
+            deckY + beam * 0.4,
+            beam * 0.3,
+            beam * 0.5,
+            beam * 0.03,
+            beam * 0.03,
+          ),
+        );
+      }
+    } else if (extra === "gantry") {
+      const gx = -0.45 * length;
+      const gh = beam * 0.45;
+      for (const side of [-1, 1]) {
+        parts.push(
+          box(
+            `gantry_leg_${side > 0 ? "s" : "p"}`,
+            MAT.funnel(),
+            gx,
+            deckY,
+            side * beam * 0.35,
+            beam * 0.05,
+            gh,
+            beam * 0.05,
+          ),
+        );
+      }
+      parts.push(
+        box("gantry_beam", MAT.funnel(), gx, deckY + gh, 0, beam * 0.05, beam * 0.05, beam * 0.75),
+      );
+    } else if (extra === "mast") {
+      const m = makeMast(x0 + spec.bridgeLength * length * 0.2, top, beam * 0.45);
+      m.scale.set(beam / 10, 1, beam / 10);
+      parts.push(m);
+    } else if (extra === "sail_rig") {
+      // A masthead sloop: the mast stands about 1.35 lengths above the deck's
+      // middle and the sails are two triangles in the centre plane.
+      const mx = 0.1 * length;
+      const mastH = 1.3 * length;
+      const mast = makeMast(mx, deckY, mastH);
+      mast.scale.set(length / 30, 1, length / 30);
+      parts.push(mast);
+      const boom = deckY + 0.12 * length;
+      parts.push(
+        triangle(
+          "mainsail",
+          [mx, boom, 0],
+          [mx, deckY + mastH * 0.97, 0],
+          [mx - 0.38 * length, boom, 0],
+        ),
+      );
+      parts.push(
+        triangle(
+          "jib",
+          [mx, deckY + mastH * 0.9, 0],
+          [0.47 * length, deckY + 0.04 * length, 0],
+          [mx + 0.02 * length, deckY + 0.06 * length, 0],
+        ),
+      );
+    }
+  }
+  return parts;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -540,7 +946,12 @@ export function parametricHull(
   hullBelowMesh.name = "hull_underwater";
   group.add(hullBelowMesh);
 
-  if (superstructure) {
+  const family = vesselType !== undefined ? FAMILIES[vesselType] : undefined;
+  if (family) {
+    for (const p of buildFamilyParts(dims, family)) {
+      group.add(p);
+    }
+  } else if (superstructure) {
     let parts: THREE.Mesh[];
     if (vesselType === "tanker_120m") {
       parts = buildTankerSuperstructure(dims, superstructure);
