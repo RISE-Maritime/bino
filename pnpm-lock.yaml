@@ -36,8 +36,8 @@ importers:
   packages/core:
     dependencies:
       '@rise-maritime/keelson-js':
-        specifier: 0.5.0
-        version: 0.5.0
+        specifier: 0.6.0-pre.19
+        version: 0.6.0-pre.19
       geotiff:
         specifier: ^2.1.3
         version: 2.1.3
@@ -437,8 +437,8 @@ packages:
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
-  '@rise-maritime/keelson-js@0.5.0':
-    resolution: {integrity: sha512-JKGm2p3sSe04A0XJQmtv8eTUjj+y7Rbn0FnzyOOr9PVwZtYY/lc2K5YpbtkIC/P+iw3obkfiHsDZMqg3J824TA==}
+  '@rise-maritime/keelson-js@0.6.0-pre.19':
+    resolution: {integrity: sha512-qipIMvHzsRDHqUAx0RDN7tRYeZ5E0Ula66s1x/gFfn4ssxu+xTb6hjEX84hQ8z0m5SOtwnj9q+MOCAonysKBKg==}
 
   '@rollup/plugin-virtual@3.0.2':
     resolution: {integrity: sha512-10monEYsBp3scM4/ND4LNH5Rxvh3e/cVeL3jWTgZ2SrQ+BmUoQcopVQvnaMcOnykb1VkxUFuDAN+0FnpTFRy2A==}
@@ -1846,6 +1846,7 @@ packages:
 
   sliced@1.0.1:
     resolution: {integrity: sha512-VZBmZP8WU3sMOZm1bdgTadsQbcscK0UM8oKxKVBs4XAhUo2Xxzm/OFMGBkPusxw9xL3Uy8LrzEqGqJhclsr0yA==}
+    deprecated: Unsupported
 
   smart-buffer@4.2.0:
     resolution: {integrity: sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==}
@@ -2462,8 +2463,9 @@ snapshots:
 
   '@polka/url@1.0.0-next.29': {}
 
-  '@rise-maritime/keelson-js@0.5.0':
+  '@rise-maritime/keelson-js@0.6.0-pre.19':
     dependencies:
+      '@bufbuild/protobuf': 2.12.0
       package.json: 2.0.1
       ts-proto: 2.6.1
 

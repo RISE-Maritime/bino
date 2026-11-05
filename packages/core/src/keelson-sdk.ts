@@ -39,3 +39,11 @@ export type {
   RadarSpoke,
   TimestampedFloat,
 } from "@rise-maritime/keelson-js/dist/payloads/index.keelson.js";
+
+// The tick barrier (Slipway ADR-0019/ADR-0033): the fence a render worker
+// waits on and the acknowledgement it answers with. Both arrived in 0.6.0.
+export {
+  ScenarioStatus,
+  ScenarioTickAck,
+  ScenarioTickAck_Disposition,
+} from "@rise-maritime/keelson-js/dist/payloads/index.keelson.js";
