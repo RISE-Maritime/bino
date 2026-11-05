@@ -288,3 +288,98 @@ describe("prepareTerrain graceful degradation", () => {
     expect([...result.bathymetry.heights].every((h) => h < 0)).toBe(true);
   });
 });
+
+describe("prepareTerrain never caches a fallback (SLIPWAY#63)", () => {
+  const bbox: [number, number, number, number] = [11.78, 57.65, 11.86, 57.7];
+  const grid: BathymetryGrid = {
+    heights: new Float32Array([-5, -12, -20, -7]),
+    width: 2,
+    height: 2,
+    bbox,
+    cellSizeM: 50,
+  };
+
+  function recordingCache() {
+    const writes: string[] = [];
+    const cache: TerrainCache = {
+      get: async () => undefined,
+      set: async (k) => {
+        writes.push(k);
+      },
+    };
+    return { cache, writes };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("does not cache when bathymetry fell back to the flat placeholder", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const { cache, writes } = recordingCache();
+    const result = await prepareTerrain(bbox, {
+      cache,
+      buildings: false,
+      seamarks: false,
+      provider: {
+        coastline: async () => [],
+        bathymetry: async () => {
+          throw new Error("Offset is outside the bounds of the DataView");
+        },
+      },
+    });
+    expect(new Set(result.bathymetry.heights).size).toBe(1); // the placeholder, for this run
+    expect(writes).toEqual([]); // and never kept
+    expect(warn.mock.calls.flat().join(" ")).toContain("not caching terrain: bathymetry");
+  });
+
+  it("still caches when only a cosmetic layer fell back, and says which", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const { cache, writes } = recordingCache();
+    await prepareTerrain(bbox, {
+      cache,
+      buildings: false,
+      provider: {
+        coastline: async () => [],
+        bathymetry: async () => grid,
+        seamarks: async () => {
+          throw new Error("Overpass too busy");
+        },
+      },
+    });
+    expect(writes).toHaveLength(1);
+    expect(warn.mock.calls.flat().join(" ")).toContain("caching terrain without seamarks");
+  });
+
+  it("does not cache when the coastline fell back", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const { cache, writes } = recordingCache();
+    await prepareTerrain(bbox, {
+      cache,
+      buildings: false,
+      seamarks: false,
+      provider: {
+        coastline: async () => {
+          throw new Error("Overpass too busy");
+        },
+        bathymetry: async () => grid,
+      },
+    });
+    expect(writes).toEqual([]);
+  });
+
+  it("caches a complete fetch, an empty-but-successful coastline included", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const { cache, writes } = recordingCache();
+    await prepareTerrain(bbox, {
+      cache,
+      buildings: false,
+      seamarks: false,
+      provider: { coastline: async () => [], bathymetry: async () => grid },
+    });
+    expect(writes).toHaveLength(1);
+  });
+});
