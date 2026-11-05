@@ -69,6 +69,9 @@ docker build --target viewer -t bino-viewer .
 docker run --rm -p 8080:80 bino-viewer        # http://localhost:8080
 ```
 
+- Both images build for **linux/amd64 and linux/arm64** (Apple Silicon,
+  Graviton): the build takes the wasm-bindgen CLI for the architecture it is
+  building, and `@kmamal/gl` ships a prebuild for both.
 - Mount a volume at `/cache` (or set `BINO_TERRAIN_CACHE`) to persist or
   pre-seed fetched terrain for offline runs. Run `pnpm prefetch:scenarios`
   (after `pnpm build`) to warm that cache for every scenario up front, so the
