@@ -266,6 +266,9 @@ export async function loadBathymetry(
   throw new Error(problem);
 }
 
+/** Layers whose fallback is wrong to keep: what a hull grounds on, and where. */
+const STRUCTURAL_LAYERS = new Set(["coastline", "bathymetry"]);
+
 /** How many times a GMRT body that is not a whole GeoTIFF is fetched. */
 const GEOTIFF_ATTEMPTS = 3;
 
@@ -447,12 +450,24 @@ export async function prepareTerrain(
   }
 
   const data: TerrainData = { coastline, bathymetry, buildings, seamarks };
-  if (cache && fellBack.length > 0) {
+  // A structural fallback is never cached: a flat seabed or a missing shore is
+  // wrong for anything grounding-related, and must be fetched again. A
+  // cosmetic one is — the public Overpass server is often busy, and refusing
+  // to cache over a missing seamark would refetch every layer on every start.
+  const structural = fellBack.filter((l) => STRUCTURAL_LAYERS.has(l)).sort();
+  const cosmetic = fellBack.filter((l) => !STRUCTURAL_LAYERS.has(l)).sort();
+  if (cache && structural.length > 0) {
     console.warn(
-      `[bino] not caching terrain: ${fellBack.sort().join(", ")} fell back; ` +
+      `[bino] not caching terrain: ${structural.join(", ")} fell back; ` +
         "the next run fetches them again",
     );
   } else if (cache) {
+    if (cosmetic.length > 0) {
+      console.warn(
+        `[bino] caching terrain without ${cosmetic.join(", ")} (their source failed); ` +
+          `delete the cache entry ${key} to fetch them again`,
+      );
+    }
     await cache.set(key, data).catch((e) => console.warn("terrain cache write failed:", e));
   }
   return data;
