@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { argv, env, exit, stderr, stdout } from "node:process";
 import { dirname } from "node:path";
-import { Config, open } from "@eclipse-zenoh/zenoh-ts";
+import { CongestionControl, Config, open } from "@eclipse-zenoh/zenoh-ts";
 import {
   MemoryPoseStream,
   createZenohPoseStream,
@@ -19,6 +19,7 @@ import {
 } from "@bino/core";
 import { loadScenario } from "./yaml.js";
 import { createNodeService } from "./service.js";
+import { BarrierTickSource } from "./tick-source.js";
 import { createRadarAugmenter, type RadarAugmenter } from "./radar-augmenter.js";
 import { createLidarAugmenter, type LidarAugmenter } from "./lidar-augmenter.js";
 import { createFileTerrainCache } from "./terrain-cache.js";
@@ -163,8 +164,34 @@ async function main(): Promise<void> {
     stdout.write("zenoh: no --zenoh endpoint, running without pose updates\n");
   }
 
+  // A barrier clock waits on Slipway's tick fence and answers each tick it
+  // rendered (ADR-0033). Subscribed before the loop starts, because a worker
+  // that misses its first fence holds a blocking run until the deadline.
+  let tickSource: BarrierTickSource | undefined;
+  if (scene.modes.clock === "barrier") {
+    if (!zenohSession || !scene.barrier) {
+      stderr.write("bino-node: a 'barrier' clock needs --zenoh and a barrier block\n");
+      exit(2);
+    }
+    const session = zenohSession;
+    tickSource = new BarrierTickSource({
+      session: {
+        declareSubscriber: (k) => session.declareSubscriber(k),
+        // BLOCK: a dropped ack stalls the run until its deadline, for nothing.
+        put: (k, b) => session.put(k, b, { congestionControl: CongestionControl.BLOCK }),
+      },
+      fenceKey: scene.barrier.fence_key,
+      ackKey: scene.barrier.ack_key,
+    });
+    await tickSource.start();
+    stdout.write(
+      `barrier: waiting on ${scene.barrier.fence_key}, acking on ${scene.barrier.ack_key}\n`,
+    );
+  }
+
   const service = createNodeService({
     scenario: scene,
+    ...(tickSource ? { tickSource } : {}),
     ...(zenohSession ? { zenohSession } : {}),
     ...(terrain ? { terrain } : {}),
     ...(parsed.workers ? { workers: true } : {}),
@@ -249,6 +276,10 @@ async function main(): Promise<void> {
       }
     }
     stdout.write(`stopped after ${count} frame(s)\n`);
+    if (tickSource) {
+      const { acked, skipped } = tickSource.stats;
+      stdout.write(`barrier: ${acked} tick(s) acknowledged, ${skipped} skipped\n`);
+    }
   } finally {
     for (const a of radarAugmenters) await a.stop();
     for (const a of lidarAugmenters) await a.stop();

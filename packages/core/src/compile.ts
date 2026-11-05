@@ -17,13 +17,23 @@ export interface CompiledScene {
   environment: ScenarioT["environment"];
   terrain?: ScenarioT["terrain"];
   keelson: ScenarioT["keelson"];
+  barrier?: ScenarioT["barrier"];
 }
+
+/** Clocks that advance in discrete steps nobody's wall clock decides, which
+ *  is what strict determinism needs. */
+export const STEPPED_CLOCKS: ReadonlySet<ScenarioT["modes"]["clock"]> = new Set([
+  "stepped",
+  "barrier",
+]);
 
 export function compileScenario(input: unknown): CompiledScene {
   const parsed = Scenario.parse(input);
 
-  if (parsed.modes.determinism === "strict" && parsed.modes.clock !== "stepped") {
-    throw new Error(`strict determinism requires stepped clock (got '${parsed.modes.clock}')`);
+  if (parsed.modes.determinism === "strict" && !STEPPED_CLOCKS.has(parsed.modes.clock)) {
+    throw new Error(
+      `strict determinism requires a stepped or barrier clock (got '${parsed.modes.clock}')`,
+    );
   }
 
   if (parsed.modes.rendering === "inject" && parsed.modes.determinism !== "strict") {
@@ -43,6 +53,7 @@ export function compileScenario(input: unknown): CompiledScene {
     environment: parsed.environment,
     ...(parsed.terrain ? { terrain: parsed.terrain } : {}),
     keelson: parsed.keelson,
+    ...(parsed.barrier ? { barrier: parsed.barrier } : {}),
   };
 }
 

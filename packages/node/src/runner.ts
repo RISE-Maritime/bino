@@ -7,6 +7,7 @@ import {
   type PoseStream,
   type PoseUpdate,
 } from "@bino/core";
+import { FreeRunningTickSource, type Tick, type TickSource } from "./tick-source.js";
 
 const DEFAULT_TICK_HZ = 1000;
 
@@ -51,6 +52,12 @@ export interface RunnerOptions {
    *  integer tick counting for fully deterministic sensor scheduling.
    *  Requires the clock to be a SteppedClock. */
   deterministic?: boolean;
+  /** What advances the deterministic loop (ADR-0033). Defaults to a
+   *  free-running source stepping by the GCD of the sensor periods. A
+   *  barrier source makes the loop wait on someone else's tick. */
+  tickSource?: TickSource;
+  /** Told once per sensor whose rate the external tick cannot carry. */
+  onWarning?: (message: string) => void;
 }
 
 interface KernelSchedule extends ScheduledKernel {
@@ -61,6 +68,10 @@ interface KernelSchedule extends ScheduledKernel {
 interface DeterministicKernelSchedule extends ScheduledKernel {
   fireEveryN: number;
   phaseOffsetFrames: number;
+  periodUs: number;
+  phaseUs: number;
+  /** The last period slot this sensor fired in, on an external tick. */
+  lastSlot: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +93,8 @@ export class BinoRunner {
   private readonly tickIntervalMs: number;
   private readonly onTick: ((t: number) => void) | undefined;
   private readonly deterministic: boolean;
+  private readonly tickSource: TickSource | undefined;
+  private readonly onWarning: (message: string) => void;
   private readonly velocityTracker = new VelocityTracker();
   private stopped = false;
 
@@ -92,6 +105,11 @@ export class BinoRunner {
     this.tickIntervalMs = 1000 / (opts.tickHz ?? DEFAULT_TICK_HZ);
     this.onTick = opts.onTick;
     this.deterministic = opts.deterministic ?? false;
+    this.tickSource = opts.tickSource;
+    this.onWarning = opts.onWarning ?? ((m) => console.warn(`[bino] ${m}`));
+    if (this.tickSource && !this.deterministic) {
+      throw new Error("a tick source drives the deterministic loop; set deterministic: true");
+    }
 
     if (this.deterministic && !(this.clock instanceof SteppedClock)) {
       throw new Error("deterministic mode requires a SteppedClock");
@@ -111,6 +129,7 @@ export class BinoRunner {
 
   stop(): void {
     this.stopped = true;
+    this.tickSource?.close();
   }
 
   private trackVelocity(update: PoseUpdate, time: number): void {
@@ -199,7 +218,15 @@ export class BinoRunner {
       ...s,
       fireEveryN: Math.round(1 / s.rate_hz / baseDt),
       phaseOffsetFrames: Math.round((s.phaseOffset_s ?? 0) / baseDt),
+      periodUs: Math.round(1_000_000 / s.rate_hz),
+      phaseUs: Math.round((s.phaseOffset_s ?? 0) * 1_000_000),
+      lastSlot: -1,
     }));
+
+    const source = this.tickSource ?? new FreeRunningTickSource(baseDt);
+    let run: string | undefined;
+    let lastTimeUs: number | undefined;
+    const warned = new Set<string>();
 
     // Pose queue — a background pump pushes pose updates into a buffer;
     // we drain it synchronously before each tick.
@@ -211,18 +238,21 @@ export class BinoRunner {
     })();
 
     try {
-      let tickIndex = 0;
-
       while (!this.stopped) {
-        // Yield to event loop periodically to let the pose pump run
-        // and avoid starving other async work.
-        if (tickIndex % 100 === 0) {
-          await new Promise<void>((r) => setImmediate(r));
+        const tick = await source.next();
+        if (!tick || this.stopped) break;
+
+        if (tick.runId !== run) {
+          // A new run starts from its own first tick: nothing fired in it yet.
+          run = tick.runId;
+          lastTimeUs = undefined;
+          for (const ds of detSchedules) ds.lastSlot = -1;
         }
 
-        // Advance the clock by one base tick.
-        steppedClock.step(baseDt);
-        const t = steppedClock.now();
+        const t = tick.timeS;
+        steppedClock.set(t);
+        // Sensors stamp with the outside clock's instant when there is one.
+        const stamp = tick.stampS ?? t;
 
         // Drain buffered pose updates.
         while (poseQueue.length > 0) {
@@ -233,30 +263,62 @@ export class BinoRunner {
 
         if (this.onTick) this.onTick(t);
 
-        // Determine which sensors fire on this tick (1-indexed tick count).
         const fired: SensorOutput[] = [];
+        const tUs = Math.round(t * 1_000_000);
         for (const ds of detSchedules) {
-          if (
-            steppedClock.frameIndex >= ds.phaseOffsetFrames &&
-            (steppedClock.frameIndex - ds.phaseOffsetFrames) % ds.fireEveryN === 0
-          ) {
-            const renderStart = performance.now();
-            const output = ds.kernel.step(t);
-            const renderMs = performance.now() - renderStart;
-            fired.push({ sensorId: ds.sensorId, output, renderMs });
-          }
+          if (!this.firesOn(ds, tick, tUs, lastTimeUs, source.kind, warned)) continue;
+          const renderStart = performance.now();
+          const output = ds.kernel.step(stamp);
+          const renderMs = performance.now() - renderStart;
+          fired.push({ sensorId: ds.sensorId, output, renderMs });
         }
+        lastTimeUs = tUs;
 
         if (fired.length > 0) {
-          yield { index: steppedClock.frameIndex, time: t, outputs: fired };
+          yield { index: tick.index, time: stamp, outputs: fired };
         }
-
-        tickIndex++;
       }
     } finally {
+      source.close();
       stream.close();
       await pumpPromise.catch(() => {});
     }
+  }
+
+  /** Whether `ds` fires on `tick`.
+   *
+   *  On bino's own grid it is integer frame counting, exactly as before the
+   *  tick seam. On an external tick the step is the kernel's and need not
+   *  divide a sensor's period, so a sensor fires on the first tick of each of
+   *  its period slots — `floor((t - phase) / period)` advancing, in integer
+   *  microseconds so every worker agrees which tick that is. A sensor faster
+   *  than the tick fires at most once per tick, and is told about once. */
+  private firesOn(
+    ds: DeterministicKernelSchedule,
+    tick: Tick,
+    tUs: number,
+    lastTimeUs: number | undefined,
+    kind: TickSource["kind"],
+    warned: Set<string>,
+  ): boolean {
+    if (kind === "free") {
+      return (
+        tick.index >= ds.phaseOffsetFrames &&
+        (tick.index - ds.phaseOffsetFrames) % ds.fireEveryN === 0
+      );
+    }
+    if (tUs < ds.phaseUs) return false;
+    const slot = Math.floor((tUs - ds.phaseUs) / ds.periodUs);
+    if (slot <= ds.lastSlot) return false;
+    if (lastTimeUs !== undefined && tUs - lastTimeUs > ds.periodUs && !warned.has(ds.sensorId)) {
+      warned.add(ds.sensorId);
+      this.onWarning(
+        `sensor '${ds.sensorId}' at ${ds.rate_hz} Hz is faster than the external tick ` +
+          `(${((tUs - lastTimeUs) / 1e6).toFixed(3)} s); it fires once per tick`,
+      );
+    }
+    ds.lastSlot = slot;
+    return true;
   }
 
   private async wait(): Promise<void> {

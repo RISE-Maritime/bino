@@ -201,7 +201,10 @@ export type Vessel = z.infer<typeof Vessel>;
 
 export const Modes = z.object({
   rendering: z.enum(["replace", "inject", "inject_all"]),
-  clock: z.enum(["external_fmi", "wall", "stepped"]),
+  /** `barrier`: the loop advances only on a tick fence from outside (Slipway's
+   *  tick barrier, ADR-0019/ADR-0033) and acknowledges each one it rendered.
+   *  Requires the top-level `barrier` block. */
+  clock: z.enum(["external_fmi", "wall", "stepped", "barrier"]),
   determinism: z.enum(["strict", "relaxed"]),
 });
 export type Modes = z.infer<typeof Modes>;
@@ -301,6 +304,16 @@ export const Keelson = z.object({
 });
 export type Keelson = z.infer<typeof Keelson>;
 
+/** Where a `barrier` clock hears its ticks and answers them. The fence is a
+ *  `keelson.ScenarioStatus`, the answer a `keelson.ScenarioTickAck`; both keys
+ *  are fully resolved by whoever generated the scene, since only it knows the
+ *  run's instance and the participant identity its scenario declared. */
+export const Barrier = z.object({
+  fence_key: z.string().min(1),
+  ack_key: z.string().min(1),
+});
+export type Barrier = z.infer<typeof Barrier>;
+
 export const Scenario = z
   .object({
     name: z.string().min(1),
@@ -310,8 +323,23 @@ export const Scenario = z
     environment: Environment.default({}),
     terrain: Terrain.optional(),
     keelson: Keelson,
+    barrier: Barrier.optional(),
   })
   .superRefine((s, ctx) => {
+    if (s.modes.clock === "barrier" && !s.barrier) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "a 'barrier' clock needs a top-level barrier: { fence_key, ack_key }",
+        path: ["barrier"],
+      });
+    }
+    if (s.barrier && s.modes.clock !== "barrier") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `a barrier block is only read by the 'barrier' clock (got '${s.modes.clock}')`,
+        path: ["barrier"],
+      });
+    }
     const ids = new Set<string>();
     for (const v of s.vessels) {
       if (ids.has(v.id)) {

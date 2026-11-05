@@ -37,7 +37,7 @@ Pure TypeScript library. No I/O, no renderer instantiation. Exported modules:
 - `camera.ts` -- camera kernel (WebGL render-to-texture)
 - `lidar-wasm.ts` -- lidar WASM BVH ray-cast kernel
 - `radar.ts` -- radar WASM kernel wrapper
-- `clock.ts` -- clock abstractions (wall, stepped, external_fmi stub)
+- `clock.ts` -- clock abstractions (wall, stepped, barrier, external_fmi stub)
 - `env.ts` -- EnvironmentSnapshot per-tick payload
 - `sensor.ts` -- SensorKernel interface
 - `geo.ts` -- WGS84/ENU coordinate transforms
@@ -58,6 +58,7 @@ Headless Node service. Key files:
 - `cli.ts` -- CLI entry point (`bino-node <scenario.yaml> [--zenoh ...]`)
 - `service.ts` -- `createNodeService()` orchestrating renderer + kernels + publishers
 - `runner.ts` -- `BinoRunner` with per-sensor scheduling based on `rate_hz` and `phase_offset_s`
+- `tick-source.ts` -- what advances the deterministic loop: free-running, or a tick barrier it acknowledges
 - `publisher.ts` -- Keelson sensor data publishers (camera, lidar, radar)
 - `headless-gl.ts` -- `@kmamal/gl` WebGL context setup
 

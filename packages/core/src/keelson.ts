@@ -18,7 +18,9 @@ import type {
   RadarSpoke,
   LocationFix,
   TimestampedFloat,
+  ScenarioStatus,
 } from "./keelson-sdk.js";
+import { ScenarioTickAck_Disposition } from "./keelson-sdk.js";
 
 import type { PoseUpdate } from "./pose.js";
 import type { CameraFrame } from "./camera.js";
@@ -50,6 +52,8 @@ const TYPE_RADAR_SWEEP = "keelson.RadarSweep";
 const TYPE_RADAR_SPOKE = "keelson.RadarSpoke";
 const TYPE_LOCATION_FIX = "foxglove.LocationFix";
 const TYPE_TIMESTAMPED_FLOAT = "keelson.TimestampedFloat";
+const TYPE_SCENARIO_STATUS = "keelson.ScenarioStatus";
+const TYPE_SCENARIO_TICK_ACK = "keelson.ScenarioTickAck";
 
 export interface KeelsonNaming {
   /** First key segment (realm) of every published sensor topic. */
@@ -610,6 +614,78 @@ export function decodeTimestampedFloatEnvelope(bytes: Uint8Array): DecodedTimest
     value: tf.value,
     time: tf.timestamp ? dateToSeconds(tf.timestamp) : dateToSeconds(env.enclosedAt),
   };
+}
+
+/** One tick fence as a render worker needs it (Slipway ADR-0019). */
+export interface TickFence {
+  runId: string;
+  tick: number;
+  /** The kernel's step, in whole microseconds — integer so `tick * step` is
+   *  exact and two workers agree on which tick a sensor fires in. */
+  stepUs: number;
+  /** The tick's absolute simulated instant, when the kernel stated one. */
+  simulationTime: Date | undefined;
+}
+
+/** Decode a `keelson.ScenarioStatus` envelope into the fence it carries.
+ *  Null for anything that is not one, or that carries no run or step — a
+ *  status from before a run is loaded is not a tick anyone can answer. */
+export function decodeTickFenceEnvelope(bytes: Uint8Array): TickFence | null {
+  const env = unwrapEnvelope(bytes);
+  if (!env) return null;
+  let status: ScenarioStatus | undefined;
+  try {
+    status = decodePayloadFromTypeName(TYPE_SCENARIO_STATUS, env.payload) as
+      | ScenarioStatus
+      | undefined;
+  } catch {
+    return null;
+  }
+  if (!status || !status.runId || !status.stepSize) return null;
+  const stepUs = Math.round(status.stepSize.seconds * 1e6 + status.stepSize.nanos / 1e3);
+  if (stepUs <= 0) return null;
+  return {
+    runId: status.runId,
+    tick: status.tick,
+    stepUs,
+    simulationTime: status.simulationTime,
+  };
+}
+
+/** Encode `fence` as the `keelson.ScenarioStatus` a kernel would send — the
+ *  other half of the protocol, for a test harness or a stand-in clock. */
+export function encodeTickFenceEnvelope(fence: TickFence): Uint8Array {
+  const at = fence.simulationTime ?? new Date(0);
+  return envelopeBytes(
+    TYPE_SCENARIO_STATUS,
+    {
+      runId: fence.runId,
+      tick: fence.tick,
+      stepSize: {
+        seconds: Math.floor(fence.stepUs / 1e6),
+        nanos: (fence.stepUs % 1e6) * 1e3,
+      },
+      ...(fence.simulationTime ? { simulationTime: fence.simulationTime } : {}),
+    },
+    at,
+  );
+}
+
+/** Encode the `keelson.ScenarioTickAck` that answers `fence`: COMPLETED,
+ *  stamped with the wall clock it was sent on, and enclosed at the fence's
+ *  simulated instant — the same shape as Slipway's `barrier.tick_ack`. */
+export function encodeTickAckEnvelope(fence: TickFence, wallNow: Date): Uint8Array {
+  return envelopeBytes(
+    TYPE_SCENARIO_TICK_ACK,
+    {
+      timestamp: wallNow,
+      runId: fence.runId,
+      tick: fence.tick,
+      disposition: ScenarioTickAck_Disposition.COMPLETED,
+      detail: "",
+    },
+    fence.simulationTime ?? wallNow,
+  );
 }
 
 function secondsToDate(t: number): Date {
