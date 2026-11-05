@@ -29,8 +29,17 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # wasm-bindgen CLI, pinned to the kernels' wasm-bindgen version. Prebuilt
-# binary to avoid a multi-minute source compile.
-RUN curl -fsSL https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.120/wasm-bindgen-0.2.120-x86_64-unknown-linux-musl.tar.gz \
+# binary to avoid a multi-minute source compile — for the architecture being
+# built, so the image builds on arm64 (Apple Silicon, Graviton) as well as
+# amd64. BuildKit sets TARGETARCH; the release names the same machines by
+# their triples.
+ARG TARGETARCH
+RUN case "${TARGETARCH:-amd64}" in \
+      amd64) triple=x86_64-unknown-linux-musl ;; \
+      arm64) triple=aarch64-unknown-linux-musl ;; \
+      *) echo "no prebuilt wasm-bindgen for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSL "https://github.com/rustwasm/wasm-bindgen/releases/download/0.2.120/wasm-bindgen-0.2.120-${triple}.tar.gz" \
       | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/wasm-bindgen'
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
