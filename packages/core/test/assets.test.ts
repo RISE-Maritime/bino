@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { parametricHull, loadModel, lookupDimensions, getRegistry } from "../src/assets.js";
+import {
+  FAMILIES,
+  familyNames,
+  getRegistry,
+  loadModel,
+  lookupDimensions,
+  parametricHull,
+} from "../src/assets.js";
 
 describe("getRegistry", () => {
   it("contains tanker_120m, ferry_60m, cargo_90m", () => {
@@ -89,5 +96,53 @@ describe("loadModel", () => {
     expect(size.x).toBeGreaterThan(2);
     expect(size.x).toBeLessThan(4);
     expect(size.z).toBeLessThan(2);
+  });
+});
+
+describe("ship families", () => {
+  const dims = { length: 120, beam: 20, draft: 6 };
+
+  it("names twenty families", () => {
+    expect(familyNames()).toHaveLength(20);
+    expect(familyNames()).toContain("sailboat");
+  });
+
+  it.each(Object.keys(FAMILIES))("%s builds a hull and a superstructure", (name) => {
+    const group = loadModel(name, dims);
+    expect(group.getObjectByName("hull")).toBeInstanceOf(THREE.Mesh);
+    expect(group.getObjectByName("superstructure")).toBeInstanceOf(THREE.Mesh);
+  });
+
+  it.each(Object.keys(FAMILIES))("%s stays within her length and beam", (name) => {
+    const group = loadModel(name, dims);
+    group.updateMatrixWorld(true);
+    for (const child of group.children) {
+      if (child.name === "hull" || child.name === "hull_underwater") continue;
+      const bounds = new THREE.Box3().setFromObject(child);
+      expect(bounds.min.x, child.name).toBeGreaterThanOrEqual(-dims.length / 2 - 1e-6);
+      expect(bounds.max.x, child.name).toBeLessThanOrEqual(dims.length / 2 + 1e-6);
+      expect(Math.abs(bounds.min.z), child.name).toBeLessThanOrEqual(dims.beam / 2 + 1e-6);
+      expect(Math.abs(bounds.max.z), child.name).toBeLessThanOrEqual(dims.beam / 2 + 1e-6);
+    }
+  });
+
+  it("scales with her dimensions", () => {
+    const top = (group: THREE.Group) => new THREE.Box3().setFromObject(group).max.y;
+    expect(top(loadModel("tanker", { length: 240, beam: 40, draft: 12 }))).toBeCloseTo(
+      2 * top(loadModel("tanker", dims)),
+      5,
+    );
+  });
+
+  it("leaves the stock ships and the unknown fallback as they were", () => {
+    expect(loadModel("tanker_120m").getObjectByName("superstructure")).toBeDefined();
+    expect(loadModel("no_such_family", dims).getObjectByName("superstructure")).toBeUndefined();
+  });
+
+  it("rigs a sailboat with a mast and two sails", () => {
+    const group = loadModel("sailboat", { length: 10, beam: 3.5, draft: 1.8 });
+    for (const part of ["mast", "mainsail", "jib"]) {
+      expect(group.getObjectByName(part), part).toBeDefined();
+    }
   });
 });

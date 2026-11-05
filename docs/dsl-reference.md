@@ -295,6 +295,38 @@ Built-in named models with default dimensions:
 Unknown model names fall back to 80 m x 14 m x 4 m with no
 superstructure.
 
+### Ship families
+
+A family names a kind of ship, not a ship. Every part is a fraction of the
+vessel's own `dimensions`, so give them: a family has no size of its own.
+`familyNames()` lists them, and `FAMILIES` holds each one's proportions.
+
+| Family          | Superstructure                       | Extras                      |
+| --------------- | ------------------------------------ | --------------------------- |
+| `tanker`        | aft, 4 tiers, funnel                 | —                           |
+| `bulk`          | aft, 4 tiers, funnel                 | hatch covers                |
+| `container`     | aft of midships, 6 tiers, funnel     | container stacks            |
+| `general_cargo` | aft, 3 tiers, funnel                 | hatch covers, cranes        |
+| `ropax`         | long, 3 tiers, funnel                | —                           |
+| `ferry`         | long, 2 tiers                        | —                           |
+| `cruise`        | nearly full length, 6 tiers, funnel  | —                           |
+| `tug`           | forward of midships, 2 tiers, funnel | mast                        |
+| `fishing`       | forward wheelhouse                   | stern gantry, mast          |
+| `trawler`       | forward, 2 tiers, funnel             | stern gantry, mast          |
+| `pilot`         | wheelhouse amidships                 | mast                        |
+| `patrol`        | forward of midships, 2 tiers         | mast                        |
+| `naval`         | 3 tiers, funnel                      | mast                        |
+| `dredger`       | forward, 3 tiers, funnel             | stern gantry                |
+| `survey`        | forward, 3 tiers, funnel             | stern gantry, mast          |
+| `yacht`         | 2 tiers                              | —                           |
+| `motorboat`     | low cabin                            | —                           |
+| `sailboat`      | coachroof                            | masthead mast, main and jib |
+| `hsc`           | long low cabin                       | —                           |
+| `workboat`      | forward of midships, 2 tiers         | mast                        |
+
+Slipway's archetype library names one per hull under `render.assets.bino`,
+and its `bino_scenario.py` passes it as the contact's `model`.
+
 ## Keelson identity (key cascade)
 
 Every key Bino touches has the shape
