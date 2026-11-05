@@ -234,15 +234,56 @@ export async function loadBathymetry(
   const [west, south, east, north] = bbox;
   const base = opts.endpoint ?? gmrtUrl();
   const url = `${base}?north=${north}&south=${south}&east=${east}&west=${west}&format=geotiff&resolution=high`;
-  const res = await fetchWithRetry(
-    url,
-    { headers: { "User-Agent": HTTP_USER_AGENT } },
-    { label: "GMRT bathymetry" },
-  );
-  if (!res.ok) {
-    throw new Error(`GMRT returned ${res.status}: ${await res.text()}`);
+  // A 200 can still carry a body that is not a whole GeoTIFF — a truncated
+  // download is the case that was seen, and geotiff.js then fails with an
+  // opaque "Offset is outside the bounds of the DataView". `fetchWithRetry`
+  // only retries statuses, so a bad body is checked here and refetched.
+  let problem = "";
+  for (let attempt = 1; attempt <= GEOTIFF_ATTEMPTS; attempt++) {
+    const res = await fetchWithRetry(
+      url,
+      { headers: { "User-Agent": HTTP_USER_AGENT } },
+      { label: "GMRT bathymetry" },
+    );
+    if (!res.ok) {
+      throw new Error(`GMRT returned ${res.status}: ${await res.text()}`);
+    }
+    const bytes = await res.arrayBuffer();
+    problem = geoTiffProblem(bytes, res.headers.get("content-length"));
+    if (!problem) {
+      // Without a Content-Length a truncated body still starts like a TIFF,
+      // so a read that fails is a bad body too, and worth another fetch.
+      try {
+        return await parseGeoTiffBathymetry(bytes, bbox, gridResM);
+      } catch (e) {
+        problem = `GMRT returned ${bytes.byteLength} bytes that do not read as a GeoTIFF (${errMsg(e)})`;
+      }
+    }
+    if (attempt < GEOTIFF_ATTEMPTS) {
+      console.warn(`[bino] GMRT bathymetry attempt ${attempt}: ${problem}; refetching`);
+    }
   }
-  return parseGeoTiffBathymetry(await res.arrayBuffer(), bbox, gridResM);
+  throw new Error(problem);
+}
+
+/** How many times a GMRT body that is not a whole GeoTIFF is fetched. */
+const GEOTIFF_ATTEMPTS = 3;
+
+/** Why `bytes` is not a complete GeoTIFF, or "" if it looks like one: the TIFF
+ *  magic number, and the declared length when the server sent one. Checked
+ *  before geotiff.js sees the bytes, so the error says what was wrong. */
+export function geoTiffProblem(bytes: ArrayBuffer, contentLength: string | null): string {
+  const n = bytes.byteLength;
+  const declared = contentLength === null ? NaN : Number(contentLength);
+  if (Number.isFinite(declared) && declared !== n) {
+    return `GMRT returned ${n} bytes, not a complete GeoTIFF (${declared} declared)`;
+  }
+  const head = new Uint8Array(bytes, 0, Math.min(4, n));
+  const tiff =
+    n >= 4 &&
+    ((head[0] === 0x49 && head[1] === 0x49 && head[2] === 0x2a && head[3] === 0x00) ||
+      (head[0] === 0x4d && head[1] === 0x4d && head[2] === 0x00 && head[3] === 0x2a));
+  return tiff ? "" : `GMRT returned ${n} bytes, not a complete GeoTIFF (no TIFF header)`;
 }
 
 // ─── Mesh construction ────────────────────────────────────────────
@@ -358,12 +399,18 @@ export async function prepareTerrain(
   // and yields a placeholder rather than rejecting, so "any location" never
   // hard-crashes on a flaky source. Coastline/bathymetry are structural, so
   // their failure is surfaced more loudly than the cosmetic layers'.
+  // Which layers fell back. A placeholder is right for this run and wrong to
+  // keep: cached, one bad fetch became a permanently flat seabed for its bbox
+  // (SLIPWAY#63), because a hit never asks the source again.
+  const fellBack: string[] = [];
   const [coastline, bathymetry, buildings, seamarks] = await Promise.all([
     coastlineFn(bbox).catch((e) => {
+      fellBack.push("coastline");
       console.warn(`[bino] coastline source failed (${errMsg(e)}); rendering without coastline`);
       return [] as CoastlineChain[];
     }),
     bathymetryFn(bbox).catch((e) => {
+      fellBack.push("bathymetry");
       console.warn(
         `[bino] bathymetry source failed (${errMsg(e)}); using a flat placeholder seabed`,
       );
@@ -371,6 +418,7 @@ export async function prepareTerrain(
     }),
     fetchBuildings
       ? buildingsFn(bbox).catch((e) => {
+          fellBack.push("buildings");
           console.warn(
             `[bino] buildings source failed (${errMsg(e)}); rendering without buildings`,
           );
@@ -379,6 +427,7 @@ export async function prepareTerrain(
       : ([] as BuildingData[]),
     fetchSeamarks
       ? seamarksFn(bbox).catch((e) => {
+          fellBack.push("seamarks");
           console.warn(`[bino] seamarks source failed (${errMsg(e)}); rendering without seamarks`);
           return [] as SeamarkData[];
         })
@@ -398,7 +447,12 @@ export async function prepareTerrain(
   }
 
   const data: TerrainData = { coastline, bathymetry, buildings, seamarks };
-  if (cache) {
+  if (cache && fellBack.length > 0) {
+    console.warn(
+      `[bino] not caching terrain: ${fellBack.sort().join(", ")} fell back; ` +
+        "the next run fetches them again",
+    );
+  } else if (cache) {
     await cache.set(key, data).catch((e) => console.warn("terrain cache write failed:", e));
   }
   return data;
