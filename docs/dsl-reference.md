@@ -252,7 +252,9 @@ fallback), and republishes the merged stream on its own resolved spoke key. Vali
 only when `modes.rendering: inject`, and must differ from the sensor's own output
 key. The sensor is then driven by the inbound stream, not the runner clock.
 Alongside the merged stream it co-publishes ground truth for the injected targets
-on the `ground_truth` subject (`…/pubsub/ground_truth/{source}`) — one
+on keelson's `frame_transform` subject under a truth source
+(`…/pubsub/frame_transform/{source}/truth`; truth is marked in the source, not
+a subject of its own) — one
 `FrameTransform` per target per revolution, in the merged stream's frame — so a
 consumer can score detections against truth.
 

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { isSubjectWellKnown } from "@rise-maritime/keelson-js";
 import {
   encodePoseUpdate,
   decodePoseEnvelope,
@@ -12,6 +13,7 @@ import {
   navTopicKeys,
   navSourceOverrides,
   DEFAULT_NAMING,
+  groundTruthTopicKey,
 } from "../src/keelson.js";
 import type { PoseUpdate } from "../src/pose.js";
 import type { CameraFrame } from "../src/camera.js";
@@ -235,5 +237,24 @@ describe("encodePointCloud / decodePointCloudEnvelope", () => {
       expect(decoded!.points[i]).toBeCloseTo(pts[i]!, 5);
     }
     expect(decoded!.time).toBeCloseTo(0.25, 3);
+  });
+});
+
+describe("ground truth key", () => {
+  const id = { base_path: "bino", entity_id: "ego", source_id: "nav_radar" };
+
+  it("rides frame_transform, with truth marked in the source", () => {
+    expect(groundTruthTopicKey(id)).toBe("bino/@v0/ego/pubsub/frame_transform/nav_radar/truth");
+  });
+
+  it("is a subject keelson knows, so building it warns of nothing", () => {
+    expect(isSubjectWellKnown("frame_transform")).toBe(true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      groundTruthTopicKey(id);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

@@ -212,8 +212,11 @@ Bino is the only component that holds both the injected stimulus and the merged
 output, so it co-publishes the **true** state of the injected targets — the
 feature that most justifies doing the merge in Bino rather than downstream. Once
 per revolution, alongside the merged spokes, the augmenter publishes a
-`ground_truth` message (subject `ground_truth`, keyed under the same sensor
-identity → e.g. `bino/@v0/ego/pubsub/ground_truth/nav_radar`): one
+ground-truth message on keelson's `frame_transform` subject, under the same
+sensor identity with `/truth` appended to the source → e.g.
+`bino/@v0/ego/pubsub/frame_transform/nav_radar/truth`. Truth is marked in the
+source rather than given a subject of its own, so keelson needs nothing new and
+`**/truth` finds it: one
 `foxglove.FrameTransform` per injected target, in the **same frame as the merged
 stream** (`parentFrameId` = the real spoke's `frame_id`), with the target placed
 in the radar's bow-relative cartesian frame (`x` along the bow, `y` to starboard,
