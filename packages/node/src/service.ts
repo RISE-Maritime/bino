@@ -12,6 +12,7 @@ import {
   lidarTopicKey,
   marshalRadarSensorPose,
   PoseSampler,
+  STEPPED_CLOCKS,
   radarSpokeTopicKey,
   resolveOutputIdentity,
   type CompiledScene,
@@ -25,6 +26,7 @@ import {
 import type { RadarGeom } from "./radar-augmenter.js";
 import { createHeadlessRenderer, type HeadlessRendererHandle } from "./headless-gl.js";
 import { BinoRunner, type ScheduledKernel } from "./runner.js";
+import type { TickSource } from "./tick-source.js";
 import { createLidarThreadKernel, createRadarThreadKernel } from "./thread-kernel.js";
 import {
   createSensorPublisher,
@@ -55,6 +57,9 @@ export interface NodeServiceOptions {
    *  instead of serially on the main thread. Trades a frame of latency for
    *  parallelism, so it's ignored under strict determinism. Default false. */
   workers?: boolean;
+  /** What advances the loop. Required by a `barrier` clock, whose ticks come
+   *  from outside — the caller owns the session it listens on. */
+  tickSource?: TickSource;
 }
 
 /** A radar sensor configured for inject-augment (DSL `augment_source`). Built
@@ -315,8 +320,19 @@ function buildSceneFromScenario(
 
   const clock = createClock(scenario.modes.clock);
 
-  if (scenario.modes.determinism === "strict" && scenario.modes.clock !== "stepped") {
-    throw new Error(`strict determinism requires stepped clock (got '${scenario.modes.clock}')`);
+  if (scenario.modes.determinism === "strict" && !STEPPED_CLOCKS.has(scenario.modes.clock)) {
+    throw new Error(
+      `strict determinism requires a stepped or barrier clock (got '${scenario.modes.clock}')`,
+    );
+  }
+  const barrier = scenario.modes.clock === "barrier";
+  if (barrier && !opts.tickSource) {
+    throw new Error("a 'barrier' clock needs a tick source listening on the scene's fence_key");
+  }
+  if (!barrier && opts.tickSource) {
+    throw new Error(
+      `a tick source is only read by the 'barrier' clock (got '${scenario.modes.clock}')`,
+    );
   }
 
   const runner = new BinoRunner({
@@ -324,7 +340,10 @@ function buildSceneFromScenario(
     entities: built.entities,
     kernels: scheduled,
     clock,
-    deterministic: scenario.modes.determinism === "strict",
+    // A barrier clock is stepped by its fences, which is the deterministic
+    // loop whatever the declared determinism.
+    deterministic: scenario.modes.determinism === "strict" || barrier,
+    ...(opts.tickSource ? { tickSource: opts.tickSource } : {}),
     ...(built.sea
       ? {
           onTick: (t) => {

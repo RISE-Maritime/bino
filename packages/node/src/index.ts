@@ -34,3 +34,12 @@ export {
   type LidarAugmenter,
   type LidarAugmenterOptions,
 } from "./lidar-augmenter.js";
+export {
+  BarrierTickSource,
+  FreeRunningTickSource,
+  type BarrierSession,
+  type BarrierStats,
+  type BarrierTickSourceOptions,
+  type Tick,
+  type TickSource,
+} from "./tick-source.js";

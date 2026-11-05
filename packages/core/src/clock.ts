@@ -46,6 +46,9 @@ export function createClock(kind: Modes["clock"]): Clock {
     case "wall":
       return new WallClock();
     case "stepped":
+    case "barrier":
+      // A barrier clock is a stepped clock someone else steps: the runner
+      // sets it to each fence's instant (ADR-0033).
       return new SteppedClock();
     case "external_fmi":
       throw new Error("external_fmi clock not yet supported (v0.1); use 'wall' or 'stepped'");

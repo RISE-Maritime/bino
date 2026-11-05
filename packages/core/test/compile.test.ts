@@ -46,7 +46,7 @@ describe("compileScenario", () => {
       compileScenario(
         minimal({ modes: { rendering: "replace", clock: "wall", determinism: "strict" } }),
       ),
-    ).toThrow("strict determinism requires stepped clock (got 'wall')");
+    ).toThrow("strict determinism requires a stepped or barrier clock (got 'wall')");
   });
 
   it("throws when strict determinism is combined with external_fmi clock", () => {
@@ -54,7 +54,7 @@ describe("compileScenario", () => {
       compileScenario(
         minimal({ modes: { rendering: "replace", clock: "external_fmi", determinism: "strict" } }),
       ),
-    ).toThrow("strict determinism requires stepped clock (got 'external_fmi')");
+    ).toThrow("strict determinism requires a stepped or barrier clock (got 'external_fmi')");
   });
 
   it("accepts strict determinism with stepped clock", () => {

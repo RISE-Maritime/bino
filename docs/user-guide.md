@@ -190,6 +190,7 @@ required.
 | `wall`         | Real-time wall clock. Default for interactive use.                          |
 | `stepped`      | Frame-index-driven clock. Deterministic; required for `strict` determinism. |
 | `external_fmi` | FMI3 master clock. Stub -- not yet implemented.                             |
+| `barrier`      | Ticks from an outside tick barrier (Slipway's). Deterministic; see below.   |
 
 ### Determinism levels
 
@@ -201,6 +202,36 @@ required.
 To set up a fully deterministic run, combine `clock: stepped` with
 `determinism: strict`. See `scenarios/v06_strict.yaml` for a working
 example.
+
+### Held by a tick barrier
+
+With `clock: barrier` bino does not advance itself. It waits for a tick fence
+(a `keelson.ScenarioStatus`) on `barrier.fence_key`, renders whatever sensors
+fall due at that tick, publishes them, and only then answers with a
+`keelson.ScenarioTickAck` on `barrier.ack_key`. A simulator that declares bino
+a blocking participant therefore cannot advance past a frame bino has not
+finished:
+
+```yaml
+modes: { rendering: replace, clock: barrier, determinism: strict }
+barrier:
+  fence_key: rise/@v0/slipway-ted/pubsub/scenario_status/truth
+  ack_key: rise/@v0/render-bino/pubsub/scenario_tick_ack/bino
+```
+
+- **Frames carry the simulator's time.** Each output is stamped with the
+  fence's `simulation_time`; the sea is driven by seconds since the run began.
+- **A sensor fires on the first tick of each of its periods.** The step is the
+  simulator's and need not divide a sensor's period, so a 10 Hz camera on a
+  0.04 s step fires at 0.04, 0.12, 0.20, 0.32 s. A sensor faster than the
+  step fires once per tick, with one warning.
+- **Repeated statuses are heartbeats** and are ignored; only an advancing tick
+  is a new one, and a new `run_id` starts over.
+- **Start bino before the run plays.** A worker that misses its first fence
+  holds a blocking run until the simulator's deadline, which then fails it.
+
+Slipway generates these scenes itself (`tools/bino_scenario.py`) for a render
+worker declared `role: blocking`.
 
 ---
 

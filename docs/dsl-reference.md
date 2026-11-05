@@ -258,11 +258,11 @@ consumer can score detections against truth.
 
 ## Modes
 
-| Field         | Values                            | Description           |
-| ------------- | --------------------------------- | --------------------- |
-| `rendering`   | `replace`, `inject`, `inject_all` | V&V rendering mode    |
-| `clock`       | `wall`, `stepped`, `external_fmi` | Time source           |
-| `determinism` | `strict`, `relaxed`               | Reproducibility level |
+| Field         | Values                                       | Description           |
+| ------------- | -------------------------------------------- | --------------------- |
+| `rendering`   | `replace`, `inject`, `inject_all`            | V&V rendering mode    |
+| `clock`       | `wall`, `stepped`, `external_fmi`, `barrier` | Time source           |
+| `determinism` | `strict`, `relaxed`                          | Reproducibility level |
 
 **`replace`** -- Fully synthetic world. All entities and terrain rendered.
 
@@ -271,6 +271,11 @@ overlaying ghost targets on real sensor feeds.
 
 **`inject_all`** -- Like replace, but with external clock and strict
 determinism. For SIL/HIL/BIL setups.
+
+**`barrier`** (clock) -- advance only on an outside tick fence, and
+acknowledge each tick once its frames are published. Needs a top-level
+`barrier: { fence_key, ack_key }` (refused on any other clock) and a
+`--zenoh` session. See the user guide's _Held by a tick barrier_.
 
 ## Compile-time validation
 
