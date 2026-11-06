@@ -60,15 +60,15 @@ describe("navTopicKeys — decomposed-nav subscription keys", () => {
 
   it("overrides source per subject, falling back to source_id when unset", () => {
     const sources = navSourceOverrides({
-      location_fix_source: "ardusimple/GGA",
-      heading_source: "ardusimple/UNIHEADINGA",
-      pitch_source: "ardusimple/UNIHEADINGA",
+      location_fix_source: "ardusimple/gga",
+      heading_source: "ardusimple/uniheadinga",
+      pitch_source: "ardusimple/uniheadinga",
       // roll_source omitted → falls back to mav/0
     });
     expect(navTopicKeys(id, sources)).toEqual({
-      locationFix: "rise/@v0/sf18/pubsub/location_fix/ardusimple/GGA",
-      heading: "rise/@v0/sf18/pubsub/heading_true_north_deg/ardusimple/UNIHEADINGA",
-      pitch: "rise/@v0/sf18/pubsub/pitch_deg/ardusimple/UNIHEADINGA",
+      locationFix: "rise/@v0/sf18/pubsub/location_fix/ardusimple/gga",
+      heading: "rise/@v0/sf18/pubsub/heading_true_north_deg/ardusimple/uniheadinga",
+      pitch: "rise/@v0/sf18/pubsub/pitch_deg/ardusimple/uniheadinga",
       roll: "rise/@v0/sf18/pubsub/roll_deg/mav/0",
     });
   });
