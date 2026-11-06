@@ -59,9 +59,9 @@ scenario:
         base_path: rise
         entity_id: sf18
         source_id: mav/0 # fallback (used by roll)
-        location_fix_source: ardusimple/GGA # RTK position
-        heading_source: ardusimple/UNIHEADINGA # dual-antenna RTK heading
-        pitch_source: ardusimple/UNIHEADINGA
+        location_fix_source: ardusimple/gga # RTK position
+        heading_source: ardusimple/uniheadinga # dual-antenna RTK heading
+        pitch_source: ardusimple/uniheadinga
       sensors:
         - id: bow_camera
           type: camera
